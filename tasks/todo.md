@@ -221,8 +221,8 @@
 ### Task 21: ArtemisProvider（Jolokia）
 **描述**：httpx 访问 Jolokia / Management API（basic 认证）：broker overview、JVM、queues、addresses 查询；`test()`（API 可达 + 认证）。解析用现场样本 JSON 做单测。
 **验收标准**：
-- [ ] 解析器单测：样本 Jolokia 响应 → §9.1-9.4 字段
-- [ ] 超时/连接失败 → 统一错误包络
+- [x] 解析器单测：样本 Jolokia 响应 → §9.1-9.4 字段
+- [x] 超时/连接失败 → 统一错误包络
 **依赖**：T07、T10
 **文件**：`backend/app/modules/mq/provider.py`、`backend/tests/test_mq_provider.py`
 **规模**：M
@@ -230,9 +230,9 @@
 ### Task 22: MQ API + 诊断 + backlog 趋势（引入 APScheduler）
 **描述**：`GET mq/{id}/overview|queues|addresses`（5s 缓存）；诊断：backlog 阈值、consumers=0、增长检测；APScheduler 周期采样 queue messageCount 写 Redis（`ops:sample:mq:{id}:{queue}` 短期保留）供趋势对比（Current vs 5min ago）。
 **验收标准**：
-- [ ] 单测：诊断规则各分支
-- [ ] 单测：采样写入与 5 分钟前值读取
-- [ ] `ponytail:` 注释标注单实例假设
+- [x] 单测：诊断规则各分支
+- [x] 单测：采样写入与 5 分钟前值读取
+- [x] `ponytail:` 注释标注单实例假设
 **依赖**：T21
 **文件**：`backend/app/modules/mq/{api,service}.py`、`backend/app/core/scheduler.py`
 **规模**：M
@@ -240,7 +240,7 @@
 ### Task 23: 前端 MQ 模块
 **描述**：Broker/JVM 卡片、Queue 表（count/consumer/delivering + TrendSpark 趋势）、Address 表、诊断徽标、ResourceTestButton。
 **验收标准**：
-- [ ] backlog 超阈值行有 WARNING/CRITICAL 标识
+- [x] backlog 超阈值行有 WARNING/CRITICAL 标识
 **依赖**：T05、T22
 **文件**：`frontend/src/modules/mq/**`、`frontend/src/components/TrendSpark.vue`
 **规模**：M
@@ -248,7 +248,7 @@
 ### Task 24: RobotProvider + API
 **描述**：`HttpRobotProvider`（httpx，按配置 base_url/认证）：`get_robot_list/get_robot_status/get_robot_detail` 映射为统一结构（ID/Name/Status/Battery/Station/Task/LastUpdate）；API：`GET robots`、`GET robots/{id}`；`test()`（API 可达）。
 **验收标准**：
-- [ ] provider 字段映射单测（真实样例 JSON 做样本）
+- [x] provider 字段映射单测（真实样例 JSON 做样本）
 **依赖**：T07、T10
 **文件**：`backend/app/modules/robot/**`
 **规模**：M
@@ -256,14 +256,14 @@
 ### Task 25: 前端 Robot 模块
 **描述**：列表页（§12.1 字段 + StatusBadge）+ 详情页（Basic Info/Status/Battery/Position/Task/Error）+ ResourceTestButton。
 **验收标准**：
-- [ ] 列表 → 详情跳转与字段渲染正常
+- [x] 列表 → 详情跳转与字段渲染正常
 **依赖**：T05、T24
 **文件**：`frontend/src/modules/robot/**`
 **规模**：S
 
 ### ✅ Checkpoint 5（T21-T25）
-- [ ] MQ 与 Robot 页面在真实/模拟环境可查看
-- [ ] 连接测试四类资源全部可用（验收 5）
+- [x] MQ 与 Robot 页面在真实/模拟环境可查看（MQ 真机 2.44.0 实测；Robot 真实 API 待现场信息，stub 已验）
+- [x] 连接测试四类资源全部可用（验收 5）
 
 ---
 
