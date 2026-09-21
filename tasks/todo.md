@@ -135,7 +135,7 @@
 ### Task 13: 诊断引擎
 **描述**：阈值规则 CPU ≥80 WARNING/≥90 CRITICAL、Memory ≥80/≥90、Disk ≥85/≥95；Load 结合 core 数判断；输出 `{status, issues[]}`；全局默认阈值常量。
 **验收标准**：
-- [ ] 单测覆盖每条规则各档位与边界值（79/80/89/90…）
+- [x] 单测覆盖每条规则各档位与边界值（79/80/89/90…）
 **依赖**：T11
 **文件**：`backend/app/modules/server/diagnosis.py`、`backend/tests/test_diagnosis.py`
 **规模**：S
@@ -143,7 +143,7 @@
 ### Task 14: 阈值覆盖
 **描述**：阈值按 资源级 > 站点级 > 全局默认 三层合并，覆盖值存平台 Redis，随资源配置 API 读写。
 **验收标准**：
-- [ ] 单测：三层合并优先级正确，缺层回退
+- [x] 单测：三层合并优先级正确，缺层回退
 **依赖**：T13
 **文件**：`backend/app/modules/server/`、`backend/app/modules/sites/`
 **规模**：S
@@ -151,15 +151,15 @@
 ### Task 15: 前端 Server 模块
 **描述**：`defineOpsModule` 注册；指标卡片（CPU/Mem/Disk/Load/Network）、Top Process 表、诊断 issues 列表、StatusBadge、ResourceTestButton、手动刷新；loading / Unknown / 错误态。页面无任何写入口。
 **验收标准**：
-- [ ] 查询失败显示 Unknown 不白屏
-- [ ] 页面上无任何命令输入或操作按钮
+- [x] 查询失败显示 Unknown 不白屏
+- [x] 页面上无任何命令输入或操作按钮
 **依赖**：T05、T12、T13、T14
 **文件**：`frontend/src/modules/server/**`
 **规模**：M
 
 ### ✅ Checkpoint 3（T11-T15）
-- [ ] 对真实/模拟 Linux 出全量指标 + 诊断色
-- [ ] Server 页面纯只读（验收 8）
+- [x] 对真实/模拟 Linux 出全量指标 + 诊断色（真机 10.102.129.21 实测，站点级阈值覆盖生效）
+- [x] Server 页面纯只读（验收 8）
 
 ---
 
