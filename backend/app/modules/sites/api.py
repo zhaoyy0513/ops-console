@@ -11,12 +11,14 @@ class SiteIn(BaseModel):
     name: str
     description: str = ""
     enabled: bool = True
+    thresholds: dict[str, int] | None = None  # 站点级阈值覆盖（PRD §8.6）
 
 
 class SiteUpdate(BaseModel):
     name: str | None = None
     description: str | None = None
     enabled: bool | None = None
+    thresholds: dict[str, int] | None = None
 
 
 # ---------- 资源配置模型（PRD §5.2 通用结构） ----------
@@ -34,6 +36,7 @@ class ServerConfig(ResourceBase):
     username: str = ""
     password: str = ""
     private_key: str = ""  # SSH 私钥（可选，PRD §8.1）
+    thresholds: dict[str, int] | None = None  # 资源级阈值覆盖（PRD §8.6）
 
 
 class RedisConfig(ResourceBase):

@@ -32,9 +32,20 @@ async def _with_cache(site_id: str, server_id: str, kind: str, factory) -> Any:
 
 
 async def get_metrics(site_id: str, server_id: str) -> dict[str, Any]:
+    from backend.app.modules.server.diagnosis import diagnose, merge_thresholds
+    from backend.app.modules.sites import service as sites_service
+
     config = await _require_server_config(site_id, server_id)
-    provider = _build_provider(config)
-    return await _with_cache(site_id, server_id, "metrics", provider.get_metrics)
+    site = await sites_service.get_site(site_id)
+
+    def factory():
+        provider = _build_provider(config)
+        return provider.get_metrics()
+
+    metrics = await _with_cache(site_id, server_id, "metrics", factory)
+    # 诊断不走缓存值缓存，但用同一份 metrics 计算，零额外 SSH
+    thresholds = merge_thresholds(config.get("thresholds"), (site or {}).get("thresholds"))
+    return {**metrics, "diagnosis": diagnose(metrics, thresholds)}
 
 
 async def get_processes(site_id: str, server_id: str) -> list[dict[str, Any]]:

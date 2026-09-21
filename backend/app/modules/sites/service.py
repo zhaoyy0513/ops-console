@@ -23,11 +23,13 @@ def _now() -> str:
 
 
 def _row_to_site(row: dict) -> dict:
+    thresholds = json.loads(row["thresholds"]) if row.get("thresholds") else None
     return {
         "id": row["id"],
         "name": row["name"],
         "description": row.get("description", ""),
         "enabled": row.get("enabled") == "1",
+        "thresholds": thresholds,
         "created_at": row.get("created_at", ""),
         "updated_at": row.get("updated_at", ""),
     }
@@ -47,6 +49,7 @@ async def create_site(data: dict) -> dict:
         "name": data["name"],
         "description": data.get("description", ""),
         "enabled": "1" if data.get("enabled", True) else "0",
+        "thresholds": json.dumps(data["thresholds"]) if data.get("thresholds") else "",
         "created_at": now,
         "updated_at": now,
     }
@@ -81,6 +84,8 @@ async def update_site(site_id: str, data: dict) -> dict | None:
     row["name"] = data.get("name", row["name"])
     row["description"] = data.get("description", row.get("description", ""))
     row["enabled"] = ("1" if data["enabled"] else "0") if "enabled" in data else row["enabled"]
+    if "thresholds" in data:
+        row["thresholds"] = json.dumps(data["thresholds"]) if data["thresholds"] else ""
     row["updated_at"] = _now()
     await r.hset(key, mapping=row)
     await oplog.record(site_id, "site-config", "SITE_UPDATED", target=site_id)
