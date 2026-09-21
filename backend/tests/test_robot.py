@@ -4,9 +4,46 @@ from httpx import ASGITransport, AsyncClient
 from backend.app.main import app
 from backend.app.modules.robot import service
 from backend.app.modules.robot.provider import HttpRobotProvider, normalize_robot
+from samples_robot import ENV12_BODY, ENV50_BODY
 
 
-# ---------- 字段映射（宽容候选，PRD §12 业务层隔离） ----------
+# ---------- 现场真实响应映射（环境 50 / 环境 12） ----------
+
+
+def test_env50_mapping():
+    """环境 50 /mission/robot/info/active：records 信封，无 online，坐标位置。"""
+    raw = ENV50_BODY["records"][0]
+    r = normalize_robot(raw)
+    assert r["id"] == "asrs23"  # robotCode 优先于数字 id
+    assert r["name"] == "RB-23"
+    assert r["battery"] == 82
+    assert r["station"] == "(22,65)"  # x/y 坐标
+    assert r["status"] == 1  # 无 online 字段 -> 原始 status 不猜语义
+    assert r["last_update"].startswith("2025-")  # createDate epoch ms -> ISO
+
+
+def test_env12_mapping():
+    """环境 12 /mission/agent/list：result 信封 + online 语义转换。"""
+    r1 = normalize_robot(ENV12_BODY["result"][0])
+    assert r1["id"] == "sim001"
+    assert r1["status"] == "online"  # online:1
+    assert r1["station"] == "(33,37)"
+    assert r1["error"] is None
+
+    r2 = normalize_robot(ENV12_BODY["result"][1])
+    assert r2["status"] == "offline"  # online:0
+    assert r2["error"] == "E102"
+
+
+def test_unwrap_env_envelopes():
+    assert HttpRobotProvider._unwrap_list(ENV50_BODY)[0]["robotCode"] == "asrs23"
+    assert HttpRobotProvider._unwrap_list(ENV12_BODY)[0]["robotCode"] == "sim001"
+    # 自动探测未知信封
+    assert HttpRobotProvider._unwrap_list({"weird": [{"a": 1}]}) == [{"a": 1}]
+    assert HttpRobotProvider._unwrap_list({"no_list": 1}) == []
+
+
+# ---------- 通用字段映射（camel/snake） ----------
 
 
 def test_normalize_robot_camel_case():
@@ -15,8 +52,8 @@ def test_normalize_robot_camel_case():
         "batteryLevel": 87, "currentStation": "S3", "currentTask": "deliver",
         "lastUpdate": "2026-09-21T10:00:00",
     })
-    assert r["id"] == "R001" and r["name"] == "alpha" and r["status"] == "running"
-    assert r["battery"] == 87 and r["station"] == "S3" and r["task"] == "deliver"
+    assert r["name"] == "alpha" and r["status"] == "running"
+    assert r["station"] == "S3" and r["task"] == "deliver"
 
 
 def test_normalize_robot_snake_case_and_missing():

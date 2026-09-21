@@ -13,17 +13,22 @@ from backend.app.core.config import settings
 from backend.app.shared.errors import OpsError
 from backend.app.shared.timeout import with_timeout
 
-# 常见字段名候选（按优先级）
+# 常见字段名候选（按优先级）；现场同厂商产品线字段基本一致，
+# 新增环境只需在此扩充候选/转换，不改业务与 API 层
 _FIELD_CANDIDATES: dict[str, tuple[str, ...]] = {
-    "id": ("id", "robotId", "robot_id", "robotID"),
-    "name": ("name", "robotName", "robot_name"),
-    "status": ("status", "state", "runStatus", "run_status"),
+    "id": ("robotCode", "id", "robotId", "robot_id", "robotID"),
+    "name": ("robotName", "name", "robot_name"),
+    "status": ("online", "status", "state", "runStatus", "run_status"),
     "battery": ("battery", "batteryLevel", "battery_level", "power"),
     "station": ("station", "currentStation", "current_station", "position", "location"),
     "task": ("task", "currentTask", "current_task", "taskName"),
-    "error": ("error", "errorMsg", "error_message", "fault"),
+    "error": ("errorCode", "error", "errorMsg", "error_message", "fault"),
     "last_update": ("lastUpdate", "last_update", "updateTime", "timestamp"),
+    "x": ("x",),
+    "y": ("y",),
 }
+
+_EPOCH_MS_KEYS = ("lastUpdate", "last_update", "updateTime", "createDate")
 
 
 def _pick(raw: dict[str, Any], field: str) -> Any:
@@ -33,9 +38,52 @@ def _pick(raw: dict[str, Any], field: str) -> Any:
     return None
 
 
+def _online_to_status(raw: dict[str, Any]) -> Any:
+    """online 字段优先转语义（现场环境 12：online:1 在线 / 0 离线）；
+    无 online 时返回原始 status 值（数字枚举语义待现场确认，不猜）。"""
+    online = raw.get("online")
+    if online is not None:
+        return "online" if online in (1, True, "1") else "offline"
+    return _pick(raw, "status")
+
+
+def _station_from_xy(raw: dict[str, Any]) -> Any:
+    named = _pick(raw, "station")
+    if named is not None:
+        return named
+    x, y = raw.get("x"), raw.get("y")
+    if x is not None and y is not None:
+        return f"({x},{y})"  # 无命名站点时退化为坐标（现场 50/12 均如此）
+    return None
+
+
+def _last_update(raw: dict[str, Any]) -> Any:
+    for key in _EPOCH_MS_KEYS:
+        v = raw.get(key)
+        if isinstance(v, (int, float)) and v > 10**12:  # epoch ms
+            from datetime import datetime, timezone
+
+            return datetime.fromtimestamp(v / 1000, tz=timezone.utc).isoformat(timespec="seconds")
+        if v is not None:
+            return v
+    return None
+
+
 def normalize_robot(raw: dict[str, Any]) -> dict[str, Any]:
     """原始 API 字典 -> PRD §12.1 统一结构（纯函数）。"""
-    return {field: _pick(raw, field) for field in _FIELD_CANDIDATES}
+    result = {
+        "id": _pick(raw, "id"),
+        "name": _pick(raw, "name"),
+        "status": _online_to_status(raw),
+        "battery": _pick(raw, "battery"),
+        "station": _station_from_xy(raw),
+        "task": _pick(raw, "task"),
+        "error": _pick(raw, "error"),
+        "last_update": _last_update(raw),
+        "x": raw.get("x"),
+        "y": raw.get("y"),
+    }
+    return result
 
 
 class RobotProvider:
@@ -56,6 +104,8 @@ class HttpRobotProvider(RobotProvider):
         self._base_url: str = str(config.get("base_url") or "").rstrip("/")
         if not self._base_url:
             raise OpsError("INVALID_OPERATION", "robot base_url required", status_code=400)
+        # 路径按现场环境配置（如 /mission/robot/info/active、/mission/agent/list）
+        self._list_path: str = str(config.get("list_path") or "/robots")
         self._username: str = config.get("username") or ""
         self._password: str = config.get("password") or ""
 
@@ -86,36 +136,35 @@ class HttpRobotProvider(RobotProvider):
 
     @staticmethod
     def _unwrap_list(data: Any) -> list[dict[str, Any]]:
-        """宽容解包：支持直接数组或 {data: [...]} / {robots: [...]} 信封。"""
+        """宽容解包：直接数组 / 常见信封 key / 自动探测 list-of-dict 信封
+        （现场信封 key 不统一：records / result / data ...）。"""
         if isinstance(data, list):
             return [x for x in data if isinstance(x, dict)]
         if isinstance(data, dict):
-            for key in ("data", "robots", "list", "result"):
+            for key in ("data", "records", "result", "robots", "list"):
                 inner = data.get(key)
                 if isinstance(inner, list):
+                    return [x for x in inner if isinstance(x, dict)]
+            # 自动探测：任意值中第一个非空 list-of-dict
+            for inner in data.values():
+                if isinstance(inner, list) and inner and isinstance(inner[0], dict):
                     return [x for x in inner if isinstance(x, dict)]
         return []
 
     async def get_robot_list(self) -> list[dict[str, Any]]:
         async with self._client() as c:
-            data = await self._get(c, "/robots")
+            data = await self._get(c, self._list_path)
         return [normalize_robot(x) for x in self._unwrap_list(data)]
 
     async def get_robot_detail(self, robot_id: str) -> dict[str, Any]:
-        async with self._client() as c:
-            data = await self._get(c, f"/robots/{robot_id}")
-        raw = data if isinstance(data, dict) and not self._is_envelope(data) else self._unwrap_list(data) or [{}]
-        if isinstance(raw, list):
-            raw = raw[0] if raw else {}
-        if not raw:
-            raise OpsError("REMOTE_BAD_RESPONSE", f"robot not found: {robot_id}", self._base_url)
-        return normalize_robot(raw)
-
-    @staticmethod
-    def _is_envelope(data: dict) -> bool:
-        return not any(k in data for k in ("id", "robotId", "robot_id"))
+        # 列表已含全部展示字段（现场两个环境均如此）：详情 = 列表内查找，
+        # 免去第二个端点的格式假设
+        for robot in await self.get_robot_list():
+            if str(robot.get("id")) == str(robot_id):
+                return robot
+        raise OpsError("REMOTE_BAD_RESPONSE", f"robot not found: {robot_id}", self._base_url)
 
     async def run_test(self) -> str:
         async with self._client() as c:
-            data = await self._get(c, "/robots")
+            data = await self._get(c, self._list_path)
         return f"Robot API OK, {len(self._unwrap_list(data))} robots"

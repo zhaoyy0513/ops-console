@@ -56,6 +56,7 @@ class MqConfig(ResourceBase):
 
 class RobotConfig(ResourceBase):
     base_url: str
+    list_path: str = "/robots"  # 列表端点按现场环境配置（PRD §12 统一接口下的路径差异）
     username: str = ""
     password: str = ""
 

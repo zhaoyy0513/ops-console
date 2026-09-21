@@ -63,6 +63,7 @@ const FIELD_DEFS: Record<
   ],
   robots: [
     { key: 'base_url', label: 'Base URL', required: true },
+    { key: 'list_path', label: '列表路径' },
     { key: 'username', label: '用户名' },
     { key: 'password', label: '密码', kind: 'password' },
   ],
