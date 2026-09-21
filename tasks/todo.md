@@ -65,8 +65,8 @@
 ### Task 06: Sites CRUD API
 **描述**：PRD §5/§6：`ops:site:{id}` Hash；字段 id/name/description/enabled/created_at/updated_at；密码不回显（返回空/掩码）、提交留空 = 不修改。路由按 §18 站点部分。
 **验收标准**：
-- [ ] GET 列表/详情响应无明文密码；PUT 密码留空不覆盖原值
-- [ ] API 测试：增删改查 + 启用禁用全通过
+- [x] GET 列表/详情响应无明文密码；PUT 密码留空不覆盖原值（T07 落地）
+- [x] API 测试：增删改查 + 启用禁用全通过
 **依赖**：T03
 **文件**：`backend/app/modules/sites/{api,service}.py`
 **规模**：M
@@ -74,8 +74,8 @@
 ### Task 07: 站点资源配置 CRUD
 **描述**：四类资源（servers/redis_instances/mq_instances/robots）在站点下的增删改查，统一配置结构（id/name/host/port/username/password/.../enabled），密码规则同 T06，必填项校验。
 **验收标准**：
-- [ ] 四类资源 CRUD 路由可用，缺必填字段返回 422
-- [ ] 密码回显规则与 T06 一致
+- [x] 四类资源 CRUD 路由可用，缺必填字段返回 422
+- [x] 密码回显规则与 T06 一致
 **依赖**：T06
 **文件**：`backend/app/modules/sites/*`
 **规模**：M
