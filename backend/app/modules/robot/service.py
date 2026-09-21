@@ -9,6 +9,7 @@ from backend.app.modules.sites.service import NotFound
 from backend.app.shared import testconn
 from backend.app.shared.concurrency import get_semaphore
 from backend.app.shared.errors import OpsError
+from backend.app.shared.retry import with_retry
 
 CACHE_TTL = 5  # PRD §14
 
@@ -34,7 +35,7 @@ async def list_robots(site_id: str, robot_id: str) -> list[dict[str, Any]]:
         async with get_semaphore("robot"):
             return await provider.get_robot_list()
 
-    return await cached(f"ops:cache:robot:{robot_id}:status", CACHE_TTL, factory)
+    return await cached(f"ops:cache:robot:{robot_id}:status", CACHE_TTL, with_retry(factory))
 
 
 async def get_robot(site_id: str, robot_id: str, rid: str) -> dict[str, Any]:
@@ -45,7 +46,7 @@ async def get_robot(site_id: str, robot_id: str, rid: str) -> dict[str, Any]:
         async with get_semaphore("robot"):
             return await provider.get_robot_detail(rid)
 
-    return await cached(f"ops:cache:robot:{robot_id}:detail:{rid}", CACHE_TTL, factory)
+    return await cached(f"ops:cache:robot:{robot_id}:detail:{rid}", CACHE_TTL, with_retry(factory))
 
 
 async def robot_tester(config: dict[str, Any]) -> dict[str, Any]:

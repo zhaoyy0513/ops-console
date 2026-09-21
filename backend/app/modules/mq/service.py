@@ -10,6 +10,7 @@ from backend.app.modules.sites.service import NotFound
 from backend.app.shared import testconn
 from backend.app.shared.concurrency import get_semaphore
 from backend.app.shared.errors import OpsError
+from backend.app.shared.retry import with_retry
 
 CACHE_TTL = 5  # PRD §14
 
@@ -41,7 +42,7 @@ async def get_overview(site_id: str, mq_id: str) -> dict[str, Any]:
         async with get_semaphore("mq"):
             return await provider.get_overview()
 
-    return await cached(f"ops:cache:mq:{mq_id}:overview", CACHE_TTL, factory)
+    return await cached(f"ops:cache:mq:{mq_id}:overview", CACHE_TTL, with_retry(factory))
 
 
 async def get_queues(site_id: str, mq_id: str) -> list[dict[str, Any]]:
@@ -53,7 +54,7 @@ async def get_queues(site_id: str, mq_id: str) -> list[dict[str, Any]]:
         async with get_semaphore("mq"):
             return await provider.get_queues()
 
-    queues = await cached(f"ops:cache:mq:{mq_id}:queues", CACHE_TTL, factory)
+    queues = await cached(f"ops:cache:mq:{mq_id}:queues", CACHE_TTL, with_retry(factory))
     for q in queues:
         name = q.get("name") or ""
         series = _series_key(mq_id, name)
@@ -105,7 +106,7 @@ async def get_addresses(site_id: str, mq_id: str) -> list[dict[str, Any]]:
         async with get_semaphore("mq"):
             return await provider.get_addresses()
 
-    return await cached(f"ops:cache:mq:{mq_id}:addresses", CACHE_TTL, factory)
+    return await cached(f"ops:cache:mq:{mq_id}:addresses", CACHE_TTL, with_retry(factory))
 
 
 # ---------- 连接测试 ----------

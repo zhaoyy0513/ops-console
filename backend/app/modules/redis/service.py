@@ -14,6 +14,7 @@ from backend.app.modules.sites.service import NotFound
 from backend.app.shared import testconn
 from backend.app.shared.concurrency import get_semaphore
 from backend.app.shared.errors import OpsError
+from backend.app.shared.retry import with_retry
 from backend.app.shared.timeout import with_timeout
 
 CACHE_TTL = 5  # PRD §14
@@ -47,7 +48,7 @@ async def get_info(site_id: str, redis_id: str, db: int | None = None) -> dict[s
         async with get_semaphore("target_redis"):
             return await provider.get_info(db)
 
-    return await cached(f"ops:cache:redis:{redis_id}:info", CACHE_TTL, factory)
+    return await cached(f"ops:cache:redis:{redis_id}:info", CACHE_TTL, with_retry(factory))
 
 
 # ---------- SCAN 浏览（PRD §11.2/§11.3） ----------

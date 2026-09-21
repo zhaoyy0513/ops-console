@@ -7,6 +7,7 @@ from backend.app.core.cache import cached
 from backend.app.modules.server.provider import SSHServerMetricsProvider
 from backend.app.modules.sites.service import NotFound
 from backend.app.shared import testconn
+from backend.app.shared.retry import with_retry
 from backend.app.shared.concurrency import get_semaphore
 
 CACHE_TTL = 5  # PRD §14：Server Metrics TTL 5~10s
@@ -28,7 +29,8 @@ async def _require_server_config(site_id: str, server_id: str) -> dict[str, Any]
 
 async def _with_cache(site_id: str, server_id: str, kind: str, factory) -> Any:
     async with get_semaphore("ssh"):
-        return await cached(f"ops:cache:server:{server_id}:{kind}", CACHE_TTL, factory)
+        # 读路径套连接级有限重试（PRD §26）；写路径无此资源
+        return await cached(f"ops:cache:server:{server_id}:{kind}", CACHE_TTL, with_retry(factory))
 
 
 async def get_metrics(site_id: str, server_id: str) -> dict[str, Any]:
