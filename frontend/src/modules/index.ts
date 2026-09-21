@@ -4,6 +4,7 @@ import './server'
 import './redis'
 import './mq'
 import './robot'
+import './database'
 import './demo'
 
 export { getModules } from './registry'
