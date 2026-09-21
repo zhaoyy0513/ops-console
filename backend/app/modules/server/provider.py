@@ -232,6 +232,25 @@ class SSHServerMetricsProvider(ServerMetricsProvider):
         cores = out.get("cores", "").strip()
         return f"SSH OK, {cores or '?'} cores"
 
+    async def health_check(self) -> dict[str, Any]:
+        """后台轻量检查（PRD §16）：仅 cpu+memory 两条命令，阈值判定。"""
+        from .diagnosis import diagnose
+
+        out = await self._collect(["cpu", "memory"])
+        metrics = {
+            "cpu": parse_cpu(out["cpu"]),
+            "memory": parse_memory(out["memory"]),
+            "disk": [],
+            "load": {},
+        }
+        mem = metrics["memory"]
+        mem_pct = (mem["used"] / mem["total"] * 100) if mem.get("total") and mem.get("used") is not None else None
+        result = diagnose(metrics)
+        return {
+            "status": result["status"],
+            "message": f"cpu {metrics['cpu']['usage']}%, mem {round(mem_pct) if mem_pct is not None else '?'}%",
+        }
+
     async def get_processes(self) -> list[dict[str, Any]]:
         out = await self._collect(["processes"])
         return parse_processes(out["processes"])
