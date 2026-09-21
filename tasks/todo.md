@@ -38,8 +38,8 @@
 ### Task 04: 操作日志 core
 **描述**：`core/oplog.py`：`record(site, resource, operation, target, params, result, error)` → `LPUSH ops:oplog` + `LTRIM 0 999`；`read_recent(n)`、`read_page(page, size)`。无用户字段。
 **验收标准**：
-- [ ] 单测：写入超 1000 条后仅保留最近 1000
-- [ ] 单测：`read_recent(20)` 返回最近 20 条
+- [x] 单测：写入超 1000 条后仅保留最近 1000
+- [x] 单测：`read_recent(20)` 返回最近 20 条
 **依赖**：T02
 **文件**：`backend/app/core/oplog.py`、`backend/tests/test_oplog.py`
 **规模**：S
@@ -47,16 +47,16 @@
 ### Task 05: 前端骨架 + 模块注册机制
 **描述**：`api/` axios 封装（统一错误处理）、`layouts/`（侧边栏/顶栏/Site 切换器占位）、`stores/site.ts`（currentSiteId/currentSite）、`modules/registry.ts`（`defineOpsModule` + OpsModule 类型）、router 遍历 registry 生成 `/console/site/:siteId/:moduleId`；一个 demo 模块端到端。
 **验收标准**：
-- [ ] 新增 demo 模块 = 新增目录 + 一行注册，菜单与路由自动出现（不改 layout/router）
-- [ ] vitest：registry 排序/注册单测通过
+- [x] 新增 demo 模块 = 新增目录 + 一行注册，菜单与路由自动出现（不改 layout/router）
+- [x] vitest：registry 排序/注册单测通过
 **依赖**：T01（可与 T02-T04 并行）
 **文件**：`frontend/src/{api,layouts,stores,router,modules}/**`
 **规模**：M
 
 ### ✅ Checkpoint 1（T01-T05）
-- [ ] 前后端 dev server 可启动，pytest 全绿
-- [ ] demo 模块：前端一行注册出菜单/路由，后端一行注册出路由
-- [ ] `main.py` 干净（仅 app + register_all）
+- [x] 前后端 dev server 可启动，pytest 全绿
+- [x] demo 模块：前端一行注册出菜单/路由，后端一行注册出路由
+- [x] `main.py` 干净（仅 app + register_all）
 
 ---
 
