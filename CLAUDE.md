@@ -15,7 +15,7 @@ Internal Ops & Diagnostics Platform ("Ops Console"). Monorepo:
 ```bash
 # Backend
 uv sync                                        # install deps into .venv
-uv run uvicorn backend.app.main:app --reload   # dev server (http://127.0.0.1:8000, docs at /docs)
+uv run --env-file dev.env uvicorn backend.app.main:app --reload   # dev server (http://127.0.0.1:8000, docs at /docs)
 uv run pytest                                  # run backend tests
 uv add <package>                               # add a dependency
 
