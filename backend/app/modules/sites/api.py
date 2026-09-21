@@ -79,7 +79,7 @@ RESOURCE_MODELS: dict[str, tuple[type[BaseModel], type[BaseModel]]] = {
 }
 
 
-def _add_resource_routes(res_type: str, create_model_cls: type, update_model_cls: type) -> None:
+def _add_resource_routes(res_type: str, url_segment: str, create_model_cls: type, update_model_cls: type) -> None:
     def not_found(detail: str) -> HTTPException:
         return HTTPException(status_code=404, detail=detail)
 
@@ -127,15 +127,20 @@ def _add_resource_routes(res_type: str, create_model_cls: type, update_model_cls
     for fn in (list_resources, create_resource, get_resource, update_resource, delete_resource):
         fn.__name__ = f"{fn.__name__}_{res_type}"  # 避免重复 operation id
 
-    router.get(f"/sites/{{site_id}}/{res_type}")(list_resources)
-    router.post(f"/sites/{{site_id}}/{res_type}", status_code=201)(create_resource)
-    router.get(f"/sites/{{site_id}}/{res_type}/{{resource_id}}")(get_resource)
-    router.put(f"/sites/{{site_id}}/{res_type}/{{resource_id}}")(update_resource)
-    router.delete(f"/sites/{{site_id}}/{res_type}/{{resource_id}}", status_code=204)(delete_resource)
+    router.get(f"/sites/{{site_id}}/{url_segment}")(list_resources)
+    router.post(f"/sites/{{site_id}}/{url_segment}", status_code=201)(create_resource)
+    router.get(f"/sites/{{site_id}}/{url_segment}/{{resource_id}}")(get_resource)
+    router.put(f"/sites/{{site_id}}/{url_segment}/{{resource_id}}")(update_resource)
+    router.delete(f"/sites/{{site_id}}/{url_segment}/{{resource_id}}", status_code=204)(delete_resource)
+
+
+# robot 实例配置的 URL 段让位给 PRD §18 业务路由（/robots = 机器人列表），
+# 仅 URL 不同，存储 key 与 res_type 仍是 "robots"
+URL_SEGMENT = {"robots": "robot-instances"}
 
 
 for _type, (_create, _update) in RESOURCE_MODELS.items():
-    _add_resource_routes(_type, _create, _update)
+    _add_resource_routes(_type, URL_SEGMENT.get(_type, _type), _create, _update)
 
 
 # ---------- 导出 / 导入 ----------

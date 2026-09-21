@@ -19,12 +19,24 @@ export type ResourceConfig = {
 
 export type ResourceType = 'servers' | 'redis' | 'mq' | 'robots'
 
+/** 资源实例 CRUD 的 URL 段（robots 让位给业务路由 /robots，PRD §18） */
+export const URL_SEGMENT: Record<ResourceType, string> = {
+  servers: 'servers',
+  redis: 'redis',
+  mq: 'mq',
+  robots: 'robot-instances',
+}
+
 /** 资源路由类型 -> 连接测试类型（PRD §13：server|redis|mq|robot） */
 export const TEST_TYPE: Record<ResourceType, string> = {
   servers: 'server',
   redis: 'redis',
   mq: 'mq',
   robots: 'robot',
+}
+
+function resUrl(siteId: string, type: ResourceType): string {
+  return `/sites/${siteId}/${URL_SEGMENT[type]}`
 }
 
 export const sitesApi = {
@@ -35,15 +47,11 @@ export const sitesApi = {
   remove: (id: string) => api.delete<void>(`/sites/${id}`),
 
   listResources: (siteId: string, type: ResourceType) =>
-    api.get<ResourceConfig[]>(`/sites/${siteId}/${type}`),
+    api.get<ResourceConfig[]>(resUrl(siteId, type)),
   createResource: (siteId: string, type: ResourceType, data: Record<string, unknown>) =>
-    api.post<ResourceConfig>(`/sites/${siteId}/${type}`, data),
-  updateResource: (
-    siteId: string,
-    type: ResourceType,
-    id: string,
-    data: Record<string, unknown>,
-  ) => api.put<ResourceConfig>(`/sites/${siteId}/${type}/${id}`, data),
+    api.post<ResourceConfig>(resUrl(siteId, type), data),
+  updateResource: (siteId: string, type: ResourceType, id: string, data: Record<string, unknown>) =>
+    api.put<ResourceConfig>(`${resUrl(siteId, type)}/${id}`, data),
   removeResource: (siteId: string, type: ResourceType, id: string) =>
-    api.delete<void>(`/sites/${siteId}/${type}/${id}`),
+    api.delete<void>(`${resUrl(siteId, type)}/${id}`),
 }
