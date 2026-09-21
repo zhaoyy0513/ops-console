@@ -83,7 +83,7 @@
 ### Task 08: 配置导出 / 导入
 **描述**：`POST /api/sites/export`（全量 JSON）、`POST /api/sites/import`（覆盖式导入），写 oplog（SITE_CONFIG_CHANGED）。
 **验收标准**：
-- [ ] 单测：export → 清空 → import 后站点与资源一致
+- [x] 单测：export → 清空 → import 后站点与资源一致
 **依赖**：T07
 **文件**：`backend/app/modules/sites/*`
 **规模**：S
@@ -100,8 +100,8 @@
 ### Task 10: 连接测试框架
 **描述**：`POST /api/test-connection` Body `{type, config}`，按 type 分发到各模块 provider 的 `test(config)`；响应 `{success, latency_ms, message}`；前端通用 `ResourceTestButton.vue`（loading / 结果 / 错误信息），表单内（未保存配置）与列表（已存配置含密码）两处可用。
 **验收标准**：
-- [ ] 未知 type 返回统一错误包络
-- [ ] ResourceTestButton 单测：success / failure 两态渲染
+- [x] 未知 type 返回统一错误包络
+- [x] ResourceTestButton 单测：success / failure 两态渲染
 **依赖**：T03、T05
 **文件**：`backend/app/shared/`（或 core）测试分发器、`frontend/src/components/ResourceTestButton.vue`
 **规模**：S
