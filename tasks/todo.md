@@ -205,14 +205,14 @@
 **描述**：类型化编辑（STRING 文本域 / HASH 表格或 JSON / LIST、SET JSON 数组 / ZSET score+member JSON）、TTL 输入框（设置/清除）、保存确认对话框（显示 key 与变更摘要）、`CountdownConfirm.vue` 通用组件（删除 5 秒倒计时禁点）。
 **验收标准**：
 - [x] 每种类型完成一次编辑→保存→重查一致（pytest 5 类型 + 真机 zset/string 冒烟）
-- [ ] 删除按钮 5 秒内不可点，倒计时结束可删（vitest 已断言；浏览器交互留 T32）
+- [x] 删除按钮 5 秒内不可点，倒计时结束可删（vitest 已断言；浏览器交互留 T32）
 **依赖**：T18、T19
 **文件**：`frontend/src/modules/redis/**`、`frontend/src/components/CountdownConfirm.vue`
 **规模**：M
 
 ### ✅ Checkpoint 4（T16-T20）
-- [ ] SCAN 无 KEYS（grep 验证，验收 9）
-- [ ] 编辑保存、倒计时删除、危险命令拒绝、oplog 全部可演示（验收 10/11/12/13）
+- [x] SCAN 无 KEYS（grep 验证，验收 9）
+- [x] 编辑保存、倒计时删除、危险命令拒绝、oplog 全部可演示（验收 10/11/12/13）
 
 ---
 
@@ -272,8 +272,8 @@
 ### Task 26: 后台健康检查 job
 **描述**：APScheduler 30 秒轻量检查（Server CPU/Mem/Disk、MQ 连接/backlog、Redis 连接/内存、Robot 可达性），结果写缓存供 Overview 使用；详细数据仍按需查询。
 **验收标准**：
-- [ ] 单测：单轮检查聚合各模块轻量结果并写缓存 key
-- [ ] 单个资源失败不影响其他资源检查
+- [x] 单测：单轮检查聚合各模块轻量结果并写缓存 key
+- [x] 单个资源失败不影响其他资源检查
 **依赖**：T22（scheduler）、T12/T16/T21/T24
 **文件**：`backend/app/core/scheduler.py`、`backend/app/modules/overview/service.py`
 **规模**：M
@@ -281,7 +281,7 @@
 ### Task 27: Overview API
 **描述**：`GET /api/sites/{id}/overview`：Overall（HEALTHY/WARNING/CRITICAL）、各资源类型计数与状态、异常摘要 issues[]、最近 20 条 oplog。
 **验收标准**：
-- [ ] 单测：任一资源 CRITICAL → Overall CRITICAL；仅 WARNING → WARNING
+- [x] 单测：任一资源 CRITICAL → Overall CRITICAL；仅 WARNING → WARNING
 **依赖**：T26、T04
 **文件**：`backend/app/modules/overview/{api,service}.py`
 **规模**：M
@@ -289,7 +289,7 @@
 ### Task 28: 前端 Overview 模块
 **描述**：站点健康瓦片（四类资源计数 + 状态色）、异常摘要列表（可点击跳转对应模块）、最近操作卡片、站点无资源空态。
 **验收标准**：
-- [ ] 异常摘要点击跳转到对应模块页面
+- [x] 异常摘要点击跳转到对应模块页面
 **依赖**：T05、T27
 **文件**：`frontend/src/modules/overview/**`
 **规模**：M
@@ -301,7 +301,7 @@
 ### Task 29: Audit API + 前端日志页
 **描述**：`GET /api/audit?page&size`（分页读 ops:oplog 全量 ≤1000）；前端独立操作日志页（时间/站点/资源/操作/目标/结果，表格分页）。
 **验收标准**：
-- [ ] 分页边界（空/末页）正常
+- [x] 分页边界（空/末页）正常
 **依赖**：T04、T05
 **文件**：`backend/app/modules/audit/api.py`、`frontend/src/modules/audit/**`
 **规模**：S
@@ -309,8 +309,8 @@
 ### Task 30: 稳定性收尾
 **描述**：全仓审计——所有外部调用有 timeout（§26 数值）、Connection Error 最多重试 1-2 次、SSH/MQ/Robot 信号量并发上限生效、所有对外错误走统一包络、前端 Unknown/超时态全覆盖。
 **验收标准**：
-- [ ] grep/审查清单逐项过（timeout、retry、信号量、错误包络）
-- [ ] 人为断开某资源，平台其余功能不受影响
+- [x] grep/审查清单逐项过（timeout、retry、信号量、错误包络）
+- [x] 人为断开某资源，平台其余功能不受影响
 **依赖**：T12、T16-T18、T21-T24
 **文件**：`backend/app/**`（分散小改）
 **规模**：M
@@ -322,8 +322,8 @@
 ### Task 31: Docker Compose
 **描述**：backend Dockerfile（uv 安装 + 运行）、ops-nginx（托管 frontend dist + `/api` proxy_pass backend:8000）、`compose.yaml` + `.env`（宿主机端口默认 8090、OPS_REDIS_URL、超时变量、OPS_LOG_LEVEL）、volume backend-logs。不构建 Redis，不占用 80。
 **验收标准**：
-- [ ] `docker compose up -d` 一条命令启动，`http://<host>:8090` 可用且 `/api` 反代正常（验收 1/2）
-- [ ] 与现有 nginx（80）互不影响
+- [x] `docker compose up -d` 一条命令启动，`http://<host>:8090` 可用且 `/api` 反代正常（验收 1/2）
+- [x] 与现有 nginx（80）互不影响
 **依赖**：T01-T30（功能完备后）
 **文件**：`backend/Dockerfile`、`deploy/nginx.conf`、`compose.yaml`、`.env.example`
 **规模**：M
@@ -335,8 +335,8 @@
 ### Task 32: 测试补全 + E2E 主路径
 **描述**：对照 PRD §32 补齐单元/API 测试缺口；E2E 主路径：选 Site → Overview → Server → Redis 搜索 → 编辑 Key 保存 → 倒计时删除 → 连接测试 → MQ → Robot。
 **验收标准**：
-- [ ] E2E 全路径通过一次录屏/截图留证
-- [ ] pytest + vitest 全绿
+- [x] E2E 全路径通过一次录屏/截图留证
+- [x] pytest + vitest 全绿
 **依赖**：T31
 **文件**：`backend/tests/**`、`frontend/tests 或 e2e/**`
 **规模**：M
@@ -344,12 +344,12 @@
 ### Task 33: 扩展性验证 demo（验收 17/18）
 **描述**：新增后端 `modules/database/`（返回假指标的一个 GET 路由）+ 前端 `modules/database/`（一个只读页面），各自仅"新增目录 + 一行注册"，不改 main.py / layout / router / store。
 **验收标准**：
-- [ ] git diff 显示核心文件零改动（仅 modules 列表各加一行）
-- [ ] demo 模块页面与菜单正常出现
+- [x] git diff 显示核心文件零改动（仅 modules 列表各加一行）
+- [x] demo 模块页面与菜单正常出现
 **依赖**：T03、T05
 **文件**：`backend/app/modules/database/**`、`frontend/src/modules/database/**`
 **规模**：S
 
 ### ✅ Checkpoint 6（完成）
-- [ ] PRD §33 验收标准 1-18 逐条核对通过
-- [ ] V1 完成
+- [x] PRD §33 验收标准 1-18 逐条核对通过
+- [x] V1 完成
