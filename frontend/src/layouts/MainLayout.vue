@@ -58,6 +58,7 @@ function onSiteSelect(id: string) {
         @update:value="onSiteSelect"
       />
       <div style="flex: 1" />
+      <n-button size="small" quaternary @click="router.push('/audit')">操作日志</n-button>
       <n-button size="small" quaternary @click="router.push('/sites')">站点管理</n-button>
     </header>
     <div class="app-body">
