@@ -28,6 +28,12 @@ cd frontend && npx vitest run                  # frontend tests
 
 Note: if `uv run uvicorn ...` fails with "uv trampoline failed to canonicalize script path", run `uv sync --reinstall-package uvicorn` (stale trampoline from an older uv), or use `uv run python -m uvicorn backend.app.main:app`.
 
+Local dev env vars live in `dev.env` (gitignored, holds real creds; see `dev.env.example`). Backend tests use fakeredis — no live services needed.
+
+Live E2E (needs dev.env + reachable backend on :8123): `uv run --env-file dev.env python scripts/e2e_live.py`
+
+Deploy: `docker compose up -d --build` (backend + ops-nginx on `${OPS_PORT:-8090}`, reuses existing Redis via `OPS_REDIS_URL`; copy `.env.example` to `.env` first).
+
 Tests (pytest / vitest) are configured but no test files exist yet.
 
 ## Conventions
