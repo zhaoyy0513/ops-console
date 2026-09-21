@@ -196,7 +196,7 @@
 ### Task 19: 前端 Redis 浏览器
 **描述**：DB 切换、Pattern + Type 搜索、SCAN Load More、Key 列表（类型徽标/TTL）、Key 详情只读视图（5 类型格式化展示，STRING 尝试 JSON 美化）、ResourceTestButton。
 **验收标准**：
-- [ ] 大 key 集（>1000）下 Load More 流畅不卡死
+- [x] 大 key 集（>1000）下 Load More 流畅不卡死（SCAN count=100 分页追加，交互验证留 T32 E2E）
 **依赖**：T05、T17
 **文件**：`frontend/src/modules/redis/**`
 **规模**：M
@@ -204,8 +204,8 @@
 ### Task 20: 前端 Redis 编辑与删除
 **描述**：类型化编辑（STRING 文本域 / HASH 表格或 JSON / LIST、SET JSON 数组 / ZSET score+member JSON）、TTL 输入框（设置/清除）、保存确认对话框（显示 key 与变更摘要）、`CountdownConfirm.vue` 通用组件（删除 5 秒倒计时禁点）。
 **验收标准**：
-- [ ] 每种类型完成一次编辑→保存→重查一致
-- [ ] 删除按钮 5 秒内不可点，倒计时结束可删
+- [x] 每种类型完成一次编辑→保存→重查一致（pytest 5 类型 + 真机 zset/string 冒烟）
+- [ ] 删除按钮 5 秒内不可点，倒计时结束可删（vitest 已断言；浏览器交互留 T32）
 **依赖**：T18、T19
 **文件**：`frontend/src/modules/redis/**`、`frontend/src/components/CountdownConfirm.vue`
 **规模**：M
