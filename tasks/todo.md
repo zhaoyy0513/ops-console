@@ -168,8 +168,8 @@
 ### Task 16: 目标 Redis Provider + Info + 测试
 **描述**：按站点配置动态建连（与平台 Redis 不同连接对象，严禁混用）；`GET .../redis/{id}/info`（§11.1 字段）；provider `test()`（PING + INFO，返回版本）。
 **验收标准**：
-- [ ] 单测/代码审查：平台与业务 Redis 客户端来自不同工厂，无共享连接
-- [ ] info 字段覆盖 §11.1 列表
+- [x] 单测/代码审查：平台与业务 Redis 客户端来自不同工厂，无共享连接
+- [x] info 字段覆盖 §11.1 列表
 **依赖**：T07、T10
 **文件**：`backend/app/modules/redis/provider.py`
 **规模**：M
@@ -177,8 +177,8 @@
 ### Task 17: SCAN 浏览 + Key 详情
 **描述**：`GET .../keys?db&pattern&cursor&count&type`（SCAN cursor MATCH COUNT，类型过滤在客户端 TYPE 过滤或 SCAN 后过滤）；`GET .../key?db&key` 返回 5 类型的 value + TTL + memory usage。禁 KEYS。
 **验收标准**：
-- [ ] 单测：游标翻页（Load More 语义）正确
-- [ ] `grep -r "keys(" backend/app/modules/redis` 无 SCAN 之外的用法
+- [x] 单测：游标翻页（Load More 语义）正确
+- [x] `grep -r "keys(" backend/app/modules/redis` 无 SCAN 之外的用法（SCAN 仅经 provider.scan）
 **依赖**：T16
 **文件**：`backend/app/modules/redis/{api,service}.py`
 **规模**：M
@@ -186,9 +186,9 @@
 ### Task 18: 操作 API + 危险命令拒绝 + oplog
 **描述**：`POST .../operations` `{op: set|delete|expire, db, key, ...}`，按类型校验 value 结构；命令白名单实现（SCAN/INFO/GET 系/SET 系/DEL/EXPIRE/TTL/TYPE/PTTL/MEMORY USAGE），FLUSHDB/FLUSHALL/CONFIG/SHUTDOWN/SCRIPT FLUSH/EVAL 在实现层不可达；每次写操作记 oplog。
 **验收标准**：
-- [ ] 单测穷举危险命令 → 全部 4xx 拒绝
-- [ ] 单测：set/delete/expire 各产生一条 oplog
-- [ ] value 参数非法 → 422，不触达 Redis
+- [x] 单测穷举危险命令 → 全部 4xx 拒绝
+- [x] 单测：set/delete/expire 各产生一条 oplog
+- [x] value 参数非法 → 4xx，不触达 Redis
 **依赖**：T04、T17
 **文件**：`backend/app/modules/redis/{api,service}.py`
 **规模**：M

@@ -61,6 +61,10 @@ class TargetRedisProvider:
         try:
             async with self._client(db) as c:
                 info = await with_timeout(c.info(), settings.redis_connect_timeout, resource=self._host)
+                try:
+                    info["dbsize"] = await c.dbsize()  # INFO 默认段不含各 DB keyspace
+                except Exception:  # noqa: BLE001
+                    pass
         except OpsError:
             raise
         except (aioredis.RedisError, OSError) as e:

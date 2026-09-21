@@ -46,6 +46,9 @@ class _StubInfoClient:
     async def info(self, section=None):
         return CANNED_INFO
 
+    async def dbsize(self):
+        return CANNED_INFO["db_size"]
+
     async def ping(self):
         return True
 
