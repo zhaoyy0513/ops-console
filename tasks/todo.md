@@ -126,8 +126,8 @@
 ### Task 12: Server API + 缓存合并
 **描述**：`GET servers/{id}/metrics|processes`（5s 缓存 + Redis 锁合并 + SSH 超时）+ provider `test()` 接入 `/api/test-connection`（连接 + 认证 + 白名单命令可执行）。
 **验收标准**：
-- [ ] 单测：并发请求同一 server 仅一次 SSH 调用
-- [ ] SSH 失败返回统一错误包络，接口不 500
+- [x] 单测：并发请求同一 server 仅一次 SSH 调用
+- [x] SSH 失败返回统一错误包络，接口不 500
 **依赖**：T07、T10、T11
 **文件**：`backend/app/modules/server/{api,service}.py`
 **规模**：M
