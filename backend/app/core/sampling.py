@@ -1,0 +1,33 @@
+"""短期指标采样：Redis List 保存 (ts, value)，供趋势对比（PRD §9.6）。
+
+第一版不建时序库——够 queue backlog 趋势和 commands/sec 这类短窗对比。
+"""
+
+import time
+import json
+
+from .redis import get_platform_redis
+
+SAMPLE_MAX = 20  # 每序列最多 20 个点（60s 间隔 ≈ 20 分钟窗口）
+
+
+def sample_key(resource_id: str, series: str) -> str:
+    return f"ops:sample:{resource_id}:{series}"
+
+
+async def push_sample(resource_id: str, series: str, value: float) -> None:
+    entry = json.dumps({"ts": int(time.time()), "v": value})
+    async with get_platform_redis().pipeline(transaction=True) as pipe:
+        pipe.lpush(sample_key(resource_id, series), entry)
+        pipe.ltrim(sample_key(resource_id, series), 0, SAMPLE_MAX - 1)
+        await pipe.execute()
+
+
+async def value_minutes_ago(resource_id: str, series: str, minutes: float = 5) -> float | None:
+    """返回 >= minutes 前的最近一个采样值；无足够历史时 None。"""
+    cutoff = time.time() - minutes * 60
+    raw = await get_platform_redis().lrange(sample_key(resource_id, series), 0, SAMPLE_MAX - 1)
+    for entry in (json.loads(x) for x in raw):  # 新 -> 旧
+        if entry["ts"] <= cutoff:
+            return entry["v"]
+    return None
