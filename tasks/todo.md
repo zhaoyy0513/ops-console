@@ -10,9 +10,9 @@
 ### Task 01: 仓库结构重组与依赖安装
 **描述**：`main.py` 迁入 `backend/app/main.py`；根 pyproject 增加运行依赖（pydantic v2、redis-py、asyncssh、httpx、apscheduler、loguru）与 dev 依赖（pytest、pytest-asyncio、httpx）；脚手架 `frontend/`（Vite + Vue3 + TS + naive-ui + pinia + vue-router + axios + echarts，dev 加 vitest）。
 **验收标准**：
-- [ ] `uv run uvicorn backend.app.main:app --reload` 访问 `/` 返回 Hello World
-- [ ] `cd frontend && npm run dev` 可打开页面，`npm run build` 通过
-- [ ] CLAUDE.md 的命令更新为新结构
+- [x] `uv run uvicorn backend.app.main:app --reload` 访问 `/` 返回 Hello World
+- [x] `cd frontend && npm run dev` 可打开页面，`npm run build` 通过
+- [x] CLAUDE.md 的命令更新为新结构
 **依赖**：无
 **文件**：`backend/app/main.py`、`pyproject.toml`、`frontend/**`、`CLAUDE.md`
 **规模**：M
