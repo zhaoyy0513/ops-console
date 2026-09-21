@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { NMenu, NSelect } from 'naive-ui'
+import { NButton, NMenu, NSelect } from 'naive-ui'
 import { getModules } from '../modules'
+import { sitesApi, type Site } from '../modules/sites/api'
 import { useSiteStore } from '../stores/site'
 
 const route = useRoute()
@@ -13,8 +14,17 @@ const modules = getModules()
 const menuOptions = modules.map((m) => ({ label: m.title, key: m.routePath }))
 const activeKey = computed(() => String(route.params.moduleId ?? ''))
 
-// 站点列表 API 在 T06 落地，当前为占位项
-const siteOptions = [{ label: 'demo-site', value: 'demo-site' }]
+// 站点选项来自后端（T06 API）
+const siteOptions = ref<Array<{ label: string; value: string }>>([])
+
+onMounted(async () => {
+  try {
+    const sites: Site[] = await sitesApi.list()
+    siteOptions.value = sites.map((s) => ({ label: s.name, value: s.id }))
+  } catch {
+    // 后端未就绪时选择器留空，不阻塞页面
+  }
+})
 
 watch(
   () => route.params.siteId,
@@ -43,10 +53,12 @@ function onSiteSelect(id: string) {
         class="site-select"
         size="small"
         placeholder="选择站点"
-        :value="siteStore.currentSiteId"
+        :value="siteStore.currentSiteId || null"
         :options="siteOptions"
         @update:value="onSiteSelect"
       />
+      <div style="flex: 1" />
+      <n-button size="small" quaternary @click="router.push('/sites')">站点管理</n-button>
     </header>
     <div class="app-body">
       <aside class="app-sider">
