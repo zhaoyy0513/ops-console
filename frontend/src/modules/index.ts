@@ -2,5 +2,7 @@
 import './demo'
 import './server'
 import './redis'
+import './mq'
+import './robot'
 
 export { getModules } from './registry'
