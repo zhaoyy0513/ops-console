@@ -20,8 +20,8 @@
 ### Task 02: 后端 core 基础设施
 **描述**：`core/config.py`（OPS_REDIS_URL、超时组等环境变量）、`core/redis.py`（平台 Redis 单例，独占 `OPS_REDIS_URL`）、`core/cache.py`（短 TTL 缓存 + 短 TTL 锁请求合并）、`shared/errors.py`（统一错误包络 `{success, error_code, message, resource}`）、`shared/timeout.py`、`shared/concurrency.py`（每类资源信号量）。提供 `GET /api/health`。
 **验收标准**：
-- [ ] `/api/health` 返回平台 Redis ping 结果
-- [ ] 单测：并发 10 次缓存未命中调用只产生 1 次下游访问（锁合并生效）
+- [x] `/api/health` 返回平台 Redis ping 结果
+- [x] 单测：并发 10 次缓存未命中调用只产生 1 次下游访问（锁合并生效）
 **依赖**：T01
 **文件**：`backend/app/core/*`、`backend/app/shared/*`
 **规模**：M
