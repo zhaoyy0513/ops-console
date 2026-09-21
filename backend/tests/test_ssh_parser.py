@@ -221,7 +221,7 @@ async def test_provider_output_structure(fake_ssh):
     processes = await p.get_processes()
     assert processes[0]["pid"] == 123456
 
-    disk = await p.get_disk()
+    disk = metrics["disk"]
     data = {d["mount"]: d for d in disk}
     assert data["/data"]["use_percent"] == 95
     assert data["/data"]["inode_percent"] == 19

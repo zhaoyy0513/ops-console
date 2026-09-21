@@ -214,14 +214,23 @@ class SSHServerMetricsProvider(ServerMetricsProvider):
                 pass
 
     async def get_metrics(self) -> dict[str, Any]:
-        out = await self._collect(["cpu", "load", "cores", "memory", "network"])
+        out = await self._collect(
+            ["cpu", "load", "cores", "memory", "network", "disk_usage", "disk_inode"]
+        )
         cores_raw = out.get("cores", "")
         return {
             "cpu": {**parse_cpu(out["cpu"]), "cores": int(cores_raw) if cores_raw.strip().isdigit() else None},
             "load": parse_load(out["load"]),
             "memory": parse_memory(out["memory"]),
             "network": parse_network(out["network"]),
+            "disk": merge_disk(parse_df(out["disk_usage"]), parse_df(out["disk_inode"])),
         }
+
+    async def run_test(self) -> str:
+        """连通性测试（PRD §13.2）：连接成功 + 认证成功 + 白名单命令可执行。"""
+        out = await self._collect(["cores"])
+        cores = out.get("cores", "").strip()
+        return f"SSH OK, {cores or '?'} cores"
 
     async def get_processes(self) -> list[dict[str, Any]]:
         out = await self._collect(["processes"])

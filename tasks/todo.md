@@ -117,8 +117,8 @@
 ### Task 11: SSH Provider（白名单 + 解析器）
 **描述**：`SSHServerMetricsProvider`（asyncssh，按需连接查完即关）：一次会话聚合执行固定白名单命令（top -bn1 / uptime / free -m / df -h / df -i / /proc/net/dev / ps），解析为结构化 metrics + processes；白名单为模块常量，API 层不可传入任何命令。
 **验收标准**：
-- [ ] 解析器单测：固定样本输出 → 全字段正确（含字段缺失 → None）
-- [ ] 单测：provider 只会执行白名单集合内的命令
+- [x] 解析器单测：固定样本输出 → 全字段正确（含字段缺失 → None）
+- [x] 单测：provider 只会执行白名单集合内的命令
 **依赖**：T02
 **文件**：`backend/app/modules/server/provider.py`、`backend/tests/test_ssh_parser.py`
 **规模**：M

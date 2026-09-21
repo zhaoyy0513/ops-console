@@ -120,10 +120,16 @@ async def list_resources(site_id: str, res_type: str, include_password: bool = F
     return sorted(items, key=lambda c: c["id"])
 
 
-async def get_resource(site_id: str, res_type: str, resource_id: str) -> dict | None:
+async def get_resource_raw(site_id: str, res_type: str, resource_id: str) -> dict | None:
+    """内部使用：读原始配置（含密码）。供各资源模块 provider 建连，严禁直接外发。"""
     await _require_site(site_id)
     raw = await get_platform_redis().hget(resource_key(site_id, res_type), resource_id)
-    return _strip_password(json.loads(raw)) if raw else None
+    return json.loads(raw) if raw else None
+
+
+async def get_resource(site_id: str, res_type: str, resource_id: str) -> dict | None:
+    item = await get_resource_raw(site_id, res_type, resource_id)
+    return _strip_password(item) if item else None
 
 
 async def create_resource(site_id: str, res_type: str, data: dict) -> dict:
