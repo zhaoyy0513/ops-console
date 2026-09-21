@@ -1,0 +1,36 @@
+# Ops Console（PRD §25.1）：不包含 Redis（复用现有容器），不占用宿主机 80
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    restart: unless-stopped
+    environment:
+      OPS_REDIS_URL: ${OPS_REDIS_URL}
+      OPS_LOG_LEVEL: ${OPS_LOG_LEVEL:-INFO}
+      SSH_CONNECT_TIMEOUT: ${SSH_CONNECT_TIMEOUT:-5}
+      SSH_COMMAND_TIMEOUT: ${SSH_COMMAND_TIMEOUT:-10}
+      HTTP_CONNECT_TIMEOUT: ${HTTP_CONNECT_TIMEOUT:-5}
+      HTTP_READ_TIMEOUT: ${HTTP_READ_TIMEOUT:-10}
+      REDIS_CONNECT_TIMEOUT: ${REDIS_CONNECT_TIMEOUT:-5}
+      MQ_API_TIMEOUT: ${MQ_API_TIMEOUT:-10}
+    volumes:
+      - backend-logs:/app/logs
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request;urllib.request.urlopen('http://127.0.0.1:8000/api/health')\""]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  ops-nginx:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.nginx
+    restart: unless-stopped
+    ports:
+      - "${OPS_PORT:-8090}:80"
+    depends_on:
+      - backend
+
+volumes:
+  backend-logs:
