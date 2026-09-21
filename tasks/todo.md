@@ -29,8 +29,8 @@
 ### Task 03: 后端模块注册机制
 **描述**：`core/registry.py` + `modules/__init__.py` 的 `register_all(app)`；`main.py` 只负责 create app + register_all；加一个 demo 模块验证机制。
 **验收标准**：
-- [ ] demo 模块路由经 `register_all` 挂载可访问
-- [ ] `main.py` 中无任何具体模块 import
+- [x] demo 模块路由经 `register_all` 挂载可访问
+- [x] `main.py` 中无任何具体模块 import
 **依赖**：T02
 **文件**：`backend/app/core/registry.py`、`backend/app/modules/__init__.py`、`backend/app/main.py`
 **规模**：S
