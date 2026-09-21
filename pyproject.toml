@@ -3,6 +3,18 @@ name = "prime-monitor-platform"
 version = "0.1.0"
 requires-python = ">=3.13"
 dependencies = [
+    "apscheduler>=3.11.3",
+    "asyncssh>=2.24.0",
     "fastapi>=0.141.1",
+    "httpx>=0.28.1",
+    "loguru>=0.7.3",
+    "pydantic>=2.13.5",
+    "redis>=8.1.0",
     "uvicorn>=0.53.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
 ]
