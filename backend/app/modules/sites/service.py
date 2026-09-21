@@ -2,6 +2,7 @@ import json
 import uuid
 from datetime import datetime, timezone
 
+from backend.app.core import oplog
 from backend.app.core.redis import get_platform_redis
 
 SITES_KEY = "ops:sites"  # Set: 全部站点 id（PRD §6.2）
@@ -51,6 +52,7 @@ async def create_site(data: dict) -> dict:
     }
     await r.hset(site_key(site_id), mapping=full)
     await r.sadd(SITES_KEY, site_id)
+    await oplog.record(site_id, "site-config", "SITE_CREATED", target=site_id)
     return _row_to_site(full)
 
 
@@ -81,6 +83,7 @@ async def update_site(site_id: str, data: dict) -> dict | None:
     row["enabled"] = ("1" if data["enabled"] else "0") if "enabled" in data else row["enabled"]
     row["updated_at"] = _now()
     await r.hset(key, mapping=row)
+    await oplog.record(site_id, "site-config", "SITE_UPDATED", target=site_id)
     return _row_to_site(row)
 
 
@@ -91,6 +94,7 @@ async def delete_site(site_id: str) -> bool:
     keys = [site_key(site_id)] + [resource_key(site_id, t) for t in RESOURCE_TYPES]
     await r.delete(*keys)
     await r.srem(SITES_KEY, site_id)
+    await oplog.record(site_id, "site-config", "SITE_DELETED", target=site_id)
     return True
 
 
@@ -107,10 +111,13 @@ def _strip_password(config: dict) -> dict:
     return {k: ("" if k == "password" else v) for k, v in config.items()}
 
 
-async def list_resources(site_id: str, res_type: str) -> list[dict]:
+async def list_resources(site_id: str, res_type: str, include_password: bool = False) -> list[dict]:
     await _require_site(site_id)
     raw = await get_platform_redis().hvals(resource_key(site_id, res_type))
-    return sorted((_strip_password(json.loads(x)) for x in raw), key=lambda c: c["id"])
+    items = [json.loads(x) for x in raw]
+    if not include_password:
+        items = [_strip_password(c) for c in items]
+    return sorted(items, key=lambda c: c["id"])
 
 
 async def get_resource(site_id: str, res_type: str, resource_id: str) -> dict | None:
@@ -128,6 +135,7 @@ async def create_resource(site_id: str, res_type: str, data: dict) -> dict:
         raise DuplicateResource(resource_id)
     data = {**data, "id": resource_id}
     await r.hset(key, resource_id, json.dumps(data, ensure_ascii=False))
+    await oplog.record(site_id, f"{res_type}/{resource_id}", "RESOURCE_CONFIG_CREATED", target=resource_id)
     return _strip_password(data)
 
 
@@ -145,12 +153,15 @@ async def update_resource(site_id: str, res_type: str, resource_id: str, data: d
     old.update(data)
     old["id"] = resource_id
     await r.hset(key, resource_id, json.dumps(old, ensure_ascii=False))
+    await oplog.record(site_id, f"{res_type}/{resource_id}", "RESOURCE_CONFIG_UPDATED", target=resource_id)
     return _strip_password(old)
 
 
 async def delete_resource(site_id: str, res_type: str, resource_id: str) -> bool:
     await _require_site(site_id)
     deleted = await get_platform_redis().hdel(resource_key(site_id, res_type), resource_id)
+    if deleted:
+        await oplog.record(site_id, f"{res_type}/{resource_id}", "RESOURCE_CONFIG_DELETED", target=resource_id)
     return deleted > 0
 
 
@@ -172,3 +183,40 @@ class DuplicateSite(Exception):
 
 def uuid_hex() -> str:
     return uuid.uuid4().hex[:8]
+
+
+# ---------- 导出 / 导入（PRD §6.3） ----------
+
+
+async def export_all() -> dict:
+    """全量导出（含密码——导入后需可直接连通，仅限内部备份用途）。"""
+    sites = []
+    for site in await list_sites():
+        sid = site["id"]
+        site = dict(site)
+        for t in RESOURCE_TYPES:
+            site[t] = await list_resources(sid, t, include_password=True)
+        sites.append(site)
+    return {"version": 1, "exported_at": _now(), "sites": sites}
+
+
+async def import_all(sites: list[dict]) -> int:
+    """覆盖式导入：清空现有配置后按导出格式重建。"""
+    r = get_platform_redis()
+    old_ids = list(await r.smembers(SITES_KEY))
+    if old_ids:
+        keys: list[str] = [site_key(s) for s in old_ids]
+        keys += [resource_key(s, t) for s in old_ids for t in RESOURCE_TYPES]
+        await r.delete(*keys)
+        await r.srem(SITES_KEY, *old_ids)
+
+    for s in sites:
+        resources = {t: s.pop(t, []) for t in RESOURCE_TYPES}
+        await create_site(s)
+        sid = s["id"]
+        for t, items in resources.items():
+            for item in items:
+                await r.hset(resource_key(sid, t), item["id"], json.dumps(item, ensure_ascii=False))
+
+    await oplog.record("-", "site-config", "IMPORT_CONFIG", params={"sites": len(sites)})
+    return len(sites)

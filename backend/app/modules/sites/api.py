@@ -135,6 +135,30 @@ for _type, (_create, _update) in RESOURCE_MODELS.items():
     _add_resource_routes(_type, _create, _update)
 
 
+# ---------- 导出 / 导入 ----------
+
+
+class ImportPayload(BaseModel):
+    # extra=forbid：防止拼错的 payload 被当成"导入 0 个站点"而清空全部配置
+    model_config = {"extra": "forbid"}
+
+    version: int = 1
+    exported_at: str | None = None
+    sites: list[dict]
+
+
+@router.post("/sites/export")
+async def export_sites() -> dict:
+    """全量导出（含密码，仅内部备份用途，PRD §6.3）。"""
+    return await service.export_all()
+
+
+@router.post("/sites/import")
+async def import_sites(data: ImportPayload) -> dict:
+    count = await service.import_all(data.sites)
+    return {"imported": count}
+
+
 # ---------- 站点 CRUD ----------
 
 
