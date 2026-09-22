@@ -28,7 +28,7 @@ async def test_server_thresholds_roundtrip(client):
     await client.post("/api/sites", json={"id": "s1", "name": "S1"})
     r = await client.post(
         "/api/sites/s1/servers",
-        json={"id": "v1", "name": "v1", "host": "1.2.3.4", "thresholds": {"memory_warning": 75}},
+        json={"id": "v1", "name": "v1", "host": "1.2.3.4", "username": "u", "password": "p", "thresholds": {"memory_warning": 75}},
     )
     assert r.json()["thresholds"] == {"memory_warning": 75}
 

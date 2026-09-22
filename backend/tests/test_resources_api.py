@@ -64,7 +64,7 @@ async def test_redis_resource_crud_and_password_rules(client, fake_platform_redi
 async def test_server_resource_defaults(client, fake_platform_redis):
     await _make_site(client)
     r = await client.post(
-        "/api/sites/sz-test/servers", json={"id": "srv-01", "name": "srv-01", "host": "10.10.1.10"}
+        "/api/sites/sz-test/servers", json={"id": "srv-01", "name": "srv-01", "host": "10.10.1.10", "username": "u", "password": "p"}
     )
     assert r.status_code == 201
     assert r.json()["port"] == 22

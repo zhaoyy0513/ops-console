@@ -18,7 +18,7 @@ async def _seed(client):
     await client.post("/api/sites", json={"id": "sz-test", "name": "深圳测试站"})
     r = await client.post(
         "/api/sites/sz-test/servers",
-        json={"id": "srv-01", "name": "srv", "host": "1.2.3.4"},
+        json={"id": "srv-01", "name": "srv", "host": "1.2.3.4", "username": "u", "password": "p"},
     )
     assert r.status_code == 201
 

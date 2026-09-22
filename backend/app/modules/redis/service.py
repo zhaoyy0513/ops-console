@@ -9,6 +9,7 @@ from typing import Any
 
 from backend.app.core.cache import cached
 from backend.app.core import oplog
+from backend.app.core.config import settings
 from backend.app.modules.redis.provider import TargetRedisProvider
 from backend.app.modules.sites.service import NotFound
 from backend.app.shared import testconn
@@ -265,7 +266,12 @@ async def redis_tester(config: dict[str, Any]) -> dict[str, Any]:
     started = time.perf_counter()
     provider = _build_provider(config)
     async with get_semaphore("target_redis"):
-        message = await provider.run_test(config.get("db"))
+        # 连接测试 5s 硬顶（用户要求：连不上 5 秒就该报失败，不拖满 axios 超时）
+        message = await with_timeout(
+            provider.run_test(config.get("db")),
+            float(settings.redis_connect_timeout),
+            resource=config.get("host"),
+        )
     return {
         "success": True,
         "latency_ms": int((time.perf_counter() - started) * 1000),

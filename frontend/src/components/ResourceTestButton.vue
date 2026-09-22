@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { ref } from 'vue'
-import { NButton, NSpace, NTag } from 'naive-ui'
+import { computed, ref } from 'vue'
+import { NButton, NSpace, NTag, NTooltip } from 'naive-ui'
 import api from '../api'
 
 const props = defineProps<{
@@ -18,6 +18,13 @@ interface TestResult {
 
 const loading = ref(false)
 const result = ref<TestResult | null>(null)
+
+/** 标签内只显示短摘要（如剥掉 "SSH connect failed: " 前缀），全文在 tooltip */
+const shortMessage = computed(() => {
+  const m = result.value?.message ?? ''
+  const stripped = m.replace(/^SSH connect failed:\s*/, '').replace(/^Redis (connect|query) failed:\s*/, '')
+  return stripped.length > 40 ? `${stripped.slice(0, 40)}…` : stripped
+})
 
 async function run() {
   loading.value = true
@@ -38,8 +45,29 @@ async function run() {
 <template>
   <n-space align="center" :size="8" :wrap="false">
     <n-button size="small" :loading="loading" @click="run">Test</n-button>
-    <n-tag v-if="result" :type="result.success ? 'success' : 'error'" size="small" :bordered="false">
-      {{ result.success ? 'OK' : 'FAILED' }} · {{ result.message }} ({{ result.latency_ms }}ms)
-    </n-tag>
+    <n-tooltip v-if="result" trigger="hover">
+      <template #trigger>
+        <n-tag
+          class="result-tag"
+          :type="result.success ? 'success' : 'error'"
+          size="small"
+          :bordered="false"
+        >
+          {{ result.success ? 'OK' : 'FAILED' }} · {{ shortMessage }} ({{ result.latency_ms }}ms)
+        </n-tag>
+      </template>
+      {{ result.message }} <!-- 悬浮看全文，标签内截断不撑破弹窗 -->
+    </n-tooltip>
   </n-space>
 </template>
+
+<style scoped>
+.result-tag {
+  max-width: 260px;
+}
+.result-tag :deep(.n-tag__content) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+</style>

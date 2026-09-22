@@ -33,9 +33,8 @@ class ResourceBase(BaseModel):
 class ServerConfig(ResourceBase):
     host: str
     port: int = 22
-    username: str = ""
-    password: str = ""
-    private_key: str = ""  # SSH 私钥（可选，PRD §8.1）
+    username: str  # 现场仅支持用户名+密码登录（必填）
+    password: str  # 必填；明文存储，接口不回显
     thresholds: dict[str, int] | None = None  # 资源级阈值覆盖（PRD §8.6）
 
 
@@ -43,20 +42,19 @@ class RedisConfig(ResourceBase):
     host: str
     port: int = 6379
     username: str = ""
-    password: str = ""
-    db: int = 0
+    password: str = ""  # 可空（无密码站点）；浏览页可切 DB，配置不绑定
 
 
 class MqConfig(ResourceBase):
     host: str
-    port: int = 8161
+    port: int = 61616
     username: str = ""
     password: str = ""
 
 
 class RobotConfig(ResourceBase):
     base_url: str
-    list_path: str = "/robots"  # 列表端点按现场环境配置（PRD §12 统一接口下的路径差异）
+    list_path: str = "/robots"  # 列表端点路径（映射方式待现场确认，暂不暴露到表单）
     username: str = ""
     password: str = ""
 

@@ -18,7 +18,7 @@ async def _seed(client):
         json={"id": "redis-01", "name": "redis-01", "host": "10.10.1.20", "password": "secret"},
     )
     await client.post(
-        "/api/sites/sz-test/servers", json={"id": "srv-01", "name": "srv-01", "host": "10.10.1.10"}
+        "/api/sites/sz-test/servers", json={"id": "srv-01", "name": "srv-01", "host": "10.10.1.10", "username": "u", "password": "p"}
     )
 
 

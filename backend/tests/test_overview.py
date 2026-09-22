@@ -70,7 +70,7 @@ async def test_check_site_isolates_failures(client, fake_platform_redis, monkeyp
 
     monkeypatch.setattr(SSHServerMetricsProvider, "health_check", boom)
     monkeypatch.setattr(TargetRedisProvider, "run_test", ok)
-    await client.post("/api/sites/sz/servers", json={"id": "s1", "name": "s1", "host": "h"})
+    await client.post("/api/sites/sz/servers", json={"id": "s1", "name": "s1", "host": "h", "username": "u", "password": "p"})
     await client.post("/api/sites/sz/redis", json={"id": "r1", "name": "r1", "host": "h"})
 
     count = await service.check_site("sz")

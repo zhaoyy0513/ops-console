@@ -10,6 +10,7 @@ import {
   NInputNumber,
   NModal,
   NPopconfirm,
+  NSelect,
   NSpace,
   NSwitch,
   NTabPane,
@@ -36,41 +37,42 @@ const TYPES: Array<{ key: ResourceType; label: string }> = [
   { key: 'robots', label: 'Robot' },
 ]
 
-/** 各类型的专有字段（name/enabled 通用，PRD §5.2） */
+/** 各类型的专有字段（name/enabled 通用，PRD §5.2）；required 表单必填 */
 const FIELD_DEFS: Record<
   ResourceType,
-  Array<{ key: string; label: string; kind?: 'number' | 'password'; required?: boolean }>
+  Array<{ key: string; label: string; kind?: 'number' | 'host'; required?: boolean }>
 > = {
   servers: [
-    { key: 'host', label: 'Host', required: true },
+    { key: 'host', label: 'Host', kind: 'host', required: true },
     { key: 'port', label: 'Port', kind: 'number' },
-    { key: 'username', label: '用户名' },
-    { key: 'password', label: '密码', kind: 'password' },
-    { key: 'private_key', label: 'SSH 私钥' },
+    { key: 'username', label: '用户名', required: true },
+    { key: 'password', label: '密码', required: true },
   ],
   redis: [
-    { key: 'host', label: 'Host', required: true },
+    { key: 'host', label: 'Host', kind: 'host', required: true },
     { key: 'port', label: 'Port', kind: 'number' },
     { key: 'username', label: '用户名' },
-    { key: 'password', label: '密码', kind: 'password' },
-    { key: 'db', label: 'DB', kind: 'number' },
+    { key: 'password', label: '密码' },
   ],
   mq: [
-    { key: 'host', label: 'Host', required: true },
+    { key: 'host', label: 'Host', kind: 'host', required: true },
     { key: 'port', label: 'Port', kind: 'number' },
     { key: 'username', label: '用户名' },
-    { key: 'password', label: '密码', kind: 'password' },
+    { key: 'password', label: '密码' },
   ],
-  robots: [
-    { key: 'base_url', label: 'Base URL', required: true },
-    { key: 'list_path', label: '列表路径' },
-    { key: 'username', label: '用户名' },
-    { key: 'password', label: '密码', kind: 'password' },
-  ],
+  robots: [{ key: 'base_url', label: 'Base URL', required: true }],
+}
+
+/** 新增时的字段预填默认值（现场约定：mq 凭据默认值、端口按协议） */
+const CREATE_DEFAULTS: Record<ResourceType, Record<string, unknown>> = {
+  servers: { port: 22 },
+  redis: { port: 6379 },
+  mq: { port: 61616, username: 'prime_admin', password: 'hElloPr1me' },
+  robots: {},
 }
 
 const message = useMessage()
-const activeType = ref<ResourceType>('redis')
+const activeType = ref<ResourceType>('servers') // 默认最左侧 Server
 const items = ref<ResourceConfig[]>([])
 const showModal = ref(false)
 const editingId = ref<string | null>(null)
@@ -79,10 +81,18 @@ const form = ref<Record<string, any>>({})
 
 const siteId = computed(() => props.site?.id ?? '')
 
+/** host 下拉候选：同站点已配置 Server 的 host（redis/mq 常与 server 同机） */
+const hostOptions = ref<Array<{ label: string; value: string }>>([])
+
 async function load() {
   if (!props.show || !siteId.value) return
   try {
     items.value = await sitesApi.listResources(siteId.value, activeType.value)
+    const servers = await sitesApi.listResources(siteId.value, 'servers')
+    hostOptions.value = [...new Set(servers.map((s) => String(s.host)))].map((h) => ({
+      label: h,
+      value: h,
+    }))
   } catch (e) {
     message.error((e as Error).message)
   }
@@ -96,7 +106,7 @@ watch(
 
 function openCreate() {
   editingId.value = null
-  form.value = { name: '' }
+  form.value = { name: '', ...CREATE_DEFAULTS[activeType.value] }
   showModal.value = true
 }
 
@@ -110,6 +120,12 @@ async function save() {
   if (!String(form.value.name ?? '').trim()) {
     message.warning('名称必填')
     return
+  }
+  for (const f of FIELD_DEFS[activeType.value]) {
+    if (f.required && !String(form.value[f.key] ?? '').trim()) {
+      message.warning(`${f.label} 必填`)
+      return
+    }
   }
   // 空值字段不提交（number 控件产生 null；密码空串留空 = 后端保留原值）
   const data = Object.fromEntries(
@@ -163,11 +179,11 @@ function displayValue(item: ResourceConfig, key: string): string {
               <tr v-for="item in items" :key="item.id">
                 <td>{{ item.name }}</td>
                 <td v-for="f in FIELD_DEFS[activeType]" :key="f.key">
-                  {{ f.kind === 'password' ? '******' : displayValue(item, f.key) }}
+                  {{ displayValue(item, f.key) }}
                 </td>
                 <td>
                   <n-space :size="4">
-                    <!-- 已存资源的行级测试需 per-resource test 端点（T12+，服务端读存储密码），暂只在编辑表单内提供 -->
+                    <!-- 已存资源的行级测试需 per-resource test 端点（PRD §18），落地后补 -->
                     <n-button size="tiny" @click="openEdit(item)">编辑</n-button>
                     <n-popconfirm @positive-click="remove(item)">
                       <template #trigger>
@@ -212,14 +228,20 @@ function displayValue(item: ResourceConfig, key: string): string {
               v-model:value="form[f.key]"
               style="width: 100%"
             />
-            <n-input
-              v-else-if="f.kind === 'password'"
+            <!-- host 可从已有 Server 的 host 下拉选，也可手输（filterable + tag） -->
+            <n-select
+              v-else-if="f.kind === 'host'"
               v-model:value="form[f.key]"
-              type="password"
-              show-password-on="click"
-              :placeholder="editingId ? '留空表示不修改' : '可留空（无密码）'"
+              filterable
+              tag
+              default-first-option
+              :options="hostOptions"
+              :disabled="!hostOptions.length"
+              :placeholder="hostOptions.length ? '选择或输入' : '输入地址'"
             />
-            <n-input v-else v-model:value="form[f.key]" />
+            <!-- 内部工具：凭据明文显示（现场要求）；编辑留空 = 不修改 -->
+            <n-input v-else v-model:value="form[f.key]"
+              :placeholder="editingId && f.key === 'password' ? '留空表示不修改' : ''" />
           </n-form-item>
         </n-form>
         <template #footer>
