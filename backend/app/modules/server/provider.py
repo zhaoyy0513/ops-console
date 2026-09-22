@@ -23,7 +23,8 @@ COMMANDS: dict[str, str] = {
     "disk_inode": "LC_ALL=C df -iP",
     "network": "cat /proc/net/dev",
     # top -bn2 第二帧才是瞬时 CPU%（ps aux 的 %CPU 是进程生命周期平均，基本不动）
-    "processes": "LC_ALL=C top -bn2 -w 512",
+    # -c 显示完整命令行（默认会截断）
+    "processes": "LC_ALL=C top -bn2 -c -w 512",
 }
 
 

@@ -1,4 +1,5 @@
 from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
 
 from backend.app.modules.mq import service
 from backend.app.modules.sites.service import NotFound
@@ -28,3 +29,19 @@ async def get_addresses(site_id: str, mq_id: str) -> list[dict]:
         return await service.get_addresses(site_id, mq_id)
     except NotFound as e:
         raise HTTPException(status_code=404, detail=str(e)) from None
+
+
+class EmptyQueueIn(BaseModel):
+    mbean: str  # 队列完整 ObjectName（来自 Topics/Queues 列表的 _mbean）
+    queue: str  # 队列名（仅用于操作日志展示）
+
+
+@router.post("/sites/{site_id}/mq/{mq_id}/queues/empty")
+async def empty_queue(site_id: str, mq_id: str, body: EmptyQueueIn) -> dict:
+    """清空队列积压消息（用户要求的运维操作；记录操作日志）。"""
+    try:
+        return await service.empty_queue(site_id, mq_id, body.mbean, body.queue)
+    except NotFound as e:
+        raise HTTPException(status_code=404, detail=str(e)) from None
+    except service.OpsError as e:
+        raise HTTPException(status_code=e.status_code, detail=e.message) from None

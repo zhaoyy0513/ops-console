@@ -41,7 +41,7 @@ def test_disk_boundaries_per_mount():
     assert r["status"] == "WARNING"
     r = diagnose(_metrics(disk=[{"mount": "/data", "use_percent": 95}]))
     assert r["status"] == "CRITICAL"
-    assert r["issues"][0]["message"] == "Disk usage on /data is critical"
+    assert r["issues"][0]["message"] == "磁盘 /data 使用率 95%，已严重过高"
 
 
 def test_load_uses_core_count_not_fixed_threshold():

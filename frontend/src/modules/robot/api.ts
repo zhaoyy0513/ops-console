@@ -13,7 +13,9 @@ export interface RobotRow {
 }
 
 export const robotApi = {
-  list: (siteId: string) => api.get<RobotRow[]>(`/sites/${siteId}/robots`),
+  /** instance 指定单实例（页面下拉选择）；缺省聚合全部启用实例 */
+  list: (siteId: string, instance?: string) =>
+    api.get<RobotRow[]>(`/sites/${siteId}/robots${instance ? `?instance=${encodeURIComponent(instance)}` : ''}`),
   detail: (siteId: string, robotId: string, instance?: string) =>
     api.get<RobotRow>(
       `/sites/${siteId}/robots/${encodeURIComponent(robotId)}${instance ? `?instance=${instance}` : ''}`,

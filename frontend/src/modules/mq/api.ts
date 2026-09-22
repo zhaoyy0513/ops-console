@@ -31,6 +31,8 @@ export interface QueueRow {
   messages_acknowledged: number | null
   backlog_5m_ago: number | null
   growth_5m: number | null
+  /** 完整 ObjectName（清空积压等管理操作用，由后端校验） */
+  _mbean?: string
   diagnosis: { status: string; issues: Array<{ type: string; severity: string; message: string }> }
 }
 
@@ -46,4 +48,10 @@ export const mqApi = {
   overview: (siteId: string, id: string) => api.get<MqOverview>(`/sites/${siteId}/mq/${id}/overview`),
   queues: (siteId: string, id: string) => api.get<QueueRow[]>(`/sites/${siteId}/mq/${id}/queues`),
   addresses: (siteId: string, id: string) => api.get<AddressRow[]>(`/sites/${siteId}/mq/${id}/addresses`),
+  /** 清空队列积压消息（危险操作，前端倒计时确认 + 后端记录操作日志） */
+  emptyQueue: (siteId: string, id: string, mbean: string, queue: string) =>
+    api.post<{ success: boolean; latency_ms: number }>(`/sites/${siteId}/mq/${id}/queues/empty`, {
+      mbean,
+      queue,
+    }),
 }

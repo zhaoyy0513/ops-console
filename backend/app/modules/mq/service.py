@@ -5,6 +5,7 @@ from typing import Any
 
 from backend.app.core import sampling
 from backend.app.core.cache import cached
+from backend.app.core import oplog
 from backend.app.modules.mq.provider import ArtemisProvider
 from backend.app.modules.sites.service import NotFound
 from backend.app.shared import testconn
@@ -112,6 +113,30 @@ async def get_addresses(site_id: str, mq_id: str) -> list[dict[str, Any]]:
             return await provider.get_addresses()
 
     return await cached(f"ops:cache:mq:{mq_id}:addresses", CACHE_TTL, with_retry(factory))
+
+
+async def empty_queue(site_id: str, mq_id: str, mbean: str, queue_name: str) -> dict[str, Any]:
+    """清空指定队列的积压消息（用户要求的管理操作；写 oplog）。
+
+    mbean 必须来自本平台的队列列表（_mbean 由 wildcard read 返回），
+    防止构造任意 MBean 调用。
+    """
+    config = await _require_mq_config(site_id, mq_id)
+    if "component=addresses" not in mbean or "subcomponent=queues" not in mbean \
+            or mbean.count('"') % 2 != 0 or any(c in mbean for c in "\r\n{}"):
+        raise OpsError("INVALID_OPERATION", "invalid queue mbean", status_code=400)
+    provider = _build_provider(config)
+    started = time.perf_counter()
+    async with get_semaphore("mq"):
+        try:
+            await provider.empty_queue(mbean)
+        except OpsError as e:
+            await oplog.record(site_id, f"mq/{mq_id}", "MQ_EMPTY_QUEUE", target=queue_name,
+                               params={"op": "emptyQueue"}, result="FAILED", error=e.message)
+            raise
+    await oplog.record(site_id, f"mq/{mq_id}", "MQ_EMPTY_QUEUE", target=queue_name,
+                       params={"op": "emptyQueue"})
+    return {"success": True, "latency_ms": int((time.perf_counter() - started) * 1000)}
 
 
 # ---------- 连接测试 ----------

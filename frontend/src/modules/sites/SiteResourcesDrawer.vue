@@ -38,10 +38,11 @@ const TYPES: Array<{ key: ResourceType; label: string }> = [
 ]
 
 /** 各类型的专有字段（name/enabled 通用，PRD §5.2）；required 表单必填。
- *  host 输入形态：server 手输；redis/mq 可输可选（候选 = 同站点 Server 的 host） */
+ *  host 输入形态：server 手输；redis/mq 可输可选（候选 = 同站点 Server 的 host）
+ *  field_map：Robot 实例级字段映射（业务字段 -> 上游字段名，JSON） */
 const FIELD_DEFS: Record<
   ResourceType,
-  Array<{ key: string; label: string; kind?: 'number' | 'host-input' | 'host-select'; ph?: string; required?: boolean }>
+  Array<{ key: string; label: string; kind?: 'number' | 'host-input' | 'host-select' | 'json'; ph?: string; required?: boolean }>
 > = {
   servers: [
     { key: 'host', label: 'Host', kind: 'host-input', required: true },
@@ -61,7 +62,15 @@ const FIELD_DEFS: Record<
     { key: 'username', label: '用户名' },
     { key: 'password', label: '密码' },
   ],
-  robots: [{ key: 'base_url', label: 'Base URL', required: true }],
+  robots: [
+    { key: 'base_url', label: 'Base URL', required: true },
+    {
+      key: 'field_map',
+      label: '字段映射',
+      kind: 'json',
+      ph: '{"id": "robotCode", "status": "runState"}',
+    },
+  ],
 }
 
 /** 新增时的字段预填默认值（端口按协议：Jolokia 走 HTTP 8161；61616 是消息端口非管理口） */
@@ -113,8 +122,37 @@ function openCreate() {
 
 function openEdit(item: ResourceConfig) {
   editingId.value = item.id
-  form.value = { ...item } // password 不回显（空串），留空保存 = 不修改
-  showModal.value = true
+  const copy: Record<string, any> = { ...item }
+  // field_map 是对象存储，表单里以 JSON 文本编辑
+  if (copy.field_map && typeof copy.field_map === 'object') {
+    copy.field_map = JSON.stringify(copy.field_map, null, 2)
+  }
+  form.value = copy
+}
+
+/** 提交前把 JSON 文本字段解析回对象；解析失败返回 null 并提示 */
+function parseJsonFields(data: Record<string, any>): Record<string, any> | null {
+  for (const f of FIELD_DEFS[activeType.value]) {
+    if (f.kind === 'json' && typeof data[f.key] === 'string') {
+      const text = (data[f.key] as string).trim()
+      if (!text) {
+        delete data[f.key] // 留空 = 不配置映射
+        continue
+      }
+      try {
+        const parsed = JSON.parse(text)
+        if (typeof parsed !== 'object' || Array.isArray(parsed) || parsed === null) {
+          message.error(`${f.label} 必须是 JSON 对象，如 {"status": "runState"}`)
+          return null
+        }
+        data[f.key] = parsed
+      } catch (e) {
+        message.error(`${f.label} JSON 格式错误：${(e as Error).message}`)
+        return null
+      }
+    }
+  }
+  return data
 }
 
 async function save() {
@@ -129,9 +167,12 @@ async function save() {
     }
   }
   // 空值字段不提交 null/undefined（number 控件产生 null）；空串照常提交（全明文语义：提交什么存什么）
-  const data = Object.fromEntries(
+  let data = Object.fromEntries(
     Object.entries(form.value).filter(([, v]) => v !== null && v !== undefined),
   )
+  const parsed = parseJsonFields(data)
+  if (parsed === null) return // JSON 字段校验失败
+  data = parsed
   try {
     if (editingId.value) {
       await sitesApi.updateResource(siteId.value, activeType.value, editingId.value, data)
@@ -244,7 +285,18 @@ function displayValue(item: ResourceConfig, key: string): string {
               :placeholder="hostOptions.length ? '选择已有 Server 的 Host 或直接输入' : '输入地址'"
             />
             <!-- 内部工具全明文；编辑预填原密码，改动即覆盖 -->
-            <n-input v-else v-model:value="form[f.key]" />
+            <n-input v-else-if="f.kind !== 'json'" v-model:value="form[f.key]" />
+            <!-- field_map 等 JSON 配置：textarea 编辑 + 提交前校验 -->
+            <div v-else style="width: 100%">
+              <n-input
+                v-model:value="form[f.key]"
+                type="textarea"
+                :rows="4"
+                :placeholder="f.ph"
+                class="mono"
+                :input-props="{ spellcheck: false }"
+              />
+            </div>
           </n-form-item>
         </n-form>
         <template #footer>

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { NButton, NCard, NInput, NSelect, NSpace, NSpin, NTable, NTag, useMessage } from 'naive-ui'
+import { NButton, NCard, NInput, NSelect, NSpace, NSpin, NTable, useMessage } from 'naive-ui'
+import CountdownConfirm from '../../components/CountdownConfirm.vue'
 import BaseChart from '../../components/BaseChart.vue'
 import StatusBadge from '../../components/StatusBadge.vue'
 import { useSiteStore } from '../../stores/site'
@@ -193,6 +194,18 @@ function pctColor(pct: number | null): string {
   return '#18a058'
 }
 
+async function emptyQueue(q: QueueRow) {
+  const siteId = siteStore.currentSiteId
+  if (!siteId || !instanceId.value || !q._mbean) return
+  try {
+    await mqApi.emptyQueue(siteId, instanceId.value, q._mbean, q.name)
+    message.success(`已清空 ${q.name} 的积压消息`)
+    loadHeavy()
+  } catch (e) {
+    message.error((e as Error).message)
+  }
+}
+
 function fmtBytes(n: number | null | undefined): string {
   if (n == null) return '-'
   const units = ['B', 'KB', 'MB', 'GB']
@@ -290,7 +303,7 @@ const worstQueueStatus = computed(() => {
           <thead>
             <tr>
               <th>Topic / Queue</th><th>所属 Address</th><th>状态</th><th>消息数</th><th>消费者</th>
-              <th>Delivering</th><th>5 分钟前</th><th>增长</th><th>问题</th>
+              <th>累计新增</th><th>操作</th>
             </tr>
           </thead>
           <tbody>
@@ -300,18 +313,22 @@ const worstQueueStatus = computed(() => {
               <td><status-badge :status="q.diagnosis?.status" /></td>
               <td :style="{ fontWeight: (q.message_count ?? 0) > 5000 ? 700 : 400 }">{{ q.message_count ?? '-' }}</td>
               <td>{{ q.consumer_count ?? '-' }}</td>
-              <td>{{ q.delivering_count ?? '-' }}</td>
-              <td>{{ q.backlog_5m_ago ?? '-' }}</td>
+              <td>{{ q.messages_added ?? '-' }}</td>
               <td>
-                <n-tag v-if="q.growth_5m != null && q.growth_5m >= 1000" type="warning" size="small" :bordered="false">
-                  +{{ q.growth_5m }}
-                </n-tag>
-                <span v-else>{{ q.growth_5m ?? '-' }}</span>
+                <!-- 清空积压：5 秒倒计时确认（破坏性操作，记录操作日志） -->
+                <countdown-confirm
+                  v-if="q._mbean && (q.message_count ?? 0) > 0"
+                  label="清空积压"
+                  confirm-text="确认清空"
+                  :target="q.name"
+                  :seconds="5"
+                  @confirm="emptyQueue(q)"
+                />
+                <span v-else style="color: #999">-</span>
               </td>
-              <td>{{ q.diagnosis?.issues?.map((i) => i.type).join(', ') || '-' }}</td>
             </tr>
             <tr v-if="!filteredQueues.length">
-              <td colspan="9" style="text-align: center; color: #999">无匹配队列</td>
+              <td colspan="7" style="text-align: center; color: #999">无匹配队列</td>
             </tr>
           </tbody>
         </n-table>

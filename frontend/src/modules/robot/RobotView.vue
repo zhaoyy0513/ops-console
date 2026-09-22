@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { onMounted, ref, watch } from 'vue'
-import { NButton, NCard, NSpace, NTable, NTag, useMessage } from 'naive-ui'
+import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { NButton, NCard, NSelect, NSpace, NTable, NTag, useMessage } from 'naive-ui'
 import StatusBadge from '../../components/StatusBadge.vue'
 import { useSiteStore } from '../../stores/site'
 import { robotApi, type RobotRow } from './api'
@@ -8,10 +8,11 @@ import { robotApi, type RobotRow } from './api'
 const siteStore = useSiteStore()
 const message = useMessage()
 
+const instances = ref<Array<{ label: string; value: string }>>([])
+const instanceId = ref<string | null>(null)
 const robots = ref<RobotRow[]>([])
 const loading = ref(false)
 const detail = ref<RobotRow | null>(null)
-const detailShow = ref(false)
 
 // status -> StatusBadge 语义映射（robot 侧状态词与 HEALTHY/WARNING/CRITICAL 对齐）
 function statusOf(r: RobotRow): string {
@@ -22,12 +23,31 @@ function statusOf(r: RobotRow): string {
   return 'UNKNOWN'
 }
 
-async function load() {
+async function loadInstances() {
   const siteId = siteStore.currentSiteId
   if (!siteId) return
   loading.value = true
   try {
-    robots.value = await robotApi.list(siteId)
+    const { sitesApi } = await import('../sites/api')
+    const list = await sitesApi.listResources(siteId, 'robots')
+    instances.value = list.map((r) => ({ label: r.name, value: r.id }))
+    if (!instanceId.value || !list.some((r) => r.id === instanceId.value)) {
+      instanceId.value = list[0]?.id ?? null
+    }
+    if (instanceId.value) await load()
+  } catch (e) {
+    message.error((e as Error).message)
+  } finally {
+    loading.value = false
+  }
+}
+
+async function load() {
+  const siteId = siteStore.currentSiteId
+  if (!siteId || !instanceId.value) return
+  loading.value = true
+  try {
+    robots.value = await robotApi.list(siteId, instanceId.value)
   } catch (e) {
     robots.value = []
     message.error((e as Error).message)
@@ -41,22 +61,61 @@ async function openDetail(r: RobotRow) {
   if (!siteId || !r.id) return
   try {
     detail.value = await robotApi.detail(siteId, r.id, r.instance)
-    detailShow.value = true
   } catch (e) {
     message.error((e as Error).message)
   }
 }
 
-onMounted(load)
-watch(() => siteStore.currentSiteId, load)
+onMounted(loadInstances)
+
+// 3s 轮询（标签切走暂停，回来恢复）
+let pollTimer: number | null = null
+function startPolling() {
+  if (pollTimer != null) return
+  pollTimer = window.setInterval(() => {
+    if (instanceId.value && !document.hidden && !loading.value) load()
+  }, 3000)
+}
+function stopPolling() {
+  if (pollTimer != null) {
+    clearInterval(pollTimer)
+    pollTimer = null
+  }
+}
+function onVisibility() {
+  if (document.hidden) stopPolling()
+  else startPolling()
+}
+onMounted(() => {
+  startPolling()
+  document.addEventListener('visibilitychange', onVisibility)
+})
+onBeforeUnmount(() => {
+  stopPolling()
+  document.removeEventListener('visibilitychange', onVisibility)
+})
+
+watch(() => siteStore.currentSiteId, () => {
+  instanceId.value = null
+  robots.value = []
+  detail.value = null
+  loadInstances()
+})
+watch(instanceId, () => {
+  detail.value = null
+  load()
+})
 </script>
 
 <template>
   <n-space vertical :size="12">
     <n-card size="small">
-      <n-space align="center" :size="12">
+      <n-space align="center" :size="12" :wrap="false">
+        <span>Robot 实例</span>
+        <n-select v-model:value="instanceId" size="small" style="width: 240px"
+          placeholder="选择 Robot 接入实例" :options="instances" />
         <n-button size="small" :loading="loading" @click="load">刷新</n-button>
-        <span style="color: #999; font-size: 12px">聚合站点下全部 Robot 实例（PRD §12.1）</span>
+        <span style="color: #999; font-size: 12px">不同实例可配置各自的字段映射（站点管理 → 资源 → Robot）</span>
       </n-space>
     </n-card>
 
@@ -69,7 +128,7 @@ watch(() => siteStore.currentSiteId, load)
           </tr>
         </thead>
         <tbody>
-          <tr v-for="r in robots" :key="(r.instance ?? '') + '/' + (r.id ?? '')">
+          <tr v-for="r in robots" :key="r.id ?? ''">
             <td><status-badge :status="statusOf(r)" /></td>
             <td style="font-family: ui-monospace, monospace">{{ r.id ?? '?' }}</td>
             <td>{{ r.name ?? '-' }}</td>
@@ -85,13 +144,15 @@ watch(() => siteStore.currentSiteId, load)
             <td><n-button size="tiny" @click="openDetail(r)">详情</n-button></td>
           </tr>
           <tr v-if="!robots.length && !loading">
-            <td colspan="8" style="text-align: center; color: #999">无 Robot 数据</td>
+            <td colspan="8" style="text-align: center; color: #999">
+              {{ instanceId ? '该实例无 Robot 数据' : '暂无 Robot 实例，请在「站点管理 → 资源」中添加' }}
+            </td>
           </tr>
         </tbody>
       </n-table>
     </n-card>
 
-    <n-card v-if="detail" :title="`Robot · ${detail.id ?? ''}`" size="small" style="margin-top: 4px">
+    <n-card v-if="detail" :title="`Robot · ${detail.id ?? ''}`" size="small">
       <n-space :size="24" style="margin-bottom: 12px">
         <status-badge :status="statusOf(detail)" />
         <n-button size="tiny" @click="detail = null">收起</n-button>

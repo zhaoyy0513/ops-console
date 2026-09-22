@@ -69,21 +69,72 @@ def _last_update(raw: dict[str, Any]) -> Any:
     return None
 
 
-def normalize_robot(raw: dict[str, Any]) -> dict[str, Any]:
-    """原始 API 字典 -> PRD §12.1 统一结构（纯函数）。"""
-    result = {
-        "id": _pick(raw, "id"),
-        "name": _pick(raw, "name"),
-        "status": _online_to_status(raw),
-        "battery": _pick(raw, "battery"),
-        "station": _station_from_xy(raw),
-        "task": _pick(raw, "task"),
-        "error": _pick(raw, "error"),
-        "last_update": _last_update(raw),
+def normalize_robot(raw: dict[str, Any], field_map: dict[str, str] | None = None) -> dict[str, Any]:
+    """原始 API 字典 -> PRD §12.1 统一结构（纯函数）。
+
+    field_map（实例级配置）：业务字段 -> 上游真实字段名，优先于内置候选。
+    用于响应结构与内置候选都不匹配的现场环境，例如
+    {"status": "runState", "battery": "power"}。其余转换（online 语义、
+    x/y 坐标、epoch 时间）仍走内置逻辑。
+    """
+    def mapped(field: str) -> Any:
+        if field_map:
+            upstream = field_map.get(field)
+            if upstream and upstream in raw and raw[upstream] is not None:
+                return raw[upstream]
+        return None
+
+    def pick(field: str) -> Any:
+        m = mapped(field)
+        if m is not None:
+            return m
+        for key in _FIELD_CANDIDATES[field]:
+            if key in raw and raw[key] is not None:
+                return raw[key]
+        return None
+
+    def online_to_status() -> Any:
+        online = raw.get("online")
+        if online is not None:
+            return "online" if online in (1, True, "1") else "offline"
+        s = mapped("status")
+        return s if s is not None else _pick(raw, "status")
+
+    def station() -> Any:
+        named = pick("station")
+        if named is not None:
+            return named
+        x, y = raw.get("x"), raw.get("y")
+        if x is not None and y is not None:
+            return f"({x},{y})"
+        return None
+
+    def last_update() -> Any:
+        m = mapped("last_update")
+        if m is not None:
+            return m
+        for key in _EPOCH_MS_KEYS:
+            v = raw.get(key)
+            if isinstance(v, (int, float)) and v > 10**12:  # epoch ms
+                from datetime import datetime, timezone
+
+                return datetime.fromtimestamp(v / 1000, tz=timezone.utc).isoformat(timespec="seconds")
+            if v is not None:
+                return v
+        return None
+
+    return {
+        "id": pick("id"),
+        "name": pick("name"),
+        "status": online_to_status(),
+        "battery": pick("battery"),
+        "station": station(),
+        "task": pick("task"),
+        "error": pick("error"),
+        "last_update": last_update(),
         "x": raw.get("x"),
         "y": raw.get("y"),
     }
-    return result
 
 
 class RobotProvider:
@@ -108,6 +159,8 @@ class HttpRobotProvider(RobotProvider):
         self._list_path: str = str(config.get("list_path") or "")
         self._username: str = config.get("username") or ""
         self._password: str = config.get("password") or ""
+        # 实例级字段映射（业务字段 -> 上游字段名），应对不同环境的响应结构差异
+        self._field_map: dict[str, str] | None = config.get("field_map") or None
 
     def _client(self) -> httpx.AsyncClient:
         return httpx.AsyncClient(
@@ -159,7 +212,7 @@ class HttpRobotProvider(RobotProvider):
     async def get_robot_list(self) -> list[dict[str, Any]]:
         async with self._client() as c:
             data = await self._get(c, self._list_request_path())
-        return [normalize_robot(x) for x in self._unwrap_list(data)]
+        return [normalize_robot(x, self._field_map) for x in self._unwrap_list(data)]
 
     async def get_robot_detail(self, robot_id: str) -> dict[str, Any]:
         # 列表已含全部展示字段（现场两个环境均如此）：详情 = 列表内查找，

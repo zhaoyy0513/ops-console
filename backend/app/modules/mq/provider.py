@@ -68,6 +68,35 @@ class ArtemisProvider:
             return value
         return {"single": value or {}}
 
+    async def exec_operation(self, mbean: str, operation: str, args: list | None = None) -> Any:
+        """Jolokia exec（管理操作，当前仅限清空积压队列等白名单调用）。"""
+        payload = {"type": "exec", "mbean": mbean, "operation": operation,
+                   "arguments": args or []}
+        async with self._client() as c:
+            try:
+                resp = await with_timeout(
+                    c.post("", json=payload), settings.mq_api_timeout, resource=self._host
+                )
+            except httpx.HTTPError as e:
+                raise OpsError("REMOTE_CONNECTION_FAILED", f"Jolokia request failed: {e}", self._host) from None
+            if resp.status_code == 401:
+                raise OpsError("AUTH_FAILED", "Jolokia authentication failed", self._host, status_code=502)
+            try:
+                body = resp.json()
+            except ValueError:
+                raise OpsError("REMOTE_BAD_RESPONSE", "Jolokia returned non-JSON", self._host) from None
+            if body.get("status") != 200:
+                raise OpsError(
+                    "REMOTE_BAD_RESPONSE",
+                    f"Jolokia error {body.get('status')}: {str(body.get('error'))[:200]}",
+                    self._host,
+                )
+            return body.get("value")
+
+    async def empty_queue(self, mbean: str) -> None:
+        """清空队列积压消息（Artemis emptyQueue 管理操作，用户明确要求的功能）。"""
+        await self.exec_operation(mbean, "emptyQueue")
+
     # ---------- 数据获取 ----------
 
     async def get_overview(self) -> dict[str, Any]:
@@ -175,6 +204,8 @@ def normalize_queues(value: dict[str, dict]) -> list[dict[str, Any]]:
             "delivering_count": attrs.get("DeliveringCount"),
             "messages_added": attrs.get("MessagesAdded"),
             "messages_acknowledged": attrs.get("MessagesAcknowledged"),
+            # 完整 ObjectName：清空积压等管理操作需要精确定位（不经前端回传）
+            "_mbean": objname,
         })
     queues.sort(key=lambda q: (q["message_count"] or 0) if isinstance(q["message_count"], (int, float)) else 0,
                 reverse=True)

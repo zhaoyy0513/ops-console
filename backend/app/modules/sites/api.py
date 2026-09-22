@@ -57,6 +57,9 @@ class RobotConfig(ResourceBase):
     list_path: str = ""  # 留空 = 直接请求 base_url；地址与路径分离的场景才填（如 /mission/agent/list）
     username: str = ""
     password: str = ""
+    # 实例级字段映射（业务字段 -> 上游字段名），应对不同环境响应结构差异。
+    # 例：{"status": "runState", "battery": "power"}；未配置的字段走内置候选
+    field_map: dict[str, str] | None = None
 
 
 def _update_model(model: type[BaseModel]) -> type[BaseModel]:

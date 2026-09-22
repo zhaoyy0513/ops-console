@@ -7,8 +7,8 @@ router = APIRouter(tags=["robot"])
 
 
 @router.get("/sites/{site_id}/robots")
-async def list_robots(site_id: str) -> list[dict]:
-    """站点下每个启用的 Robot 实例聚合其机器人列表（PRD §18）。"""
+async def list_robots(site_id: str, instance: str | None = None) -> list[dict]:
+    """列出机器人；instance 指定单个实例（页面下拉选择），缺省聚合全部启用实例。"""
     from backend.app.modules.sites import service as sites_service
 
     try:
@@ -18,6 +18,8 @@ async def list_robots(site_id: str) -> list[dict]:
     robots: list[dict] = []
     for inst in instances:
         if not inst.get("enabled", True):
+            continue
+        if instance and inst["id"] != instance:
             continue
         try:
             items = await service.list_robots(site_id, inst["id"])
