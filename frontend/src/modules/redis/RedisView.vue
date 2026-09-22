@@ -6,6 +6,8 @@ import {
   NInput,
   NInputNumber,
   NModal,
+  NRadioGroup,
+  NRadioButton,
   NSelect,
   NSpace,
   NSpin,
@@ -30,7 +32,7 @@ import {
 const siteStore = useSiteStore()
 const message = useMessage()
 
-// ---------- 实例 / DB / 搜索状态 ----------
+// ---------- 实例 / DB / 搜索 ----------
 const instances = ref<Array<{ label: string; value: string }>>([])
 const instanceId = ref<string | null>(null)
 const db = ref(0)
@@ -78,7 +80,7 @@ async function search(reset = true) {
       count: 100,
       type: typeFilter.value || undefined,
     })
-    keys.value = reset ? page.keys : [...keys.value, ...page.keys] // Load More 追加
+    keys.value = reset ? page.keys : [...keys.value, ...page.keys]
     cursor.value = page.cursor
   } catch (e) {
     message.error((e as Error).message)
@@ -92,7 +94,7 @@ async function loadInfo() {
   try {
     info.value = await getInfo(siteStore.currentSiteId, instanceId.value, db.value)
   } catch {
-    info.value = null // Unknown 态，不阻塞浏览
+    info.value = null
   }
 }
 
@@ -106,11 +108,16 @@ watch(() => siteStore.currentSiteId, () => {
   instanceId.value = null
   keys.value = []
   info.value = null
+  selected.value = null
   loadInstances()
 })
-watch(instanceId, () => (search(true), loadInfo()))
+watch(instanceId, () => {
+  selected.value = null
+  search(true)
+  loadInfo()
+})
 
-// ---------- 树形分组（RedisDesktop 风格：按 ':' 分层折叠 + 自然排序） ----------
+// ---------- 树（RedisDesktop 风格：':' 分层折叠 + 计数，节点样式统一） ----------
 
 interface TreeDir { key: string; label: string; dir: true; children: TreeNode[]; count: number }
 interface TreeLeaf { key: string; label: string; dir: false; item: KeyItem }
@@ -138,7 +145,8 @@ function buildTree(items: KeyItem[]): TreeNode[] {
     parts.forEach((part, i) => {
       prefix = prefix ? `${prefix}:${part}` : part
       if (i === parts.length - 1) {
-        container.push({ key: `L:${item.key}`, label: part, dir: false, item })
+        // 叶子显示完整 key（与 RedisDesktop 一致）
+        container.push({ key: `L:${item.key}`, label: item.key, dir: false, item })
       } else {
         let d = dirs.get(prefix)
         if (!d) {
@@ -154,84 +162,99 @@ function buildTree(items: KeyItem[]): TreeNode[] {
   return sortTree(roots)
 }
 
-// 结构兼容 TreeOption（key/label/children 同名字段），断言绕开递归类型差异
 const treeData = computed(() => buildTree(keys.value) as unknown as TreeOption[])
 
 function renderLabel({ option }: { option: TreeOption }) {
   const node = option as unknown as TreeNode
   if (node.dir) {
-    return h('span', { class: 'tree-dir' }, [
+    return h('span', { class: 'tree-label' }, [
       h('span', null, node.label),
       h('span', { class: 'tree-count' }, ` (${node.count})`),
     ])
   }
-  return h('span', { title: node.item.key, class: 'tree-leaf' }, [
-    h(NTag, { size: 'tiny', bordered: false, style: 'margin-right: 6px' }, { default: () => node.item.type }),
-    h('span', null, node.label),
-  ])
+  return h('span', { class: 'tree-label mono', title: node.item.key }, node.label)
 }
 
 function onTreeSelect(_keys: Array<string>, options: Array<unknown>) {
   const option = options?.[0] as unknown as TreeNode | null
-  if (option && !option.dir) openKey(option.item)
+  if (option && !option.dir) selectKey(option.item)
 }
 
-// ---------- 详情 / 编辑（PRD §11.4/§11.5） ----------
+// ---------- 详情（左树右值；Text/Json 自动感知） ----------
+const selected = ref<KeyItem | null>(null)
 const detail = ref<KeyDetail | null>(null)
-const detailShow = ref(false)
+const detailLoading = ref(false)
+const format = ref<'text' | 'json'>('text') // 自动检测默认；json=只读高亮，text=可编辑
 const editText = ref('')
 const editTtl = ref<number | null>(null)
 const saving = ref(false)
 const confirmShow = ref(false)
 
-/** value -> 可编辑文本（RedisDesktop 风格：string 原文，其余 JSON） */
+function isJson(s: string): boolean {
+  const t = s.trim()
+  if (!(t.startsWith('{') || t.startsWith('['))) return false
+  try {
+    JSON.parse(t)
+    return true
+  } catch {
+    return false
+  }
+}
+
+/** 轻量 JSON 语法高亮（key 蓝 / string 绿 / number 红 / bool-null 橙）；过大退化为纯文本 */
+function highlightJson(src: string): string {
+  if (src.length > 200_000) return src
+  const esc = src.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  return esc.replace(
+    /("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g,
+    (m) => {
+      let cls = 'jnum'
+      if (m.startsWith('"')) cls = m.trimEnd().endsWith(':') ? 'jkey' : 'jstr'
+      else if (/^(true|false|null)$/.test(m)) cls = 'jbool'
+      return `<span class="${cls}">${m}</span>`
+    },
+  )
+}
+
+const parsedJson = computed(() => {
+  if (format.value !== 'json' || !isJson(editText.value)) return null
+  try {
+    return JSON.stringify(JSON.parse(editText.value), null, 2)
+  } catch {
+    return null
+  }
+})
+
+/** 详情打开时自动感知：能 parse 成 object/array 的 value 默认 Json 视图 */
+async function selectKey(k: KeyItem) {
+  if (!siteStore.currentSiteId || !instanceId.value) return
+  selected.value = k
+  detailLoading.value = true
+  try {
+    detail.value = await getKey(siteStore.currentSiteId, instanceId.value, db.value, k.key)
+    const raw = toEditText(detail.value)
+    editText.value = raw
+    format.value = isJson(raw) ? 'json' : 'text'
+    editTtl.value = detail.value.ttl > 0 ? detail.value.ttl : null
+  } catch (e) {
+    message.error((e as Error).message)
+    detail.value = null
+  } finally {
+    detailLoading.value = false
+  }
+}
+
 function toEditText(d: KeyDetail): string {
   const v = d.value
   if (d.type === 'string') return String(v ?? '')
-  if (d.type === 'zset') return JSON.stringify(v ?? [], null, 2)
   return JSON.stringify(v ?? null, null, 2)
 }
 
-function parseEdit(d: KeyDetail): unknown {
-  if (d.type === 'string') return editText.value
-  return JSON.parse(editText.value) // 失败抛 SyntaxError -> 提示用户
-}
-
-async function openKey(k: KeyItem) {
-  if (!siteStore.currentSiteId || !instanceId.value) return
+function prettyFill() {
   try {
-    detail.value = await getKey(siteStore.currentSiteId, instanceId.value, db.value, k.key)
-    editText.value = toEditText(detail.value)
-    editTtl.value = detail.value.ttl > 0 ? detail.value.ttl : null
-    detailShow.value = true
-  } catch (e) {
-    message.error((e as Error).message)
-  }
-}
-
-async function saveValue() {
-  const d = detail.value
-  if (!d || !siteStore.currentSiteId || !instanceId.value) return
-  let value: unknown
-  try {
-    value = parseEdit(d)
+    editText.value = JSON.stringify(JSON.parse(editText.value), null, 2)
   } catch {
-    message.error('JSON 格式错误，请检查后再保存')
-    return
-  }
-  saving.value = true
-  try {
-    await operate(siteStore.currentSiteId, instanceId.value, {
-      op: 'set', db: db.value, key: d.key, type: d.type, value,
-    })
-    message.success('已保存')
-    confirmShow.value = false
-    detailShow.value = false
-    loadInfo()
-  } catch (e) {
-    message.error((e as Error).message)
-  } finally {
-    saving.value = false
+    message.error('不是合法 JSON，无法格式化')
   }
 }
 
@@ -242,6 +265,34 @@ const changeSummary = computed(() => {
   return `${d.type.toUpperCase()} · ${editText.value.length} chars\n${preview}`
 })
 
+async function saveValue() {
+  const d = detail.value
+  if (!d || !siteStore.currentSiteId || !instanceId.value) return
+  // 非 string 类型按 JSON 解析后提交结构化对象（后端按类型校验结构）
+  let value: unknown = editText.value
+  if (d.type !== 'string') {
+    if (!isJson(editText.value)) {
+      message.error('JSON 格式错误，请检查后再保存')
+      return
+    }
+    value = JSON.parse(editText.value)
+  }
+  saving.value = true
+  try {
+    await operate(siteStore.currentSiteId, instanceId.value, {
+      op: 'set', db: db.value, key: d.key, type: d.type, value,
+    })
+    message.success('已保存')
+    confirmShow.value = false
+    await selectKey({ key: d.key, type: d.type })
+    loadInfo()
+  } catch (e) {
+    message.error((e as Error).message)
+  } finally {
+    saving.value = false
+  }
+}
+
 async function deleteKey() {
   const d = detail.value
   if (!d || !siteStore.currentSiteId || !instanceId.value) return
@@ -249,7 +300,8 @@ async function deleteKey() {
     op: 'delete', db: db.value, key: d.key,
   })
   message.success(`已删除 ${d.key}`)
-  detailShow.value = false
+  selected.value = null
+  detail.value = null
   search(true)
   loadInfo()
 }
@@ -258,7 +310,7 @@ async function applyTtl() {
   const d = detail.value
   if (!d || !siteStore.currentSiteId || !instanceId.value) return
   await operate(siteStore.currentSiteId, instanceId.value, {
-    op: 'expire', db: db.value, key: d.key, ttl: editTtl.value ?? -1, // null/0 以下 = PERSIST
+    op: 'expire', db: db.value, key: d.key, ttl: editTtl.value ?? -1,
   })
   message.success(editTtl.value ? `TTL 已设为 ${editTtl.value}s` : 'TTL 已清除')
   detail.value = { ...d, ttl: editTtl.value ?? -1 }
@@ -336,63 +388,85 @@ const INFO_METRICS = computed(() => {
       </n-space>
     </n-card>
 
-    <n-card size="small" title="Keys（按前缀分层）">
-      <template #header-extra>
-        <span style="color: #999; font-size: 12px">{{ keys.length }} 条已加载 · 点击 key 查看详情</span>
-      </template>
-      <n-spin :show="loading">
-        <n-tree
-          v-if="treeData.length"
-          :data="treeData"
-          key-field="key"
-          label-field="label"
-          children-field="children"
-          block-line
-          selectable
-          :render-label="renderLabel"
-          @update:selected-keys="onTreeSelect"
-        />
-        <div v-else style="text-align: center; color: #999; padding: 16px 0">无匹配 Key</div>
-      </n-spin>
-      <div v-if="cursor !== 0" style="text-align: center; margin-top: 8px">
-        <n-button size="small" :loading="loading" @click="search(false)">Load More</n-button>
-      </div>
-    </n-card>
+    <!-- 左树右值（RedisDesktop 格局） -->
+    <div class="split">
+      <n-card size="small" class="left-pane" title="Keys">
+        <template #header-extra>
+          <span style="color: #999; font-size: 12px">{{ keys.length }} 条</span>
+        </template>
+        <n-spin :show="loading">
+          <div class="tree-scroll">
+            <n-tree
+              v-if="treeData.length"
+              :data="treeData"
+              key-field="key"
+              label-field="label"
+              children-field="children"
+              block-line
+              selectable
+              :render-label="renderLabel"
+              @update:selected-keys="onTreeSelect"
+            />
+            <div v-else style="text-align: center; color: #999; padding: 24px 0">无匹配 Key</div>
+          </div>
+        </n-spin>
+        <div v-if="cursor !== 0" style="text-align: center; margin-top: 8px">
+          <n-button size="small" :loading="loading" @click="search(false)">Load More</n-button>
+        </div>
+      </n-card>
 
-    <!-- Key 详情 + 编辑 -->
-    <n-modal v-model:show="detailShow" preset="card"
-      :title="`Key · ${detail?.key ?? ''}`" style="width: 720px">
-      <template v-if="detail">
-        <n-space :size="16" style="margin-bottom: 12px">
-          <n-tag size="small">{{ detail.type.toUpperCase() }}</n-tag>
-          <span>TTL: <b>{{ fmtTtl(detail.ttl) }}</b></span>
-          <span>内存: <b>{{ detail.memory_usage != null ? fmtBytes(detail.memory_usage) : '?' }}</b></span>
-        </n-space>
+      <n-card size="small" class="right-pane" title="Value">
+        <n-spin :show="detailLoading">
+          <template v-if="detail">
+            <!-- 头部：类型 + key + TTL/内存 -->
+            <div class="detail-head">
+              <n-tag size="small">{{ detail.type.toUpperCase() }}</n-tag>
+              <span class="detail-key mono">{{ detail.key }}</span>
+              <span class="detail-meta">TTL <b>{{ fmtTtl(detail.ttl) }}</b></span>
+              <span class="detail-meta">
+                内存 <b>{{ detail.memory_usage != null ? fmtBytes(detail.memory_usage) : '?' }}</b>
+              </span>
+            </div>
 
-        <n-input v-model:value="editText" type="textarea"
-          :rows="detail.type === 'string' ? 8 : 10"
-          :input-props="{ spellcheck: false }"
-          style="font-family: ui-monospace, monospace" />
+            <!-- Text / Json 切换（自动感知默认；value 不是 JSON 时 Json 不可选） -->
+            <div class="value-toolbar">
+              <n-radio-group v-model:value="format" size="small">
+                <n-radio-button value="text">Text</n-radio-button>
+                <n-radio-button value="json" :disabled="!isJson(editText)">Json</n-radio-button>
+              </n-radio-group>
+              <span v-if="format === 'json'" class="hint">Json 视图只读，编辑请切到 Text</span>
+              <div style="flex: 1" />
+              <n-button v-if="format === 'text' && isJson(editText)" size="tiny" @click="prettyFill">格式化</n-button>
+            </div>
 
-        <n-space align="center" :size="12" style="margin-top: 12px">
-          <span>TTL(秒)</span>
-          <n-input-number v-model:value="editTtl" size="small" :min="1" style="width: 130px"
-            placeholder="留空=清除" />
-          <n-button size="small" @click="applyTtl">应用 TTL</n-button>
-          <div style="flex: 1" />
-          <!-- 删除：5 秒倒计时二次确认（PRD §11.5） -->
-          <countdown-confirm label="Delete" :target="detail.key" :seconds="5" @confirm="deleteKey" />
-          <!-- 保存：先确认（显示 key 与变更摘要），再写入（PRD §11.4 保存流程） -->
-          <n-button size="small" type="primary" @click="confirmShow = true">Save</n-button>
-        </n-space>
-      </template>
-    </n-modal>
+            <!-- Json：只读高亮；Text：可编辑 -->
+            <pre v-if="format === 'json' && parsedJson" class="json-view mono" v-html="highlightJson(parsedJson)" />
+            <n-input v-else v-model:value="editText" type="textarea"
+              :rows="16" :input-props="{ spellcheck: false }" class="mono" />
 
-    <!-- 保存确认对话框 -->
+            <!-- TTL / 删除 / 保存 -->
+            <div class="detail-actions">
+              <span>TTL(秒)</span>
+              <n-input-number v-model:value="editTtl" size="small" :min="1" style="width: 130px"
+                placeholder="留空=清除" />
+              <n-button size="small" @click="applyTtl">应用 TTL</n-button>
+              <div style="flex: 1" />
+              <countdown-confirm label="Delete" :target="detail.key" :seconds="5" @confirm="deleteKey" />
+              <n-button size="small" type="primary" :loading="saving" @click="confirmShow = true">Save</n-button>
+            </div>
+          </template>
+          <div v-else style="text-align: center; color: #999; padding: 60px 0">
+            点击左侧 Key 查看详情
+          </div>
+        </n-spin>
+      </n-card>
+    </div>
+
+    <!-- 保存确认对话框（PRD §11.4） -->
     <n-modal v-model:show="confirmShow" preset="card" title="确认保存" style="width: 520px">
-      <p>写入 Key：<b style="font-family: ui-monospace, monospace">{{ detail?.key }}</b></p>
+      <p>写入 Key：<b class="mono">{{ detail?.key }}</b></p>
       <p>变更摘要：</p>
-      <pre class="summary">{{ changeSummary }}</pre>
+      <pre class="summary mono">{{ changeSummary }}</pre>
       <template #footer>
         <div style="display: flex; justify-content: end; gap: 8px">
           <n-button size="small" @click="confirmShow = false">取消</n-button>
@@ -404,17 +478,68 @@ const INFO_METRICS = computed(() => {
 </template>
 
 <style scoped>
-.summary {
-  background: #f5f6f8;
+.split {
+  display: flex;
+  gap: 12px;
+  align-items: stretch;
+}
+.left-pane {
+  width: 360px;
+  flex: none;
+}
+.right-pane {
+  flex: 1;
+  min-width: 0;
+}
+.tree-scroll {
+  max-height: calc(100vh - 320px);
+  overflow: auto;
+}
+.mono {
+  font-family: ui-monospace, Consolas, monospace;
+}
+.detail-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+.detail-key {
+  font-size: 13px;
+  word-break: break-all;
+}
+.detail-meta {
+  color: #666;
+  font-size: 13px;
+}
+.value-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+.hint {
+  color: #999;
+  font-size: 12px;
+}
+.json-view {
+  background: #fafbfc;
   border: 1px solid #e5e6eb;
   border-radius: 4px;
-  padding: 8px 12px;
-  font-family: ui-monospace, monospace;
-  font-size: 12px;
-  max-height: 200px;
+  padding: 12px;
+  font-size: 13px;
+  line-height: 1.5;
+  max-height: calc(100vh - 420px);
   overflow: auto;
-  white-space: pre-wrap;
-  word-break: break-all;
+  margin: 0;
+  white-space: pre;
+}
+.detail-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
 }
 .metric {
   display: inline-flex;
@@ -429,20 +554,40 @@ const INFO_METRICS = computed(() => {
 .metric b {
   color: #1f2329;
 }
+.summary {
+  background: #f5f6f8;
+  border: 1px solid #e5e6eb;
+  border-radius: 4px;
+  padding: 8px 12px;
+  font-size: 12px;
+  max-height: 200px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
 </style>
 
 <style>
-/* 树节点样式（renderLabel 生成，非 scoped） */
-.tree-dir {
-  font-weight: 600;
+/* 树节点：文件夹与叶子样式统一（RedisDesktop 风格），仅计数弱化 */
+.tree-label {
+  font-size: 13px;
 }
 .tree-count {
   color: #999;
   font-size: 12px;
-  margin-left: 4px;
+  margin-left: 6px;
 }
-.tree-leaf {
-  font-family: ui-monospace, Consolas, monospace;
-  font-size: 13px;
+/* JSON 语法高亮配色（对齐 RedisDesktop：key 蓝 / string 绿 / number 红 / bool 橙） */
+.json-view .jkey {
+  color: #0b63ce;
+}
+.json-view .jstr {
+  color: #237804;
+}
+.json-view .jnum {
+  color: #cf1322;
+}
+.json-view .jbool {
+  color: #d46b08;
 }
 </style>
