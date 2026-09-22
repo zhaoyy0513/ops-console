@@ -134,7 +134,7 @@ async def _seed_keys(target_redis):
 
 async def test_scan_pagination_and_type_filter(client, target_redis):
     await _seed_keys(target_redis)
-    # pattern 过滤
+    # pattern 过滤（显式 glob 走 SCAN MATCH 原语义）
     r = await client.get("/api/sites/sz/redis/r1/keys", params={"pattern": "robot:*", "count": 10})
     body = r.json()
     assert {k["key"] for k in body["keys"]} == {"robot:001", "robot:002"}
@@ -144,6 +144,24 @@ async def test_scan_pagination_and_type_filter(client, target_redis):
     # 非法 type 400
     r = await client.get("/api/sites/sz/redis/r1/keys", params={"type": "bogus"})
     assert r.status_code == 400
+
+
+async def test_fuzzy_case_insensitive_search(client, target_redis):
+    """模糊子串 + 忽略大小写（用户需求）：小写搜大写、大写搜小写、子串命中。"""
+    await target_redis.set("COMPLETE_TPS_INFO:6", "a")
+    await target_redis.set("COMPLETE_TPS_INFO:7", "b")
+    await target_redis.set("robot:001", "c")
+
+    # 小写子串命中大写 key
+    r = await client.get("/api/sites/sz/redis/r1/keys", params={"pattern": "tps_info", "count": 10})
+    assert {k["key"] for k in r.json()["keys"]} == {"COMPLETE_TPS_INFO:6", "COMPLETE_TPS_INFO:7"}
+    # 大写子串命中小写 key
+    r = await client.get("/api/sites/sz/redis/r1/keys", params={"pattern": "ROBOT:", "count": 10})
+    assert {k["key"] for k in r.json()["keys"]} == {"robot:001"}
+    # count 截断 + cursor 翻页语义（非 0 cursor 表示还有更多）
+    r = await client.get("/api/sites/sz/redis/r1/keys", params={"pattern": "tps", "count": 1})
+    body = r.json()
+    assert body["count"] == 1
 
 
 async def test_key_detail_all_types(client, target_redis):

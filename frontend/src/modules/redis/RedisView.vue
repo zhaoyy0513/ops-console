@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, h, onMounted, ref, watch } from 'vue'
 import {
   NButton,
   NCard,
@@ -9,9 +9,11 @@ import {
   NSelect,
   NSpace,
   NSpin,
-  NTable,
   NTag,
+  NTooltip,
+  NTree,
   useMessage,
+  type TreeOption,
 } from 'naive-ui'
 import CountdownConfirm from '../../components/CountdownConfirm.vue'
 import { useSiteStore } from '../../stores/site'
@@ -32,7 +34,7 @@ const message = useMessage()
 const instances = ref<Array<{ label: string; value: string }>>([])
 const instanceId = ref<string | null>(null)
 const db = ref(0)
-const pattern = ref('*')
+const pattern = ref('')
 const typeFilter = ref<string | null>(null)
 const typeOptions = [
   { label: '全部类型', value: '' },
@@ -71,7 +73,7 @@ async function search(reset = true) {
   try {
     const page = await listKeys(siteStore.currentSiteId, instanceId.value, {
       db: db.value,
-      pattern: pattern.value || '*',
+      pattern: pattern.value.trim(),
       cursor: reset ? 0 : cursor.value,
       count: 100,
       type: typeFilter.value || undefined,
@@ -108,6 +110,72 @@ watch(() => siteStore.currentSiteId, () => {
 })
 watch(instanceId, () => (search(true), loadInfo()))
 
+// ---------- 树形分组（RedisDesktop 风格：按 ':' 分层折叠 + 自然排序） ----------
+
+interface TreeDir { key: string; label: string; dir: true; children: TreeNode[]; count: number }
+interface TreeLeaf { key: string; label: string; dir: false; item: KeyItem }
+type TreeNode = TreeDir | TreeLeaf
+
+const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' })
+
+function countLeaves(n: TreeNode): number {
+  return n.dir ? n.children.reduce((s, c) => s + countLeaves(c), 0) : 1
+}
+
+function sortTree(nodes: TreeNode[]): TreeNode[] {
+  nodes.sort((a, b) => collator.compare(a.label, b.label))
+  for (const n of nodes) if (n.dir) sortTree(n.children)
+  return nodes
+}
+
+function buildTree(items: KeyItem[]): TreeNode[] {
+  const dirs = new Map<string, TreeDir>()
+  const roots: TreeNode[] = []
+  for (const item of items) {
+    const parts = item.key.split(':')
+    let container = roots
+    let prefix = ''
+    parts.forEach((part, i) => {
+      prefix = prefix ? `${prefix}:${part}` : part
+      if (i === parts.length - 1) {
+        container.push({ key: `L:${item.key}`, label: part, dir: false, item })
+      } else {
+        let d = dirs.get(prefix)
+        if (!d) {
+          d = { key: `D:${prefix}`, label: part, dir: true, children: [], count: 0 }
+          dirs.set(prefix, d)
+          container.push(d)
+        }
+        container = d.children
+      }
+    })
+  }
+  for (const d of dirs.values()) d.count = countLeaves(d)
+  return sortTree(roots)
+}
+
+// 结构兼容 TreeOption（key/label/children 同名字段），断言绕开递归类型差异
+const treeData = computed(() => buildTree(keys.value) as unknown as TreeOption[])
+
+function renderLabel({ option }: { option: TreeOption }) {
+  const node = option as unknown as TreeNode
+  if (node.dir) {
+    return h('span', { class: 'tree-dir' }, [
+      h('span', null, node.label),
+      h('span', { class: 'tree-count' }, ` (${node.count})`),
+    ])
+  }
+  return h('span', { title: node.item.key, class: 'tree-leaf' }, [
+    h(NTag, { size: 'tiny', bordered: false, style: 'margin-right: 6px' }, { default: () => node.item.type }),
+    h('span', null, node.label),
+  ])
+}
+
+function onTreeSelect(_keys: Array<string>, options: Array<unknown>) {
+  const option = options?.[0] as unknown as TreeNode | null
+  if (option && !option.dir) openKey(option.item)
+}
+
 // ---------- 详情 / 编辑（PRD §11.4/§11.5） ----------
 const detail = ref<KeyDetail | null>(null)
 const detailShow = ref(false)
@@ -124,6 +192,11 @@ function toEditText(d: KeyDetail): string {
   return JSON.stringify(v ?? null, null, 2)
 }
 
+function parseEdit(d: KeyDetail): unknown {
+  if (d.type === 'string') return editText.value
+  return JSON.parse(editText.value) // 失败抛 SyntaxError -> 提示用户
+}
+
 async function openKey(k: KeyItem) {
   if (!siteStore.currentSiteId || !instanceId.value) return
   try {
@@ -134,12 +207,6 @@ async function openKey(k: KeyItem) {
   } catch (e) {
     message.error((e as Error).message)
   }
-}
-
-/** 编辑文本 -> 后端 value 结构（类型化校验在后端兜底） */
-function parseEdit(d: KeyDetail): unknown {
-  if (d.type === 'string') return editText.value
-  return JSON.parse(editText.value) // 失败抛 SyntaxError -> 提示用户
 }
 
 async function saveValue() {
@@ -214,6 +281,28 @@ function fmtTtl(ttl: number): string {
   if (ttl === -2) return '-'
   return `${ttl}s`
 }
+
+// ---------- info 指标（带中文解释） ----------
+const INFO_METRICS = computed(() => {
+  const i = info.value
+  if (!i) return []
+  return [
+    { label: '版本', value: i.version ?? '?', tip: 'Redis 服务端版本' },
+    { label: '内存', value: fmtBytes(i.memory_used), tip: '当前数据占用的内存（含缓冲）' },
+    { label: '内存峰值', value: fmtBytes(i.memory_peak), tip: '历史最高内存，用于容量规划参考' },
+    { label: '碎片率', value: String(i.memory_fragmentation ?? '?'),
+      tip: '物理内存/逻辑内存之比：>1.5 碎片偏高（可考虑重启回收）；<1 表示内存不足已动用 swap，需警惕' },
+    { label: '客户端', value: String(i.connected_clients),
+      tip: '当前连接数（含本平台）；持续增长可能意味着连接泄漏' },
+    { label: '命中率', value: i.hit_rate != null ? `${i.hit_rate}%` : '?',
+      tip: '读请求直接命中的比例；长期偏低说明业务查询的 key 大多不存在，或缓存设计/容量有问题' },
+    { label: `Keys(DB${db.value})`, value: String(i.db_size), tip: '当前所选 DB 的 key 总数' },
+    { label: '过期删除', value: String(i.expired_keys), tip: '启动以来到期自动删除的 key 累计数' },
+    { label: '内存淘汰', value: String(i.evicted_keys),
+      tip: '内存满后按策略挤出的 key 数；>0 说明曾发生内存不足，被淘汰的 key 丢了' },
+    { label: '累计命令', value: String(i.total_commands_processed), tip: '启动以来处理的命令总数' },
+  ]
+})
 </script>
 
 <template>
@@ -225,8 +314,8 @@ function fmtTtl(ttl: number): string {
           placeholder="选择 Redis" :options="instances" />
         <n-select v-model:value="db" size="small" style="width: 110px" :options="DB_OPTIONS"
           @update:value="doSearch" />
-        <n-input v-model:value="pattern" size="small" style="width: 220px"
-          placeholder="Pattern，如 robot:*" @keyup.enter="doSearch" />
+        <n-input v-model:value="pattern" size="small" style="width: 240px"
+          placeholder="模糊搜索，忽略大小写" @keyup.enter="doSearch" />
         <n-select v-model:value="typeFilter" size="small" style="width: 130px"
           :options="typeOptions" @update:value="doSearch" />
         <n-button size="small" :loading="loading" @click="doSearch">搜索</n-button>
@@ -234,36 +323,36 @@ function fmtTtl(ttl: number): string {
     </n-card>
 
     <n-card v-if="info" size="small">
-      <n-space :size="24">
-        <span>版本 <b>{{ info.version ?? '?' }}</b></span>
-        <span>内存 <b>{{ fmtBytes(info.memory_used) }}</b> / peak {{ fmtBytes(info.memory_peak) }}</span>
-        <span>客户端 <b>{{ info.connected_clients }}</b></span>
-        <span>命中率 <b>{{ info.hit_rate ?? '?' }}%</b></span>
-        <span>Keys(DB{{ db }}) <b>{{ info.db_size }}</b></span>
-        <span>碎片率 <b>{{ info.memory_fragmentation ?? '?' }}</b></span>
+      <n-space :size="20">
+        <n-tooltip v-for="m in INFO_METRICS" :key="m.label" trigger="hover" :style="{ maxWidth: '320px' }">
+          <template #trigger>
+            <span class="metric">
+              <span class="metric-label">{{ m.label }}</span>
+              <b>{{ m.value }}</b>
+            </span>
+          </template>
+          {{ m.tip }}
+        </n-tooltip>
       </n-space>
     </n-card>
 
-    <n-card size="small" title="Keys">
+    <n-card size="small" title="Keys（按前缀分层）">
       <template #header-extra>
-        <span style="color: #999; font-size: 12px">SCAN 分页 · {{ keys.length }} 条已加载</span>
+        <span style="color: #999; font-size: 12px">{{ keys.length }} 条已加载 · 点击 key 查看详情</span>
       </template>
       <n-spin :show="loading">
-        <n-table :single-line="false" size="small">
-          <thead>
-            <tr><th>Key</th><th style="width: 110px">类型</th><th style="width: 90px">操作</th></tr>
-          </thead>
-          <tbody>
-            <tr v-for="k in keys" :key="k.key">
-              <td style="font-family: ui-monospace, monospace">{{ k.key }}</td>
-              <td><n-tag size="small" :bordered="false">{{ k.type }}</n-tag></td>
-              <td><n-button size="tiny" @click="openKey(k)">查看</n-button></td>
-            </tr>
-            <tr v-if="!keys.length && !loading">
-              <td colspan="3" style="text-align: center; color: #999">无匹配 Key</td>
-            </tr>
-          </tbody>
-        </n-table>
+        <n-tree
+          v-if="treeData.length"
+          :data="treeData"
+          key-field="key"
+          label-field="label"
+          children-field="children"
+          block-line
+          selectable
+          :render-label="renderLabel"
+          @update:selected-keys="onTreeSelect"
+        />
+        <div v-else style="text-align: center; color: #999; padding: 16px 0">无匹配 Key</div>
       </n-spin>
       <div v-if="cursor !== 0" style="text-align: center; margin-top: 8px">
         <n-button size="small" :loading="loading" @click="search(false)">Load More</n-button>
@@ -326,5 +415,34 @@ function fmtTtl(ttl: number): string {
   overflow: auto;
   white-space: pre-wrap;
   word-break: break-all;
+}
+.metric {
+  display: inline-flex;
+  gap: 6px;
+  align-items: baseline;
+  font-size: 13px;
+  color: #666;
+  cursor: help;
+  border-bottom: 1px dashed #d0d3d8;
+  padding-bottom: 1px;
+}
+.metric b {
+  color: #1f2329;
+}
+</style>
+
+<style>
+/* 树节点样式（renderLabel 生成，非 scoped） */
+.tree-dir {
+  font-weight: 600;
+}
+.tree-count {
+  color: #999;
+  font-size: 12px;
+  margin-left: 4px;
+}
+.tree-leaf {
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 13px;
 }
 </style>

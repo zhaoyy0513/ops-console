@@ -65,34 +65,58 @@ async def list_keys(
     count: int = 100,
     key_type: str | None = None,
 ) -> dict[str, Any]:
-    """SCAN cursor MATCH COUNT；禁止 KEYS（验收 9）。type 过滤在客户端做。"""
+    """浏览 Key（PRD §11.2/§11.3），禁 KEYS（验收 9）。
+
+    pattern 含 glob 通配符（*?[）时按 SCAN MATCH 原语义；否则为
+    大小写不敏感的模糊子串搜索：服务端渐进 scan + 过滤攒批，
+    cursor 分页语义不变（返回 0 表示遍历结束）。
+
+    # ponytail: 模糊模式最多扫 200 轮（200*count 个 key）防止大库长占连接；
+    # 有更大库需求再改游标快照
+    """
     if key_type is not None and key_type not in KEY_TYPES:
         raise OpsError("INVALID_KEY_TYPE", f"unknown key type: {key_type}", status_code=400)
     config = await _require_redis_config(site_id, redis_id)
     provider = _build_provider(config)
 
+    raw = pattern or "*"
+    use_glob = any(ch in raw for ch in "*?[")
+    needle = raw.lower() if not use_glob else ""
+
     async with get_semaphore("target_redis"):
         try:
             async with provider._client(db) as c:
-                cur, keys = await with_timeout(
-                    c.scan(cursor=int(cursor), match=pattern or "*", count=count),
-                    settings_timeout(),
-                    resource=config["host"],
-                )
+                cur = int(cursor)
+                rounds = 0
+                collected: list[str] = []
+                while True:
+                    cur, keys = await with_timeout(
+                        c.scan(cursor=cur, match=(raw if use_glob else "*"), count=count),
+                        settings_timeout(),
+                        resource=config["host"],
+                    )
+                    if not use_glob and needle:
+                        collected.extend(k for k in keys if needle in k.lower())
+                    else:
+                        collected.extend(keys)
+                    rounds += 1
+                    if len(collected) >= count or int(cur) == 0 or rounds >= 200:
+                        break
+                collected = collected[:count]
                 # 批量取类型，供列表展示 + 客户端过滤
                 types: dict[str, str] = {}
-                if keys:
+                if collected:
                     async with c.pipeline(transaction=False) as p:
-                        for k in keys:
+                        for k in collected:
                             p.type(k)
                         results = await p.execute()
-                    types = dict(zip(keys, results))
+                    types = dict(zip(collected, results))
         except OpsError:
             raise
         except (ConnectionError, TimeoutError, OSError) as e:
             raise OpsError("REMOTE_CONNECTION_FAILED", f"Redis query failed: {e}", config["host"]) from None
 
-    items = [{"key": k, "type": types.get(k, "none")} for k in keys]
+    items = [{"key": k, "type": types.get(k, "none")} for k in collected]
     if key_type:
         items = [i for i in items if i["type"] == key_type]
     return {"keys": items, "cursor": int(cur), "count": len(items)}
