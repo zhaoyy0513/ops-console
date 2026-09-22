@@ -21,7 +21,7 @@ onMounted(async () => {
   try {
     const sites: Site[] = await sitesApi.list()
     siteOptions.value = sites.map((s) => ({ label: s.name, value: s.id }))
-    // 当前 URL 的 siteId 不存在（含历史占位 demo-site）→ 自动跳第一个真实站点；
+    // 当前 URL 的 siteId 不存在 → 自动跳第一个真实站点；
     // 一个站点都没有 → 引导去站点管理
     const current = String(route.params.siteId ?? '')
     if (route.path.startsWith('/console/site/') && !siteOptions.value.some((o) => o.value === current)) {
