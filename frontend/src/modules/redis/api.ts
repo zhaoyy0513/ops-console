@@ -14,6 +14,8 @@ export interface RedisInfo {
   evicted_keys: number
   expired_keys: number
   db_size: number
+  /** 各 DB 的 key 数（INFO keyspace），供 DB 下拉展示 */
+  db_sizes: Record<number, number>
 }
 
 export interface KeyItem {

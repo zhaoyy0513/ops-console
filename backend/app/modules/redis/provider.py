@@ -18,6 +18,11 @@ def normalize_info(info: dict[str, Any]) -> dict[str, Any]:
     hits = int(info.get("keyspace_hits", 0) or 0)
     misses = int(info.get("keyspace_misses", 0) or 0)
     hit_rate = round(hits / (hits + misses) * 100, 1) if (hits + misses) else None
+    # 各 DB 的 key 数：redis-py 把 keyspace 段以顶层 dbN 键返回（dbN={keys:105,...}）
+    db_sizes = {}
+    for k, v in info.items():
+        if k.startswith("db") and k[2:].isdigit() and isinstance(v, dict):
+            db_sizes[int(k[2:])] = int(v.get("keys", 0) or 0)
     return {
         "status": "ok",  # 能拿到 INFO 即在线；失败走 OpsError
         "version": info.get("redis_version"),
@@ -32,6 +37,7 @@ def normalize_info(info: dict[str, Any]) -> dict[str, Any]:
         "evicted_keys": int(info.get("evicted_keys", 0) or 0),
         "expired_keys": int(info.get("expired_keys", 0) or 0),
         "db_size": int(info.get("dbsize", info.get("db_size", 0)) or 0),
+        "db_sizes": db_sizes,
     }
 
 

@@ -6,8 +6,12 @@ const instance = axios.create({ baseURL: '/api', timeout: 10000 })
 instance.interceptors.response.use(
   (resp) => resp.data,
   (error) => {
-    // 后端统一错误包络 { success, error_code, message, resource }（PRD §28）
-    let message: string = error.response?.data?.message ?? error.message ?? '请求失败'
+    // 后端错误：业务包络 {message} 或 HTTPException {detail}（PRD §28）
+    let message: string = error.response?.data?.message
+      ?? error.response?.data?.detail
+      ?? error.message
+      ?? '请求失败'
+    if (typeof message !== 'string') message = JSON.stringify(message)
     if (error.code === 'ECONNABORTED') message = '请求超时'
     return Promise.reject(new Error(message))
   },

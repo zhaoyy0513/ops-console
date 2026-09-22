@@ -140,7 +140,8 @@ async def get_key(site_id: str, redis_id: str, *, db: int = 0, key: str) -> dict
             async with provider._client(db) as c:
                 ktype = await c.type(key)
                 if ktype == "none":
-                    raise NotFound(f"key not found: {key}")
+                    # 明确语义：key 已不存在（删除/过期），而非 HTTP 404 资源缺失
+                    raise NotFound("Key 不存在（可能已被删除或已过期）")
                 ttl = await c.ttl(key)
                 try:
                     memory = await c.memory_usage(key)

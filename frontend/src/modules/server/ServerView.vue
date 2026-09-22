@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import {
   NButton,
   NCard,
@@ -57,7 +57,7 @@ async function load() {
     ])
     metrics.value = m
     processes.value = p
-    // 趋势（overview 任务 30s 采样）
+    // 趋势（读取时采样，5s 轮询 = 5s 一个点）
     const rid = `server:${serverId.value}`
     getSamples(rid, 'cpu').then((s) => (cpuSeries.value = [...s].reverse())).catch(() => {})
     getSamples(rid, 'mem').then((s) => (memSeries.value = [...s].reverse())).catch(() => {})
@@ -69,7 +69,17 @@ async function load() {
   }
 }
 
-onMounted(loadServers)
+// 5s 前端轮询（页面在场才轮询；PRD 无 WebSocket 决策下的实时方案）
+let pollTimer: number | null = null
+onMounted(() => {
+  loadServers()
+  pollTimer = window.setInterval(() => {
+    if (!loading.value && serverId.value) load()
+  }, 5000)
+})
+onBeforeUnmount(() => {
+  if (pollTimer) clearInterval(pollTimer)
+})
 watch(() => siteStore.currentSiteId, () => {
   serverId.value = null
   loadServers()
@@ -157,15 +167,7 @@ function pctColor(pct: number | null | undefined): string {
         </n-table>
       </n-card>
 
-      <n-space :size="12">
-        <n-card size="small" title="CPU / 内存趋势（30s 采样）" style="width: 100%">
-          <base-chart v-if="cpuSeries.length" :option="trendOption" height="200px" />
-          <div v-else style="color: #999; font-size: 12px; padding: 12px 0; text-align: center">
-            采样收集中（后台健康检查每 30 秒一个点），稍后显示趋势
-          </div>
-        </n-card>
-      </n-space>
-
+      <!-- 指标卡在前，趋势图全宽在后 -->
       <n-space :size="12">
         <n-card size="small" title="CPU" style="flex: 1">
           <div class="metric-big" :style="{ color: pctColor(metrics.cpu.usage) }">
@@ -195,6 +197,13 @@ function pctColor(pct: number | null | undefined): string {
           </div>
         </n-card>
       </n-space>
+
+      <n-card size="small" title="CPU / 内存趋势（5s 轮询采样）" style="width: 100%">
+        <base-chart v-if="cpuSeries.length" :option="trendOption" height="220px" />
+        <div v-else style="color: #999; font-size: 12px; padding: 12px 0; text-align: center">
+          采样收集中，几秒后出现趋势线
+        </div>
+      </n-card>
 
       <n-card size="small" title="磁盘">
         <n-table :single-line="false" size="small">

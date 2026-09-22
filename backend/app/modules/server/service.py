@@ -3,6 +3,7 @@
 import time
 from typing import Any
 
+from backend.app.core import sampling
 from backend.app.core.cache import cached
 from backend.app.modules.server.provider import SSHServerMetricsProvider
 from backend.app.modules.sites.service import NotFound
@@ -44,7 +45,20 @@ async def get_metrics(site_id: str, server_id: str) -> dict[str, Any]:
         provider = _build_provider(config)
         return provider.get_metrics()
 
-    metrics = await _with_cache(site_id, server_id, "metrics", factory)
+    # 采样挂在真实读取上（前端 5s 轮询驱动，趋势点随页面在场密度变高）
+    async def sampled_factory():
+        metrics = await factory()
+        cpu = metrics.get("cpu", {}).get("usage")
+        mem = metrics.get("memory", {})
+        mem_pct = (round(mem["used"] / mem["total"] * 100, 1)
+                   if mem.get("total") and mem.get("used") is not None else None)
+        if isinstance(cpu, (int, float)):
+            await sampling.push_sample(f"server:{server_id}", "cpu", cpu)
+        if isinstance(mem_pct, (int, float)):
+            await sampling.push_sample(f"server:{server_id}", "mem", mem_pct)
+        return metrics
+
+    metrics = await _with_cache(site_id, server_id, "metrics", sampled_factory)
     # 诊断不走缓存值缓存，但用同一份 metrics 计算，零额外 SSH
     thresholds = merge_thresholds(config.get("thresholds"), (site or {}).get("thresholds"))
     return {**metrics, "diagnosis": diagnose(metrics, thresholds)}

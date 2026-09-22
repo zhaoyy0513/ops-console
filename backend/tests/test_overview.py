@@ -65,11 +65,11 @@ async def test_check_site_isolates_failures(client, fake_platform_redis, monkeyp
     async def boom(self):
         raise RuntimeError("ssh down")
 
-    async def ok_info(self, db=None):
-        return {"status": "ok", "version": "7.2.4", "memory_used": 123}
+    async def ok_test(self, db=None):
+        return "Connected, Redis 7.2.4"
 
     monkeypatch.setattr(SSHServerMetricsProvider, "health_check", boom)
-    monkeypatch.setattr(TargetRedisProvider, "get_info", ok_info)
+    monkeypatch.setattr(TargetRedisProvider, "run_test", ok_test)
     await client.post("/api/sites/sz/servers", json={"id": "s1", "name": "s1", "host": "h", "username": "u", "password": "p"})
     await client.post("/api/sites/sz/redis", json={"id": "r1", "name": "r1", "host": "h"})
 
