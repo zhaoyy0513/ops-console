@@ -3,9 +3,6 @@ import { getModules } from '../modules'
 import SitesView from '../modules/sites/SitesView.vue'
 import AuditView from '../modules/overview/AuditView.vue'
 
-// 模块路由由注册表生成：/console/site/:siteId/:moduleId（PRD §20.3）
-const firstModule = getModules()[0]
-
 const router = createRouter({
   history: createWebHistory(),
   routes: [
@@ -15,7 +12,7 @@ const router = createRouter({
       path: `/console/site/:siteId/${m.routePath}`,
       component: m.view,
     })),
-    { path: '/', redirect: `/console/site/demo-site/${firstModule?.routePath ?? ''}` },
+    { path: '/', redirect: '/sites' }, // 先见站点管理（无占位站点；MainLayout 会自动跳第一个真实站点）
     { path: '/:pathMatch(.*)*', redirect: '/' },
   ],
 })

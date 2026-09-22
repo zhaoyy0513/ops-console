@@ -21,6 +21,17 @@ onMounted(async () => {
   try {
     const sites: Site[] = await sitesApi.list()
     siteOptions.value = sites.map((s) => ({ label: s.name, value: s.id }))
+    // 当前 URL 的 siteId 不存在（含历史占位 demo-site）→ 自动跳第一个真实站点；
+    // 一个站点都没有 → 引导去站点管理
+    const current = String(route.params.siteId ?? '')
+    if (route.path.startsWith('/console/site/') && !siteOptions.value.some((o) => o.value === current)) {
+      if (siteOptions.value.length) {
+        const target = String(route.params.moduleId ?? modules[0]?.routePath ?? 'overview')
+        router.replace(`/console/site/${siteOptions.value[0].value}/${target}`)
+      } else {
+        router.replace('/sites')
+      }
+    }
   } catch {
     // 后端未就绪时选择器留空，不阻塞页面
   }
@@ -35,7 +46,9 @@ watch(
 )
 
 function onMenuSelect(key: string) {
-  router.push(`/console/site/${siteStore.currentSiteId || 'demo-site'}/${key}`)
+  // 无有效站点时去站点管理，不拼占位 URL（避免 404）
+  const siteId = route.params.siteId ?? siteStore.currentSiteId
+  router.push(siteId ? `/console/site/${siteId}/${key}` : '/sites')
 }
 
 // 切换站点后停留在当前模块（PRD §21）
