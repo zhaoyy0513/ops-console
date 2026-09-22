@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   NButton,
@@ -16,24 +16,24 @@ import {
   useMessage,
 } from 'naive-ui'
 import { sitesApi, type Site } from './api'
+import { useSiteStore } from '../../stores/site'
 import SiteResourcesDrawer from './SiteResourcesDrawer.vue'
 
 const router = useRouter()
 const message = useMessage()
+const siteStore = useSiteStore()
 
-const sites = ref<Site[]>([])
 const showModal = ref(false)
 const editing = ref<Site | null>(null)
 const form = ref({ name: '', description: '', enabled: true })
 const drawerSite = ref<Site | null>(null)
 const drawerShow = ref(false)
 
+// 站点列表存于共享 store（顶栏下拉同源），增删后 loadSites() 两处同步
+const sites = computed(() => siteStore.sites)
+
 async function load() {
-  try {
-    sites.value = await sitesApi.list()
-  } catch (e) {
-    message.error((e as Error).message)
-  }
+  await siteStore.loadSites()
 }
 onMounted(load)
 
@@ -104,8 +104,8 @@ function goConsole(site: Site) {
     <n-table :bordered="false" :single-line="false" size="small">
       <thead>
         <tr>
-          <th>名称</th>
           <th>ID</th>
+          <th>名称</th>
           <th>描述</th>
           <th style="width: 90px">启用</th>
           <th style="width: 260px">操作</th>
@@ -113,8 +113,8 @@ function goConsole(site: Site) {
       </thead>
       <tbody>
         <tr v-for="s in sites" :key="s.id">
-          <td>{{ s.name }}</td>
           <td><n-tag size="small" :bordered="false">{{ s.id }}</n-tag></td>
+          <td>{{ s.name }}</td>
           <td>{{ s.description }}</td>
           <td><n-switch size="small" :value="s.enabled" @update:value="toggle(s)" /></td>
           <td>

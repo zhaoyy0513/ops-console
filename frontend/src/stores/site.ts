@@ -1,20 +1,31 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
+import { sitesApi, type Site } from '../modules/sites/api'
 
 /**
- * Site Context（PRD §21）：当前站点全局状态。
- * 模块内 watch 路由参数或 store 变化自行重载。
+ * Site Context（PRD §21）：当前站点 + 站点列表（顶栏下拉与站点管理页共享，
+ * 任一处增删后 loadSites() 刷新，两处自动同步）。
  */
 export const useSiteStore = defineStore('site', () => {
   const currentSiteId = ref('')
-  // 完整站点对象（name/description 等）在 T06 站点 API 落地后填充
-  const currentSite = computed(() =>
-    currentSiteId.value ? { id: currentSiteId.value } : null,
+  const sites = ref<Site[]>([])
+
+  const currentSite = computed(
+    () => sites.value.find((s) => s.id === currentSiteId.value) ?? null,
   )
+  const options = computed(() => sites.value.map((s) => ({ label: s.name, value: s.id })))
 
   function setSite(id: string) {
     currentSiteId.value = id
   }
 
-  return { currentSiteId, currentSite, setSite }
+  async function loadSites() {
+    try {
+      sites.value = await sitesApi.list()
+    } catch {
+      // 后端未就绪时保留现状，不阻塞页面
+    }
+  }
+
+  return { currentSiteId, currentSite, sites, options, setSite, loadSites }
 })

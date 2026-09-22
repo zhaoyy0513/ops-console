@@ -1,9 +1,8 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { NButton, NMenu, NSelect } from 'naive-ui'
 import { getModules } from '../modules'
-import { sitesApi, type Site } from '../modules/sites/api'
 import { useSiteStore } from '../stores/site'
 
 const route = useRoute()
@@ -14,27 +13,21 @@ const modules = getModules()
 const menuOptions = modules.map((m) => ({ label: m.title, key: m.routePath }))
 const activeKey = computed(() => String(route.params.moduleId ?? ''))
 
-// 站点选项来自后端（T06 API）
-const siteOptions = ref<Array<{ label: string; value: string }>>([])
-
-onMounted(async () => {
-  try {
-    const sites: Site[] = await sitesApi.list()
-    siteOptions.value = sites.map((s) => ({ label: s.name, value: s.id }))
+onMounted(() => {
+  siteStore.loadSites().then(() => {
     // 当前 URL 的 siteId 不存在 → 自动跳第一个真实站点；
     // 一个站点都没有 → 引导去站点管理
     const current = String(route.params.siteId ?? '')
-    if (route.path.startsWith('/console/site/') && !siteOptions.value.some((o) => o.value === current)) {
-      if (siteOptions.value.length) {
+    const options = siteStore.options
+    if (route.path.startsWith('/console/site/') && !options.some((o) => o.value === current)) {
+      if (options.length) {
         const target = String(route.params.moduleId ?? modules[0]?.routePath ?? 'overview')
-        router.replace(`/console/site/${siteOptions.value[0].value}/${target}`)
+        router.replace(`/console/site/${options[0].value}/${target}`)
       } else {
         router.replace('/sites')
       }
     }
-  } catch {
-    // 后端未就绪时选择器留空，不阻塞页面
-  }
+  })
 })
 
 watch(
@@ -67,7 +60,7 @@ function onSiteSelect(id: string) {
         size="small"
         placeholder="选择站点"
         :value="siteStore.currentSiteId || null"
-        :options="siteOptions"
+        :options="siteStore.options"
         @update:value="onSiteSelect"
       />
       <div style="flex: 1" />
