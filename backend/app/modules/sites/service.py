@@ -104,6 +104,8 @@ async def delete_site(site_id: str) -> bool:
 
 
 # ---------- 资源配置（servers / redis / mq / robots，PRD §5.2） ----------
+# 决策记录（2026-09-22，用户指令）：内部工具全明文——查询接口返回明文密码，
+# 推翻 PRD §5.2 的"密码不回显"要求；更新语义为"提交什么存什么"。
 
 
 async def _require_site(site_id: str) -> None:
@@ -111,30 +113,25 @@ async def _require_site(site_id: str) -> None:
         raise NotFound(f"site not found: {site_id}")
 
 
-def _strip_password(config: dict) -> dict:
-    """查询接口不回显密码（PRD §5.2）：返回空串。"""
-    return {k: ("" if k == "password" else v) for k, v in config.items()}
-
-
-async def list_resources(site_id: str, res_type: str, include_password: bool = False) -> list[dict]:
+async def list_resources(site_id: str, res_type: str, include_password: bool = True) -> list[dict]:
     await _require_site(site_id)
     raw = await get_platform_redis().hvals(resource_key(site_id, res_type))
     items = [json.loads(x) for x in raw]
     if not include_password:
-        items = [_strip_password(c) for c in items]
+        # ponytail: 兼容旧签名；当前全部调用方都用明文
+        items = [{k: ("" if k == "password" else v) for k, v in c.items()} for c in items]
     return sorted(items, key=lambda c: c["id"])
 
 
 async def get_resource_raw(site_id: str, res_type: str, resource_id: str) -> dict | None:
-    """内部使用：读原始配置（含密码）。供各资源模块 provider 建连，严禁直接外发。"""
+    """读原始配置（含密码）。供各资源模块 provider 建连与前端展示共用。"""
     await _require_site(site_id)
     raw = await get_platform_redis().hget(resource_key(site_id, res_type), resource_id)
     return json.loads(raw) if raw else None
 
 
 async def get_resource(site_id: str, res_type: str, resource_id: str) -> dict | None:
-    item = await get_resource_raw(site_id, res_type, resource_id)
-    return _strip_password(item) if item else None
+    return await get_resource_raw(site_id, res_type, resource_id)
 
 
 async def create_resource(site_id: str, res_type: str, data: dict) -> dict:
@@ -147,7 +144,7 @@ async def create_resource(site_id: str, res_type: str, data: dict) -> dict:
     data = {**data, "id": resource_id}
     await r.hset(key, resource_id, json.dumps(data, ensure_ascii=False))
     await oplog.record(site_id, f"{res_type}/{resource_id}", "RESOURCE_CONFIG_CREATED", target=resource_id)
-    return _strip_password(data)
+    return data
 
 
 async def update_resource(site_id: str, res_type: str, resource_id: str, data: dict) -> dict | None:
@@ -158,14 +155,12 @@ async def update_resource(site_id: str, res_type: str, resource_id: str, data: d
     if not raw:
         return None
     old = json.loads(raw)
-    # 密码留空/缺省 = 不修改（PRD §5.2）
-    if not data.get("password"):
-        data.pop("password", None)
+    # 提交什么存什么（exclude_unset 只带显式提交的字段）；明文策略下编辑即覆盖
     old.update(data)
     old["id"] = resource_id
     await r.hset(key, resource_id, json.dumps(old, ensure_ascii=False))
     await oplog.record(site_id, f"{res_type}/{resource_id}", "RESOURCE_CONFIG_UPDATED", target=resource_id)
-    return _strip_password(old)
+    return old
 
 
 async def delete_resource(site_id: str, res_type: str, resource_id: str) -> bool:

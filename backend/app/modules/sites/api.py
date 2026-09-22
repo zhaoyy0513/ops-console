@@ -53,8 +53,8 @@ class MqConfig(ResourceBase):
 
 
 class RobotConfig(ResourceBase):
-    base_url: str
-    list_path: str = "/robots"  # 列表端点路径（映射方式待现场确认，暂不暴露到表单）
+    base_url: str  # 完整 API 地址（可含路径，如 http://host:19030/mission/robot/info/active）
+    list_path: str = ""  # 留空 = 直接请求 base_url；地址与路径分离的场景才填（如 /mission/agent/list）
     username: str = ""
     password: str = ""
 

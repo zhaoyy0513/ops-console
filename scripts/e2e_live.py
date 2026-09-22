@@ -69,9 +69,9 @@ async def run_checks(c: httpx.AsyncClient, redis_host: str, redis_port: int) -> 
         r = await c.post(f"/api/sites/{SITE}/{path}", json=body)
         check(f"create {path}", r.status_code == 201)
 
-    # 2. 密码不回显
+    # 2. 密码明文回显（内部工具全明文决策）
     r = await c.get(f"/api/sites/{SITE}/servers")
-    check("password not echoed", r.json()[0]["password"] == "")
+    check("password plaintext echo", r.json()[0]["password"] == ssh["password"])
 
     # 3. 连接测试（四类）
     for ttype, cfg in [("server", ssh), ("redis", redis_cfg), ("mq", mq_cfg), ("robot", robot_cfg)]:

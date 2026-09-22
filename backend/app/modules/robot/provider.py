@@ -104,8 +104,8 @@ class HttpRobotProvider(RobotProvider):
         self._base_url: str = str(config.get("base_url") or "").rstrip("/")
         if not self._base_url:
             raise OpsError("INVALID_OPERATION", "robot base_url required", status_code=400)
-        # 路径按现场环境配置（如 /mission/robot/info/active、/mission/agent/list）
-        self._list_path: str = str(config.get("list_path") or "/robots")
+        # 现场仅一个 URL 字段：base_url 即完整地址；地址与路径分离时才配 list_path
+        self._list_path: str = str(config.get("list_path") or "")
         self._username: str = config.get("username") or ""
         self._password: str = config.get("password") or ""
 

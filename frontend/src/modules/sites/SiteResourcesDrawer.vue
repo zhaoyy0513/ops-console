@@ -37,25 +37,26 @@ const TYPES: Array<{ key: ResourceType; label: string }> = [
   { key: 'robots', label: 'Robot' },
 ]
 
-/** 各类型的专有字段（name/enabled 通用，PRD §5.2）；required 表单必填 */
+/** 各类型的专有字段（name/enabled 通用，PRD §5.2）；required 表单必填。
+ *  host 输入形态：server 手输；redis/mq 可输可选（候选 = 同站点 Server 的 host） */
 const FIELD_DEFS: Record<
   ResourceType,
-  Array<{ key: string; label: string; kind?: 'number' | 'host'; required?: boolean }>
+  Array<{ key: string; label: string; kind?: 'number' | 'host-input' | 'host-select'; required?: boolean }>
 > = {
   servers: [
-    { key: 'host', label: 'Host', kind: 'host', required: true },
+    { key: 'host', label: 'Host', kind: 'host-input', required: true },
     { key: 'port', label: 'Port', kind: 'number' },
     { key: 'username', label: '用户名', required: true },
     { key: 'password', label: '密码', required: true },
   ],
   redis: [
-    { key: 'host', label: 'Host', kind: 'host', required: true },
+    { key: 'host', label: 'Host', kind: 'host-select', required: true },
     { key: 'port', label: 'Port', kind: 'number' },
     { key: 'username', label: '用户名' },
     { key: 'password', label: '密码' },
   ],
   mq: [
-    { key: 'host', label: 'Host', kind: 'host', required: true },
+    { key: 'host', label: 'Host', kind: 'host-select', required: true },
     { key: 'port', label: 'Port', kind: 'number' },
     { key: 'username', label: '用户名' },
     { key: 'password', label: '密码' },
@@ -127,9 +128,9 @@ async function save() {
       return
     }
   }
-  // 空值字段不提交（number 控件产生 null；密码空串留空 = 后端保留原值）
+  // 空值字段不提交 null/undefined（number 控件产生 null）；空串照常提交（全明文语义：提交什么存什么）
   const data = Object.fromEntries(
-    Object.entries(form.value).filter(([, v]) => v !== null && v !== undefined && v !== ''),
+    Object.entries(form.value).filter(([, v]) => v !== null && v !== undefined),
   )
   try {
     if (editingId.value) {
@@ -228,20 +229,20 @@ function displayValue(item: ResourceConfig, key: string): string {
               v-model:value="form[f.key]"
               style="width: 100%"
             />
-            <!-- host 可从已有 Server 的 host 下拉选，也可手输（filterable + tag） -->
+            <!-- server 手输；redis/mq 可输可选（tag 模式自由输入，候选来自已有 Server） -->
+            <n-input v-if="f.kind === 'host-input'" v-model:value="form[f.key]"
+              placeholder="IP 或主机名" />
             <n-select
-              v-else-if="f.kind === 'host'"
+              v-else-if="f.kind === 'host-select'"
               v-model:value="form[f.key]"
               filterable
               tag
               default-first-option
               :options="hostOptions"
-              :disabled="!hostOptions.length"
-              :placeholder="hostOptions.length ? '选择或输入' : '输入地址'"
+              :placeholder="hostOptions.length ? '选择已有 Server 的 Host 或直接输入' : '输入地址'"
             />
-            <!-- 内部工具：凭据明文显示（现场要求）；编辑留空 = 不修改 -->
-            <n-input v-else v-model:value="form[f.key]"
-              :placeholder="editingId && f.key === 'password' ? '留空表示不修改' : ''" />
+            <!-- 内部工具全明文；编辑预填原密码，改动即覆盖 -->
+            <n-input v-else v-model:value="form[f.key]" />
           </n-form-item>
         </n-form>
         <template #footer>
