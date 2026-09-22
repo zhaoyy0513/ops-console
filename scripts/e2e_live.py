@@ -1,6 +1,6 @@
 """E2E 主路径（PRD §32）：对真实环境按顺序走完 V1 核心用户路径。
 
-用法：uv run --env-file dev.env python scripts/e2e_live.py
+用法：uv run --env-file .env python scripts/e2e_live.py
 覆盖：建站 → 配 4 类资源 → 连接测试 → Server 指标+诊断 → Redis SCAN/编辑/
 倒计时删除（后端等价物）→ MQ → Robot → Overview → 操作日志 → 导出导入 → 清理。
 """

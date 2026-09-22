@@ -15,7 +15,7 @@ Internal Ops & Diagnostics Platform ("Ops Console"). Monorepo:
 ```bash
 # Backend
 uv sync                                        # install deps into .venv
-uv run --env-file dev.env uvicorn backend.app.main:app --reload   # dev server (http://127.0.0.1:8000, docs at /docs)
+uv run --env-file .env uvicorn backend.app.main:app --reload   # dev server (http://127.0.0.1:8000, docs at /docs)
 uv run pytest                                  # run backend tests
 uv add <package>                               # add a dependency
 
@@ -28,11 +28,11 @@ cd frontend && npx vitest run                  # frontend tests
 
 Note: if `uv run uvicorn ...` fails with "uv trampoline failed to canonicalize script path", run `uv sync --reinstall-package uvicorn` (stale trampoline from an older uv), or use `uv run python -m uvicorn backend.app.main:app`.
 
-Local dev env vars live in `dev.env` (gitignored, holds real creds; see `dev.env.example`). Backend tests use fakeredis — no live services needed.
+Env vars live in `.env` (gitignored, real creds) — one file shared by local dev (`--env-file .env`) and Docker Compose (auto-read). Template: `.env.example`. Backend tests use fakeredis — no live services needed.
 
-Live E2E (needs dev.env + reachable backend on :8123): `uv run --env-file dev.env python scripts/e2e_live.py`
+Live E2E (needs .env + reachable backend on :8123): `uv run --env-file .env python scripts/e2e_live.py`
 
-Deploy: `docker compose up -d --build` (backend + ops-nginx on `${OPS_PORT:-8090}`, reuses existing Redis via `OPS_REDIS_URL`; copy `.env.example` to `.env` first).
+Deploy: `docker compose up -d --build` (backend + ops-nginx on `${OPS_PORT:-8090}`, reuses existing Redis via `OPS_REDIS_URL`; copy `.env.example` to `.env` first — same file local dev uses).
 
 Tests (pytest / vitest) are configured but no test files exist yet.
 
