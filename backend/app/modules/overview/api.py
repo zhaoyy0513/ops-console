@@ -22,3 +22,14 @@ async def refresh(site_id: str) -> dict:
     except Exception as e:  # noqa: BLE001
         raise HTTPException(status_code=502, detail=str(e)) from None
     return {"checked": count}
+
+
+@router.get("/samples")
+async def get_samples(rid: str, series: str, limit: int = 60) -> list[dict]:
+    """采样序列查询（趋势图数据源）：rid 形如 server:s1 / redis:r1 / <mq_id>。"""
+    from backend.app.core.sampling import read_series
+
+    # 仅允许安全的 key 组成部分，防止拼出任意 Redis key
+    if not rid or not series or any(c in rid + series for c in " {}*?\0\n"):
+        raise HTTPException(status_code=400, detail="invalid rid/series")
+    return await read_series(rid, series, limit)

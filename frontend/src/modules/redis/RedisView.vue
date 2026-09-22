@@ -18,6 +18,8 @@ import {
   type TreeOption,
 } from 'naive-ui'
 import CountdownConfirm from '../../components/CountdownConfirm.vue'
+import BaseChart from '../../components/BaseChart.vue'
+import { getSamples, type SamplePoint } from '../overview/api'
 import { useSiteStore } from '../../stores/site'
 import {
   getKey,
@@ -51,6 +53,7 @@ const keys = ref<KeyItem[]>([])
 const cursor = ref(0)
 const loading = ref(false)
 const info = ref<RedisInfo | null>(null)
+const memSeries = ref<SamplePoint[]>([])
 
 const DB_OPTIONS = Array.from({ length: 16 }, (_, i) => ({ label: `DB ${i}`, value: i }))
 
@@ -93,6 +96,10 @@ async function loadInfo() {
   if (!siteStore.currentSiteId || !instanceId.value) return
   try {
     info.value = await getInfo(siteStore.currentSiteId, instanceId.value, db.value)
+    // 内存趋势（overview 任务 30s 采样）
+    getSamples(`redis:${instanceId.value}`, 'mem')
+      .then((s) => (memSeries.value = [...s].reverse()))
+      .catch(() => {})
   } catch {
     info.value = null
   }
@@ -334,6 +341,26 @@ function fmtTtl(ttl: number): string {
   return `${ttl}s`
 }
 
+const memTrendOption = computed(() => ({
+  grid: { left: 64, right: 16, top: 20, bottom: 26 },
+  tooltip: { trigger: 'axis' },
+  xAxis: {
+    type: 'category',
+    data: memSeries.value.map((p) => new Date(p.ts * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })),
+  },
+  yAxis: { type: 'value', axisLabel: { formatter: (v: number) => `${Math.round(v / 1024 / 1024)}M` } },
+  series: [{
+    name: '内存',
+    type: 'line',
+    data: memSeries.value.map((p) => p.v),
+    smooth: true,
+    showSymbol: false,
+    areaStyle: { opacity: 0.15 },
+    lineStyle: { color: '#237804' },
+    itemStyle: { color: '#237804' },
+  }],
+}))
+
 // ---------- info 指标（带中文解释） ----------
 const INFO_METRICS = computed(() => {
   const i = info.value
@@ -386,6 +413,10 @@ const INFO_METRICS = computed(() => {
           {{ m.tip }}
         </n-tooltip>
       </n-space>
+    </n-card>
+
+    <n-card v-if="info && memSeries.length" size="small" title="内存趋势（30s 采样）">
+      <base-chart :option="memTrendOption" height="160px" />
     </n-card>
 
     <!-- 左树右值（RedisDesktop 格局） -->

@@ -24,6 +24,16 @@ export const overviewApi = {
   refresh: (siteId: string) => api.post<{ checked: number }>(`/sites/${siteId}/overview/refresh`),
 }
 
+export interface SamplePoint {
+  ts: number
+  v: number
+}
+
+/** 趋势采样序列（rid 形如 server:s1 / redis:r1 / <mq_id>，新->旧） */
+export function getSamples(rid: string, series: string, limit = 60): Promise<SamplePoint[]> {
+  return api.get(`/samples?rid=${encodeURIComponent(rid)}&series=${encodeURIComponent(series)}&limit=${limit}`)
+}
+
 export interface AuditPage {
   items: Array<{
     time: string

@@ -5,7 +5,7 @@ import time
 from datetime import datetime, timezone
 from typing import Any
 
-from backend.app.core import oplog
+from backend.app.core import oplog, sampling
 from backend.app.core.redis import get_platform_redis
 
 
@@ -44,16 +44,29 @@ async def check_site(site_id: str) -> int:
         if not cfg.get("enabled", True):
             continue
         provider = SSHServerMetricsProvider(cfg)
-        await put(f"server:{cfg['id']}", cfg["name"], provider.health_check, None)
+
+        async def server_check(provider=provider, rid=cfg["id"]):
+            result = await provider.health_check()
+            # 趋势采样（Server 页 CPU/内存折线图数据源）
+            if isinstance(result.get("cpu_pct"), (int, float)):
+                await sampling.push_sample(f"server:{rid}", "cpu", result["cpu_pct"])
+            if isinstance(result.get("mem_pct"), (int, float)):
+                await sampling.push_sample(f"server:{rid}", "mem", result["mem_pct"])
+            return result
+
+        await put(f"server:{cfg['id']}", cfg["name"], server_check, None)
 
     for cfg in await sites_service.list_resources(site_id, "redis", include_password=True):
         if not cfg.get("enabled", True):
             continue
         provider = TargetRedisProvider(cfg)
 
-        async def redis_check(provider=provider):
-            message = await provider.run_test()
-            return {"status": "HEALTHY", "message": message}
+        async def redis_check(provider=provider, rid=cfg["id"]):
+            info = await provider.get_info()  # PING+INFO，连接异常时抛错走 CRITICAL
+            # 内存采样（Redis 页内存折线图数据源）
+            await sampling.push_sample(f"redis:{rid}", "mem", info["memory_used"])
+            return {"status": "HEALTHY",
+                    "message": f"Connected, Redis {info.get('version')} · mem {info['memory_used']}"}
 
         await put(f"redis:{cfg['id']}", cfg["name"], redis_check, None)
 

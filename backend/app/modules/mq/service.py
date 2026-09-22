@@ -40,7 +40,12 @@ async def get_overview(site_id: str, mq_id: str) -> dict[str, Any]:
 
     async def factory():
         async with get_semaphore("mq"):
-            return await provider.get_overview()
+            overview = await provider.get_overview()
+            # Heap 采样（趋势图数据源）：仅真实读取时记录，缓存命中不重复采样
+            heap = overview.get("jvm", {}).get("heap_used")
+            if isinstance(heap, (int, float)):
+                await sampling.push_sample(mq_id, "heap", heap)
+            return overview
 
     return await cached(f"ops:cache:mq:{mq_id}:overview", CACHE_TTL, with_retry(factory))
 

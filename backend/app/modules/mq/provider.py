@@ -111,11 +111,16 @@ def normalize_broker(attrs: dict[str, Any]) -> dict[str, Any]:
             state = status_raw
     elif isinstance(status_raw, dict):
         state = status_raw.get("server", {}).get("state")
+    # Artemis 2.19 无 Status 属性：能经 Jolokia 读到 broker 属性本身即在线
+    if not state:
+        state = "STARTED"
+
     def _int(v):
         return int(v) if isinstance(v, (int, float)) else None
+
     return {
         "name": attrs.get("Name"),
-        "status": state or "UNKNOWN",
+        "status": state,
         "version": attrs.get("Version"),
         "uptime": attrs.get("Uptime"),
         "connections": _int(attrs.get("ConnectionCount")),
@@ -132,10 +137,14 @@ def normalize_jvm(memory: dict, threading: dict, gc: dict) -> dict[str, Any]:
     nonheap = memory.get("NonHeapMemoryUsage") or {}
     collectors = []
     for objname, attrs in (gc or {}).items():
-        # ObjectName 形如 java.lang:type=GarbageCollector,name="G1 Young Generation"
-        name = objname
+        # 兼容两种 ObjectName：name="G1 Old"（带引号）与 name=G1 Old,type=...（无引号，2.19 实测）
         if 'name="' in objname:
             name = objname.split('name="', 1)[1].split('"', 1)[0]
+        elif "name=" in objname:
+            after = objname.split("name=", 1)[1]
+            name = after.split(",", 1)[0]
+        else:
+            name = objname
         collectors.append({
             "name": name,
             "count": attrs.get("CollectionCount"),

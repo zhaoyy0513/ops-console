@@ -31,3 +31,10 @@ async def value_minutes_ago(resource_id: str, series: str, minutes: float = 5) -
         if entry["ts"] <= cutoff:
             return entry["v"]
     return None
+
+
+async def read_series(resource_id: str, series: str, limit: int = 60) -> list[dict]:
+    """读取采样序列（新 -> 旧）：[{ts, v}, ...]，供前端画趋势图。"""
+    limit = min(max(1, limit), SAMPLE_MAX)
+    raw = await get_platform_redis().lrange(sample_key(resource_id, series), 0, limit - 1)
+    return [json.loads(x) for x in raw]

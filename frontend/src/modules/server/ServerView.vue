@@ -8,8 +8,10 @@ import {
   NTable,
   useMessage,
 } from 'naive-ui'
+import BaseChart from '../../components/BaseChart.vue'
 import StatusBadge from '../../components/StatusBadge.vue'
 import { useSiteStore } from '../../stores/site'
+import { getSamples, type SamplePoint } from '../overview/api'
 import { serverApi, type ProcessRow, type ServerMetrics } from './api'
 
 const siteStore = useSiteStore()
@@ -21,6 +23,8 @@ const metrics = ref<ServerMetrics | null>(null)
 const processes = ref<ProcessRow[]>([])
 const loading = ref(false)
 const error = ref('')
+const cpuSeries = ref<SamplePoint[]>([])
+const memSeries = ref<SamplePoint[]>([])
 
 // 只读原则：本页面无任何写入口（验收 8）
 async function loadServers() {
@@ -53,6 +57,10 @@ async function load() {
     ])
     metrics.value = m
     processes.value = p
+    // 趋势（overview 任务 30s 采样）
+    const rid = `server:${serverId.value}`
+    getSamples(rid, 'cpu').then((s) => (cpuSeries.value = [...s].reverse())).catch(() => {})
+    getSamples(rid, 'mem').then((s) => (memSeries.value = [...s].reverse())).catch(() => {})
   } catch (e) {
     metrics.value = null // 展示 Unknown（PRD §10：错误展示）
     error.value = (e as Error).message
@@ -71,6 +79,22 @@ watch(serverId, load)
 const memPct = computed(() => {
   const m = metrics.value?.memory
   return m?.total && m?.used != null ? Math.round((m.used / m.total) * 100) : null
+})
+
+const trendOption = computed(() => {
+  const labels = cpuSeries.value.map((p) => new Date(p.ts * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }))
+  const memPoints = memSeries.value.map((p) => p.v)
+  return {
+    grid: { left: 44, right: 16, top: 36, bottom: 26 },
+    legend: { data: ['CPU %', '内存 %'], top: 0 },
+    tooltip: { trigger: 'axis' },
+    xAxis: { type: 'category', data: labels },
+    yAxis: { type: 'value', max: 100, axisLabel: { formatter: '{value}%' } },
+    series: [
+      { name: 'CPU %', type: 'line', smooth: true, showSymbol: false, data: cpuSeries.value.map((p) => p.v), itemStyle: { color: '#0b63ce' } },
+      { name: '内存 %', type: 'line', smooth: true, showSymbol: false, data: memPoints, itemStyle: { color: '#d46b08' } },
+    ],
+  }
 })
 
 function fmtBytes(n: number | null | undefined): string {
@@ -132,6 +156,15 @@ function pctColor(pct: number | null | undefined): string {
           </tbody>
         </n-table>
       </n-card>
+
+      <n-space :size="12">
+        <n-card size="small" title="CPU / 内存趋势（30s 采样）" style="width: 100%">
+          <base-chart v-if="cpuSeries.length" :option="trendOption" height="200px" />
+          <div v-else style="color: #999; font-size: 12px; padding: 12px 0; text-align: center">
+            采样收集中（后台健康检查每 30 秒一个点），稍后显示趋势
+          </div>
+        </n-card>
+      </n-space>
 
       <n-space :size="12">
         <n-card size="small" title="CPU" style="flex: 1">
