@@ -10,7 +10,14 @@ const router = useRouter()
 const siteStore = useSiteStore()
 
 const modules = getModules()
-const menuOptions = modules.map((m) => ({ label: m.title, key: m.routePath }))
+// 无有效站点时菜单全部置灰（事前可见优于事后弹窗打断），侧栏另有文字提示
+const menuOptions = computed(() =>
+  modules.map((m) => ({
+    label: m.title,
+    key: m.routePath,
+    disabled: !siteStore.currentSiteId,
+  })),
+)
 const activeKey = computed(() => String(route.params.moduleId ?? ''))
 
 /** 校验当前 URL 的 siteId：站点被删后立即踢出（响应式，列表/路由变化都触发） */
@@ -71,6 +78,7 @@ function onSiteSelect(id: string) {
     </header>
     <div class="app-body">
       <aside class="app-sider">
+        <div v-if="!siteStore.currentSiteId" class="sider-hint">请先在右上角选择站点</div>
         <n-menu :value="activeKey" :options="menuOptions" @update:value="onMenuSelect" />
       </aside>
       <main class="app-main">
@@ -79,3 +87,12 @@ function onSiteSelect(id: string) {
     </div>
   </div>
 </template>
+
+<style scoped>
+.sider-hint {
+  padding: 12px 16px;
+  color: #999;
+  font-size: 12px;
+  border-bottom: 1px solid #f0f1f3;
+}
+</style>

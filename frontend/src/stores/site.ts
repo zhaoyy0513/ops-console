@@ -13,7 +13,10 @@ export const useSiteStore = defineStore('site', () => {
   const currentSite = computed(
     () => sites.value.find((s) => s.id === currentSiteId.value) ?? null,
   )
-  const options = computed(() => sites.value.map((s) => ({ label: s.name, value: s.id })))
+  // 下拉只列启用的站点；停用的（含正在浏览的）由 MainLayout 的守卫踢出
+  const options = computed(() =>
+    sites.value.filter((s) => s.enabled).map((s) => ({ label: s.name, value: s.id })),
+  )
 
   function setSite(id: string) {
     currentSiteId.value = id
