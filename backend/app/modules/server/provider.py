@@ -22,7 +22,8 @@ COMMANDS: dict[str, str] = {
     "disk_usage": "LC_ALL=C df -hP",
     "disk_inode": "LC_ALL=C df -iP",
     "network": "cat /proc/net/dev",
-    "processes": "LC_ALL=C ps aux --sort=-%cpu | head -11",
+    # top -bn2 第二帧才是瞬时 CPU%（ps aux 的 %CPU 是进程生命周期平均，基本不动）
+    "processes": "LC_ALL=C top -bn2 -w 512",
 }
 
 
@@ -127,19 +128,25 @@ def parse_network(text: str) -> dict[str, int]:
 
 
 def parse_processes(text: str) -> list[dict[str, Any]]:
-    """ps aux（按 %cpu 排序）-> [{pid, command, cpu_percent, mem_percent}]。"""
+    """top -bn2 输出 -> [{pid, command, cpu_percent, mem_percent}]（取第二帧=瞬时值）。"""
+    frames = text.split("top - ")
+    body = frames[-1] if len(frames) > 1 else text
+    lines = body.splitlines()
+    start = next((i for i, l in enumerate(lines) if l.strip().startswith("PID ")), None)
+    if start is None:
+        return []
     rows: list[dict[str, Any]] = []
-    for line in text.splitlines()[1:]:
-        parts = line.split(None, 10)
-        if len(parts) < 11:
+    for line in lines[start + 1:]:
+        parts = line.split(None, 11)
+        if len(parts) < 12:
             continue
         try:
             rows.append(
                 {
-                    "pid": int(parts[1]),
-                    "cpu_percent": float(parts[2]),
-                    "mem_percent": float(parts[3]),
-                    "command": parts[10],
+                    "pid": int(parts[0]),
+                    "cpu_percent": float(parts[8]),
+                    "mem_percent": float(parts[9]),
+                    "command": parts[11],
                 }
             )
         except ValueError:

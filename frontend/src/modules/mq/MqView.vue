@@ -17,6 +17,46 @@ const queues = ref<QueueRow[]>([])
 const addresses = ref<AddressRow[]>([])
 const loading = ref(false) // 首次加载（转圈而非白屏）
 const heapSeries = ref<Array<{ ts: number; v: number }>>([])
+const loadError = ref('')
+const queuesError = ref('')
+const addressesError = ref('')
+
+/** 轮询分层：overview/heap 轻量 3s；queues/addresses 响应大，15s + 手动刷新 */
+async function loadLight(toastOnFail = false) {
+  const siteId = siteStore.currentSiteId
+  if (!siteId || !instanceId.value) return
+  try {
+    const o = await mqApi.overview(siteId, instanceId.value)
+    overview.value = o
+    loadError.value = ''
+    getSamples(instanceId.value, 'heap').then((s) => (heapSeries.value = [...s].reverse())).catch(() => {})
+  } catch (e) {
+    overview.value = null
+    loadError.value = (e as Error).message
+    if (toastOnFail) message.error(`Broker 读取失败：${loadError.value}`)
+  }
+}
+
+async function loadHeavy() {
+  const siteId = siteStore.currentSiteId
+  if (!siteId || !instanceId.value) return
+  try {
+    queues.value = await mqApi.queues(siteId, instanceId.value)
+    queuesError.value = ''
+  } catch (e) {
+    queues.value = []
+    queuesError.value = (e as Error).message
+    message.error(`Queues 读取失败：${queuesError.value}`)
+  }
+  try {
+    addresses.value = await mqApi.addresses(siteId, instanceId.value)
+    addressesError.value = ''
+  } catch (e) {
+    addresses.value = []
+    addressesError.value = (e as Error).message
+    message.error(`Addresses 读取失败：${addressesError.value}`)
+  }
+}
 
 async function loadInstances() {
   const siteId = siteStore.currentSiteId
@@ -37,46 +77,23 @@ async function loadInstances() {
   }
 }
 
+/** 手动/首次：全量刷新（overview + queues + addresses，失败弹 toast） */
 async function load() {
-  const siteId = siteStore.currentSiteId
-  if (!siteId || !instanceId.value) return
-  const results = await Promise.allSettled([
-    mqApi.overview(siteId, instanceId.value),
-    mqApi.queues(siteId, instanceId.value),
-    mqApi.addresses(siteId, instanceId.value),
-  ])
-  // 各部分失败独立提示（此前静默吞成空列表，用户无法区分"没数据"和"读失败"）
-  const [oR, qR, aR] = results
-  if (oR.status === 'fulfilled') {
-    overview.value = oR.value
-    getSamples(instanceId.value, 'heap').then((s) => (heapSeries.value = [...s].reverse())).catch(() => {})
-  } else {
-    overview.value = null
-    message.error(`Broker 读取失败：${(oR.reason as Error).message}`)
-  }
-  if (qR.status === 'fulfilled') {
-    queues.value = qR.value
-  } else {
-    queues.value = []
-    message.error(`Queues 读取失败：${(qR.reason as Error).message}`)
-  }
-  if (aR.status === 'fulfilled') {
-    addresses.value = aR.value
-  } else {
-    addresses.value = []
-    message.error(`Addresses 读取失败：${(aR.reason as Error).message}`)
-  }
+  await loadLight(true)
+  await loadHeavy()
 }
-
 onMounted(loadInstances)
 
-// 3s 前端轮询（页面在场才轮询；标签切走暂停，回来恢复）
+// 轮询分层：overview/heap 轻量 3s；queues/addresses 响应大 15s 一次（页面在场才轮询）
 let pollTimer: number | null = null
+let heavyTick = 0
 
 function startPolling() {
   if (pollTimer != null) return
   pollTimer = window.setInterval(() => {
-    if (instanceId.value) load()
+    if (!instanceId.value || document.hidden) return
+    loadLight()
+    if (++heavyTick % 5 === 0) loadHeavy()
   }, 3000)
 }
 
@@ -235,6 +252,10 @@ const worstQueueStatus = computed(() => {
       <n-spin size="medium" style="width: 100%; padding: 48px 0" />
     </n-card>
 
+    <n-card v-else-if="loadError && !overview" size="small">
+      <span style="color: #d03050">Broker 读取失败：{{ loadError }}</span>
+    </n-card>
+
     <template v-else-if="overview">
       <div class="row">
         <!-- Heap：生产 MQ 内存问题核心指标，突出显示 + 阈值着色 -->
@@ -274,11 +295,12 @@ const worstQueueStatus = computed(() => {
         </n-card>
       </div>
 
-      <n-card size="small" title="Queues（队列：实际存放消息处；topic 型 Address 下每个消费者一个队列）">
+      <n-card size="small" title="Queues">
         <template #header-extra>
           <n-input v-model:value="queueFilter" size="small" style="width: 240px"
             placeholder="模糊搜索队列名或 Address" />
         </template>
+        <div v-if="queuesError" class="pane-error">Queues 读取失败：{{ queuesError }}（每 15s 自动重试）</div>
         <n-table :single-line="false" size="small">
           <thead>
             <tr>
@@ -310,11 +332,12 @@ const worstQueueStatus = computed(() => {
         </n-table>
       </n-card>
 
-      <n-card size="small" title="Addresses（目的地：相当于 topic / 队列的名字空间，本身不存消息）">
+      <n-card size="small" title="Addresses">
         <template #header-extra>
           <n-input v-model:value="addressFilter" size="small" style="width: 240px"
             placeholder="模糊搜索 Address / topic" />
         </template>
+        <div v-if="addressesError" class="pane-error">Addresses 读取失败：{{ addressesError }}（每 15s 自动重试）</div>
         <n-table :single-line="false" size="small">
           <thead>
             <tr><th>Address</th><th>消息数</th><th>消费者</th><th>生产者</th></tr>
@@ -396,5 +419,10 @@ const worstQueueStatus = computed(() => {
 }
 .kv b {
   color: #1f2329;
+}
+.pane-error {
+  color: #d03050;
+  font-size: 12px;
+  margin-bottom: 8px;
 }
 </style>

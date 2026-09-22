@@ -167,30 +167,28 @@ function buildTree(items: KeyItem[]): TreeNode[] {
 
 const treeData = computed(() => buildTree(keys.value) as unknown as TreeOption[])
 
+function toggleDir(node: TreeDir) {
+  expandedKeys.value = expandedKeys.value.includes(node.key)
+    ? expandedKeys.value.filter((k) => k !== node.key)
+    : [...expandedKeys.value, node.key]
+}
+
 function renderLabel({ option }: { option: TreeOption }) {
   const node = option as unknown as TreeNode
   if (node.dir) {
-    return h('span', { class: 'tree-label' }, [
+    // label 铺满整行并接管点击（select 事件对已选中项不再触发，会导致"点两下"）
+    return h('span', {
+      class: 'tree-label tree-dir-row',
+      onClick: (e: Event) => {
+        e.stopPropagation()
+        toggleDir(node)
+      },
+    }, [
       h('span', null, node.label),
       h('span', { class: 'tree-count' }, ` (${node.count})`),
     ])
   }
   return h('span', { class: 'tree-label mono', title: node.item.key }, node.label)
-}
-
-/** 目录节点：整行原生 click 直接触发展开/折叠（select 事件对已选中项不再触发，
- *  之前表现为"要点两下"） */
-function nodeProps({ option }: { option: TreeOption }) {
-  const node = option as unknown as TreeNode
-  if (!node.dir) return {}
-  return {
-    onClick: (e: Event) => {
-      e.preventDefault()
-      expandedKeys.value = expandedKeys.value.includes(node.key)
-        ? expandedKeys.value.filter((k) => k !== node.key)
-        : [...expandedKeys.value, node.key]
-    },
-  }
 }
 
 function onTreeSelect(_keys: Array<string>, options: Array<unknown>) {
@@ -451,7 +449,6 @@ const INFO_METRICS = computed(() => {
               block-line
               selectable
               :render-label="renderLabel"
-              :node-props="nodeProps"
               @update:selected-keys="onTreeSelect"
             />
             <div v-else style="text-align: center; color: #999; padding: 24px 0">无匹配 Key</div>
@@ -608,9 +605,13 @@ const INFO_METRICS = computed(() => {
 </style>
 
 <style>
-/* 树节点：文件夹与叶子样式统一 */
+/* 树节点：文件夹与叶子样式统一；目录行 label 铺满整行接管点击 */
 .tree-label {
   font-size: 13px;
+}
+.tree-dir-row {
+  display: block;
+  cursor: pointer;
 }
 .tree-count {
   color: #999;

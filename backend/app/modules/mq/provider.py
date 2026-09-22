@@ -15,6 +15,8 @@ from backend.app.shared.timeout import with_timeout
 
 BROKER_MBEAN = "org.apache.activemq.artemis:broker=*"
 QUEUES_MBEAN = "org.apache.activemq.artemis:component=addresses,broker=*,subcomponent=queues,*"
+# 限属性读取：全属性 49 个 2.1s，限 8 个 0.4s（现场 104 队列实测），3s 轮询下不再超时
+QUEUE_ATTRS = "Name,Address,RoutingType,MessageCount,ConsumerCount,DeliveringCount,MessagesAdded,MessagesAcknowledged"
 ADDRESSES_MBEAN = "org.apache.activemq.artemis:component=addresses,broker=*,queue=*,*"
 MEMORY_MBEAN = "java.lang:type=Memory"
 THREADING_MBEAN = "java.lang:type=Threading"
@@ -82,7 +84,7 @@ class ArtemisProvider:
 
     async def get_queues(self) -> list[dict[str, Any]]:
         async with self._client() as c:
-            value = await self._read_wildcard(c, QUEUES_MBEAN)
+            value = await self._read_wildcard(c, f"{QUEUES_MBEAN}/{QUEUE_ATTRS}")
         return normalize_queues(value)
 
     async def get_addresses(self) -> list[dict[str, Any]]:

@@ -47,10 +47,16 @@ SAMPLE_NETDEV = """Inter-|   Receive                                            
   eth1: 1000000    8000    1    2    0     0          0         0   2000000   9000    3    4    0     0       0          0
 """
 
-SAMPLE_PS = """USER       PID %CPU %MEM    VSZ   RSS TTY      STAT START   TIME COMMAND
-java    123456 87.0 45.2 8192000 2048000 ?       Sl   09:12 100:20 java -jar app.jar
-nginx   123457 12.5  1.2  123456  7890 ?        S    09:13   5:00 nginx: worker
-root         1  0.0  0.1 123456  6789 ?        Ss   2025   1:00 /sbin/init
+SAMPLE_PS = """top - 14:23:01 up 45 days,  3:12,  2 users,  load average: 0.52, 0.58, 0.59
+Tasks: 145 total,   1 running, 144 sleeping,   0 stopped,   0 zombie
+%Cpu(s):  3.0 us,  1.2 sy,  0.0 ni, 95.0 id,  0.5 wa,  0.0 hi,  0.3 si,  0.0 st
+MiB Mem :   3888.0 total,    567.2 free,   1234.5 used,   2086.3 buff/cache
+MiB Swap:   2047.0 total,   2047.0 free,      0.0 used. 2345.7 avail Mem
+
+    PID USER      PR  NI    VIRT    RES  SHR S  %CPU  %MEM     TIME+ COMMAND
+ 123456 java      20   0 8192000 2048000   512 S  87.0  45.2   100:20 java -jar app.jar
+ 123457 nginx     20   0  123456   7890  1024 S  12.5   1.2     5:00 nginx: worker
+      1 root      20   0  123456   6789   256 S   0.0   0.1     1:00 /sbin/init
 """
 
 SAMPLES = {
