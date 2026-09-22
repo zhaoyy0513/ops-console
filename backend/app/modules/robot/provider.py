@@ -151,9 +151,14 @@ class HttpRobotProvider(RobotProvider):
                     return [x for x in inner if isinstance(x, dict)]
         return []
 
+    def _list_request_path(self) -> str:
+        # list_path 为空时请求 base_url 本身（绝对 URL，绕过 httpx 的 base_url
+        # 路径合并——实测它会给 ".../list" 补尾斜杠，Spring 端 404/500）
+        return self._list_path or self._base_url
+
     async def get_robot_list(self) -> list[dict[str, Any]]:
         async with self._client() as c:
-            data = await self._get(c, self._list_path)
+            data = await self._get(c, self._list_request_path())
         return [normalize_robot(x) for x in self._unwrap_list(data)]
 
     async def get_robot_detail(self, robot_id: str) -> dict[str, Any]:
@@ -166,5 +171,5 @@ class HttpRobotProvider(RobotProvider):
 
     async def run_test(self) -> str:
         async with self._client() as c:
-            data = await self._get(c, self._list_path)
+            data = await self._get(c, self._list_request_path())
         return f"Robot API OK, {len(self._unwrap_list(data))} robots"

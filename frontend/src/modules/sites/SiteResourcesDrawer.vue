@@ -275,6 +275,8 @@ function displayValue(item: ResourceConfig, key: string): string {
   gap: 10px;
 }
 .footer-test {
+  /* 与上方表单控件左缘对齐（label-placement left, label-width 90） */
+  padding-left: 90px;
   display: flex;
   align-items: center;
   gap: 12px;
