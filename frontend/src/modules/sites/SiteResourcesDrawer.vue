@@ -41,7 +41,7 @@ const TYPES: Array<{ key: ResourceType; label: string }> = [
  *  host 输入形态：server 手输；redis/mq 可输可选（候选 = 同站点 Server 的 host） */
 const FIELD_DEFS: Record<
   ResourceType,
-  Array<{ key: string; label: string; kind?: 'number' | 'host-input' | 'host-select'; required?: boolean }>
+  Array<{ key: string; label: string; kind?: 'number' | 'host-input' | 'host-select'; ph?: string; required?: boolean }>
 > = {
   servers: [
     { key: 'host', label: 'Host', kind: 'host-input', required: true },
@@ -57,18 +57,18 @@ const FIELD_DEFS: Record<
   ],
   mq: [
     { key: 'host', label: 'Host', kind: 'host-select', required: true },
-    { key: 'port', label: 'Port', kind: 'number' },
+    { key: 'port', label: 'Port', kind: 'number', ph: 'Jolokia HTTP 端口，默认 8161' },
     { key: 'username', label: '用户名' },
     { key: 'password', label: '密码' },
   ],
   robots: [{ key: 'base_url', label: 'Base URL', required: true }],
 }
 
-/** 新增时的字段预填默认值（现场约定：mq 凭据默认值、端口按协议） */
+/** 新增时的字段预填默认值（端口按协议：Jolokia 走 HTTP 8161；61616 是消息端口非管理口） */
 const CREATE_DEFAULTS: Record<ResourceType, Record<string, unknown>> = {
   servers: { port: 22 },
   redis: { port: 6379 },
-  mq: { port: 61616, username: 'prime_admin', password: 'hElloPr1me' },
+  mq: { port: 8161, username: 'prime_admin', password: 'hElloPr1me' },
   robots: {},
 }
 
@@ -224,13 +224,15 @@ function displayValue(item: ResourceConfig, key: string): string {
             :label="f.label"
             :required="f.required"
           >
+            <!-- 条件链必须单链：此前 v-if 断链导致 port 渲染出两个输入框 -->
             <n-input-number
               v-if="f.kind === 'number'"
               v-model:value="form[f.key]"
               style="width: 100%"
+              :placeholder="f.ph"
             />
             <!-- server 手输；redis/mq 可输可选（tag 模式自由输入，候选来自已有 Server） -->
-            <n-input v-if="f.kind === 'host-input'" v-model:value="form[f.key]"
+            <n-input v-else-if="f.kind === 'host-input'" v-model:value="form[f.key]"
               placeholder="IP 或主机名" />
             <n-select
               v-else-if="f.kind === 'host-select'"
@@ -246,16 +248,39 @@ function displayValue(item: ResourceConfig, key: string): string {
           </n-form-item>
         </n-form>
         <template #footer>
-          <n-space justify="space-between">
-            <!-- 表单内连接测试：无需先保存（PRD §13.1），使用表单当前值 -->
-            <resource-test-button :type="TEST_TYPE[activeType]" :config="form" />
-            <n-space :size="8">
+          <div class="footer">
+            <!-- Test 独占一行：结果标签需要整行宽度才看得全 -->
+            <div class="footer-test">
+              <!-- 表单内连接测试：无需先保存（PRD §13.1），使用表单当前值 -->
+              <resource-test-button :type="TEST_TYPE[activeType]" :config="form" />
+              <span v-if="activeType === 'mq'" class="hint">
+                平台经 Jolokia HTTP(8161) 读取管理数据；61616 是消息端口，平台不使用
+              </span>
+            </div>
+            <n-space justify="end" :size="8">
               <n-button @click="showModal = false">取消</n-button>
               <n-button type="primary" @click="save">保存</n-button>
             </n-space>
-          </n-space>
+          </div>
         </template>
       </n-modal>
     </n-drawer-content>
   </n-drawer>
 </template>
+
+<style scoped>
+.footer {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.footer-test {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.hint {
+  color: #999;
+  font-size: 12px;
+}
+</style>
