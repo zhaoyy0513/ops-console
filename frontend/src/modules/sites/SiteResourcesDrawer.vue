@@ -52,7 +52,6 @@ const COLUMN_DEFS: Record<ResourceType, Array<{ key: string; label: string }>> =
   ],
   robots: [
     { key: 'base_url', label: 'Base URL' },
-    { key: 'field_map', label: '字段映射' },
   ],
 }
 

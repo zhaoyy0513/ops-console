@@ -119,7 +119,7 @@ watch(instanceId, load)
         <thead>
           <tr>
             <th>Robot Code</th><th>Robot Name</th><th>Battery</th>
-            <th>Current Station</th><th>Task</th><th>Last Update</th><th style="width: 80px">Action</th>
+            <th>Position</th><th>Task</th><th>Last Update</th><th style="width: 80px">Action</th>
           </tr>
         </thead>
         <tbody>
@@ -155,7 +155,7 @@ watch(instanceId, load)
             <tr><th style="width: 140px">Robot Code</th><td style="font-family: ui-monospace, monospace">{{ detail.id ?? '-' }}</td></tr>
             <tr><th>Robot Name</th><td>{{ detail.name ?? '-' }}</td></tr>
             <tr><th>Battery</th><td>{{ detail.battery ?? '-' }}{{ detail.battery != null ? '%' : '' }}</td></tr>
-            <tr><th>Current Station</th><td>{{ detail.station ?? '-' }}</td></tr>
+            <tr><th>Position</th><td>{{ detail.station ?? '-' }}</td></tr>
             <tr><th>Task</th><td>{{ detail.task ?? '-' }}</td></tr>
             <tr><th>Last Update</th><td>{{ fmtTime(detail.last_update) }}</td></tr>
           </tbody>

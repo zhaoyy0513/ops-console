@@ -15,7 +15,7 @@ const BIZ_FIELDS: Array<{ key: string; label: string }> = [
   { key: 'name', label: 'Robot Name' },
   { key: 'status', label: 'Status' },
   { key: 'battery', label: 'Battery' },
-  { key: 'station', label: 'Current Station' },
+  { key: 'station', label: 'Position' },
   { key: 'task', label: 'Task' },
   { key: 'error', label: 'Error' },
   { key: 'last_update', label: 'Last Update' },
@@ -75,7 +75,7 @@ async function save() {
     <n-drawer-content :title="`字段映射 · ${props.robot?.name ?? ''}`" closable>
       <n-spin :show="loading">
         <p style="margin-bottom: 12px; color: #666; font-size: 13px">
-          将左侧业务字段绑定到右侧 JSON 数据的实际字段名；未绑定的字段走内置识别。
+          将左侧业务字段绑定到右侧 JSON 数据的实际字段名；支持模板拼接（如 ({x},{y})），含 {xxx} 占位符的值按模板求值；未绑定的字段走内置识别。
         </p>
         <n-table :single-line="false" size="small">
           <thead>

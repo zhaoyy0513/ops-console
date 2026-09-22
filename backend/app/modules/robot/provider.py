@@ -72,16 +72,26 @@ def _last_update(raw: dict[str, Any]) -> Any:
 def normalize_robot(raw: dict[str, Any], field_map: dict[str, str] | None = None) -> dict[str, Any]:
     """原始 API 字典 -> PRD §12.1 统一结构（纯函数）。
 
-    field_map（实例级配置）：业务字段 -> 上游真实字段名，优先于内置候选。
-    用于响应结构与内置候选都不匹配的现场环境，例如
-    {"status": "runState", "battery": "power"}。其余转换（online 语义、
-    x/y 坐标、epoch 时间）仍走内置逻辑。
+    field_map（实例级配置）的值支持两种形态：
+    1. 字段名绑定："battery": "power" -> 取 raw["power"]
+    2. 模板拼接："station": "({x},{y})" -> 求值占位符得 "(33,37)"
+       含 {xxx} 占位符的值按模板处理，{xxx} 替换为 raw 中的对应值
+    未配置的字段走内置候选。
     """
+    import re
+
+    def eval_value(upstream: str) -> Any:
+        if re.search(r"\{\w+\}", upstream):
+            return re.sub(r"\{(\w+)\}", lambda m: str(raw.get(m.group(1), "")), upstream)
+        return raw.get(upstream)
+
     def mapped(field: str) -> Any:
         if field_map:
             upstream = field_map.get(field)
-            if upstream and upstream in raw and raw[upstream] is not None:
-                return raw[upstream]
+            if upstream:
+                v = eval_value(upstream)
+                if v is not None and v != "":
+                    return v
         return None
 
     def pick(field: str) -> Any:
