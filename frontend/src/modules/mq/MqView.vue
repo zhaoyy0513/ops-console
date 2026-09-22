@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { NButton, NCard, NInput, NSelect, NSpace, NSpin, NTable, NTag, useMessage } from 'naive-ui'
 import BaseChart from '../../components/BaseChart.vue'
 import StatusBadge from '../../components/StatusBadge.vue'
@@ -60,6 +60,38 @@ async function load() {
 }
 
 onMounted(loadInstances)
+
+// 3s 前端轮询（页面在场才轮询；标签切走暂停，回来恢复）
+let pollTimer: number | null = null
+
+function startPolling() {
+  if (pollTimer != null) return
+  pollTimer = window.setInterval(() => {
+    if (instanceId.value) load()
+  }, 3000)
+}
+
+function stopPolling() {
+  if (pollTimer != null) {
+    clearInterval(pollTimer)
+    pollTimer = null
+  }
+}
+
+function onVisibility() {
+  if (document.hidden) stopPolling()
+  else startPolling()
+}
+
+onMounted(() => {
+  startPolling()
+  document.addEventListener('visibilitychange', onVisibility)
+})
+onBeforeUnmount(() => {
+  stopPolling()
+  document.removeEventListener('visibilitychange', onVisibility)
+})
+
 watch(() => siteStore.currentSiteId, () => {
   instanceId.value = null
   overview.value = null

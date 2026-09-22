@@ -8,7 +8,7 @@ import json
 
 from .redis import get_platform_redis
 
-SAMPLE_MAX = 20  # 每序列最多 20 个点（60s 间隔 ≈ 20 分钟窗口）
+SAMPLE_MAX = 100  # 每序列最多 100 个点（3s 轮询采样 ≈ 5 分钟窗口）
 
 
 def sample_key(resource_id: str, series: str) -> str:

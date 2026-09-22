@@ -6,6 +6,7 @@ const props = defineProps<{ status?: string | null }>()
 
 const map: Record<string, { label: string; type: 'success' | 'warning' | 'error' | 'default' }> = {
   HEALTHY: { label: 'Healthy', type: 'success' },
+  STARTED: { label: 'Started', type: 'success' }, // Artemis broker 在线
   WARNING: { label: 'Warning', type: 'warning' },
   CRITICAL: { label: 'Critical', type: 'error' },
 }

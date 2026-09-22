@@ -15,6 +15,7 @@ import {
   useMessage,
   type TreeOption,
 } from 'naive-ui'
+import { parser as jsonParser } from '@lezer/json'
 import CountdownConfirm from '../../components/CountdownConfirm.vue'
 import CodeJsonEditor from '../../components/CodeJsonEditor.vue'
 import { useSiteStore } from '../../stores/site'
@@ -42,12 +43,19 @@ const cursor = ref(0)
 const loading = ref(false)
 const info = ref<RedisInfo | null>(null)
 
-/** DB 下拉：DB n [key 数]（来自 INFO keyspace，搜索/切换时随 info 刷新） */
+/** DB 下拉：DB5 [102]（数字灰色弱化）；选中框与选项同渲染 */
 const DB_OPTIONS = computed(() =>
-  Array.from({ length: 16 }, (_, i) => ({
-    label: `DB ${i}${info.value?.db_sizes?.[i] != null ? ` [${info.value.db_sizes[i]}]` : ''}`,
-    value: i,
-  })),
+  Array.from({ length: 16 }, (_, i) => {
+    const n = info.value?.db_sizes?.[i]
+    return {
+      value: i,
+      render: () =>
+        h('span', { class: 'db-option' }, [
+          h('span', null, `DB${i}`),
+          n != null ? h('span', { class: 'db-count' }, `  [${n}]`) : null,
+        ]),
+    }
+  }),
 )
 
 async function loadInstances() {
@@ -169,17 +177,24 @@ function renderLabel({ option }: { option: TreeOption }) {
   return h('span', { class: 'tree-label mono', title: node.item.key }, node.label)
 }
 
+/** 目录节点：整行原生 click 直接触发展开/折叠（select 事件对已选中项不再触发，
+ *  之前表现为"要点两下"） */
+function nodeProps({ option }: { option: TreeOption }) {
+  const node = option as unknown as TreeNode
+  if (!node.dir) return {}
+  return {
+    onClick: (e: Event) => {
+      e.preventDefault()
+      expandedKeys.value = expandedKeys.value.includes(node.key)
+        ? expandedKeys.value.filter((k) => k !== node.key)
+        : [...expandedKeys.value, node.key]
+    },
+  }
+}
+
 function onTreeSelect(_keys: Array<string>, options: Array<unknown>) {
   const option = options?.[0] as unknown as TreeNode | null
-  if (!option) return
-  if (option.dir) {
-    // 点整行任意位置都能展开/折叠（不只小三角）
-    expandedKeys.value = expandedKeys.value.includes(option.key)
-      ? expandedKeys.value.filter((k) => k !== option.key)
-      : [...expandedKeys.value, option.key]
-  } else {
-    selectKey(option.item)
-  }
+  if (option && !option.dir) selectKey(option.item)
 }
 
 // ---------- 详情（左树右值；Text/Json 自动感知 + CodeMirror 直接编辑） ----------
@@ -203,13 +218,36 @@ function isJson(s: string): boolean {
   }
 }
 
+/** JSON 语法错误定位：lezer 解析拿错误节点位置 -> 行/列 + 附近文本（补全字段名，
+ *  V8 原生错误如 'Unexpected token ",", ..."_seconds":...' 常被截断看不清字段） */
+function locateJsonError(text: string): string {
+  try {
+    jsonParser.parse(text)
+    return ''
+  } catch {
+    // lezer 容错解析不抛错，错误以 error 节点出现
+  }
+  let pos: number | null = null
+  jsonParser.parse(text).iterate({
+    enter: (n) => {
+      if (n.type.isError && pos === null) pos = n.from
+    },
+  })
+  if (pos === null) return 'JSON 语法错误'
+  const before = text.slice(0, pos)
+  const line = before.split('\n').length
+  const col = pos - before.lastIndexOf('\n')
+  const near = text.slice(Math.max(0, pos - 50), Math.min(text.length, pos + 50)).trim()
+  return `第 ${line} 行第 ${col} 列附近有语法错误：…${near}…`
+}
+
 const jsonInvalid = computed(() => {
   if (format.value !== 'json') return null
   try {
     JSON.parse(editText.value)
     return null
-  } catch (e) {
-    return (e as Error).message
+  } catch {
+    return locateJsonError(editText.value)
   }
 })
 
@@ -411,6 +449,7 @@ const INFO_METRICS = computed(() => {
               block-line
               selectable
               :render-label="renderLabel"
+              :node-props="nodeProps"
               @update:selected-keys="onTreeSelect"
             />
             <div v-else style="text-align: center; color: #999; padding: 24px 0">无匹配 Key</div>
@@ -575,5 +614,11 @@ const INFO_METRICS = computed(() => {
   color: #999;
   font-size: 12px;
   margin-left: 6px;
+}
+/* DB 下拉选项：DB5 [102]，数字灰色弱化（dropdown 挂 body，样式需全局） */
+.db-option .db-count {
+  color: #b0b3b8;
+  font-size: 12px;
+  margin-left: 8px;
 }
 </style>

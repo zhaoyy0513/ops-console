@@ -69,16 +69,36 @@ async function load() {
   }
 }
 
-// 5s 前端轮询（页面在场才轮询；PRD 无 WebSocket 决策下的实时方案）
+// 3s 前端轮询（页面在场才轮询；浏览器标签切走时暂停，回来恢复）
 let pollTimer: number | null = null
-onMounted(() => {
-  loadServers()
+
+function startPolling() {
+  if (pollTimer != null) return
   pollTimer = window.setInterval(() => {
     if (!loading.value && serverId.value) load()
-  }, 5000)
+  }, 3000)
+}
+
+function stopPolling() {
+  if (pollTimer != null) {
+    clearInterval(pollTimer)
+    pollTimer = null
+  }
+}
+
+function onVisibility() {
+  if (document.hidden) stopPolling()
+  else startPolling()
+}
+
+onMounted(() => {
+  loadServers()
+  startPolling()
+  document.addEventListener('visibilitychange', onVisibility)
 })
 onBeforeUnmount(() => {
-  if (pollTimer) clearInterval(pollTimer)
+  stopPolling()
+  document.removeEventListener('visibilitychange', onVisibility)
 })
 watch(() => siteStore.currentSiteId, () => {
   serverId.value = null
@@ -198,11 +218,27 @@ function pctColor(pct: number | null | undefined): string {
         </n-card>
       </n-space>
 
-      <n-card size="small" title="CPU / 内存趋势（5s 轮询采样）" style="width: 100%">
+      <n-card size="small" title="CPU / 内存趋势（3s 轮询采样）" style="width: 100%">
         <base-chart v-if="cpuSeries.length" :option="trendOption" height="220px" />
         <div v-else style="color: #999; font-size: 12px; padding: 12px 0; text-align: center">
           采样收集中，几秒后出现趋势线
         </div>
+      </n-card>
+
+      <n-card size="small" title="Top 进程（CPU 前 5）">
+        <n-table :single-line="false" size="small">
+          <thead>
+            <tr><th>PID</th><th>CPU %</th><th>MEM %</th><th>命令</th></tr>
+          </thead>
+          <tbody>
+            <tr v-for="p in processes.slice(0, 5)" :key="p.pid">
+              <td>{{ p.pid }}</td>
+              <td :style="{ color: pctColor(p.cpu_percent) }">{{ p.cpu_percent }}</td>
+              <td>{{ p.mem_percent }}</td>
+              <td class="cmd">{{ p.command }}</td>
+            </tr>
+          </tbody>
+        </n-table>
       </n-card>
 
       <n-card size="small" title="磁盘">
@@ -218,22 +254,6 @@ function pctColor(pct: number | null | undefined): string {
               <td>{{ d.avail }}</td>
               <td :style="{ color: pctColor(d.use_percent), fontWeight: 600 }">{{ d.use_percent }}%</td>
               <td>{{ d.inode_percent ?? '-' }}%</td>
-            </tr>
-          </tbody>
-        </n-table>
-      </n-card>
-
-      <n-card size="small" title="Top 进程">
-        <n-table :single-line="false" size="small">
-          <thead>
-            <tr><th>PID</th><th>CPU %</th><th>MEM %</th><th>命令</th></tr>
-          </thead>
-          <tbody>
-            <tr v-for="p in processes" :key="p.pid">
-              <td>{{ p.pid }}</td>
-              <td :style="{ color: pctColor(p.cpu_percent) }">{{ p.cpu_percent }}</td>
-              <td>{{ p.mem_percent }}</td>
-              <td class="cmd">{{ p.command }}</td>
             </tr>
           </tbody>
         </n-table>
