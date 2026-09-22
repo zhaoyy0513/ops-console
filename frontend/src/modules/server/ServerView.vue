@@ -42,13 +42,13 @@ async function loadServers() {
   }
 }
 
-async function load() {
+async function load(silent = false) {
   if (!siteStore.currentSiteId || !serverId.value) {
     metrics.value = null
     processes.value = []
     return
   }
-  loading.value = true
+  loading.value = !silent // 轮询静默更新（不转圈），手动刷新才转圈
   error.value = ''
   try {
     const [m, p] = await Promise.all([
@@ -57,13 +57,15 @@ async function load() {
     ])
     metrics.value = m
     processes.value = p
-    // 趋势（读取时采样，5s 轮询 = 5s 一个点）
+    // 趋势（读取时采样，3s 轮询 = 3s 一个点）
     const rid = `server:${serverId.value}`
     getSamples(rid, 'cpu').then((s) => (cpuSeries.value = [...s].reverse())).catch(() => {})
     getSamples(rid, 'mem').then((s) => (memSeries.value = [...s].reverse())).catch(() => {})
   } catch (e) {
-    metrics.value = null // 展示 Unknown（PRD §10：错误展示）
-    error.value = (e as Error).message
+    if (!silent) {
+      metrics.value = null // 展示 Unknown（PRD §10：错误展示）
+      error.value = (e as Error).message
+    }
   } finally {
     loading.value = false
   }
@@ -75,7 +77,7 @@ let pollTimer: number | null = null
 function startPolling() {
   if (pollTimer != null) return
   pollTimer = window.setInterval(() => {
-    if (!loading.value && serverId.value) load()
+    if (!loading.value && serverId.value) load(true)
   }, 3000)
 }
 
@@ -104,7 +106,7 @@ watch(() => siteStore.currentSiteId, () => {
   serverId.value = null
   loadServers()
 })
-watch(serverId, load)
+watch(serverId, () => load(false))
 
 const memPct = computed(() => {
   const m = metrics.value?.memory
@@ -159,7 +161,7 @@ function pctColor(pct: number | null | undefined): string {
           placeholder="选择服务器"
           :options="servers"
         />
-        <n-button size="small" :loading="loading" @click="load">刷新</n-button>
+        <n-button size="small" :loading="loading" @click="load(false)">刷新</n-button>
         <!-- 已存资源的行级测试需 per-resource test 端点（PRD §18 POST .../test），落地后补 -->
         <status-badge v-if="metrics" :status="metrics.diagnosis?.status" />
       </n-space>

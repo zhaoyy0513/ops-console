@@ -40,22 +40,31 @@ async function loadInstances() {
 async function load() {
   const siteId = siteStore.currentSiteId
   if (!siteId || !instanceId.value) return
-  try {
-    const [o, q, a] = await Promise.all([
-      mqApi.overview(siteId, instanceId.value),
-      mqApi.queues(siteId, instanceId.value).catch(() => [] as QueueRow[]),
-      mqApi.addresses(siteId, instanceId.value).catch(() => [] as AddressRow[]),
-    ])
-    overview.value = o
-    queues.value = q
-    addresses.value = a
-    // heap 趋势（后台每次真实读取时采样，60s 一个点）
+  const results = await Promise.allSettled([
+    mqApi.overview(siteId, instanceId.value),
+    mqApi.queues(siteId, instanceId.value),
+    mqApi.addresses(siteId, instanceId.value),
+  ])
+  // 各部分失败独立提示（此前静默吞成空列表，用户无法区分"没数据"和"读失败"）
+  const [oR, qR, aR] = results
+  if (oR.status === 'fulfilled') {
+    overview.value = oR.value
     getSamples(instanceId.value, 'heap').then((s) => (heapSeries.value = [...s].reverse())).catch(() => {})
-  } catch (e) {
+  } else {
     overview.value = null
+    message.error(`Broker 读取失败：${(oR.reason as Error).message}`)
+  }
+  if (qR.status === 'fulfilled') {
+    queues.value = qR.value
+  } else {
     queues.value = []
+    message.error(`Queues 读取失败：${(qR.reason as Error).message}`)
+  }
+  if (aR.status === 'fulfilled') {
+    addresses.value = aR.value
+  } else {
     addresses.value = []
-    message.error((e as Error).message)
+    message.error(`Addresses 读取失败：${(aR.reason as Error).message}`)
   }
 }
 
@@ -99,12 +108,22 @@ watch(() => siteStore.currentSiteId, () => {
 })
 watch(instanceId, load)
 
-// ---------- 队列模糊搜索（客户端过滤，忽略大小写） ----------
+// ---------- 搜索（Queues 匹配队列名+所属 Address；Addresses 匹配地址名） ----------
 const queueFilter = ref('')
+const addressFilter = ref('')
 const filteredQueues = computed(() => {
   const needle = queueFilter.value.trim().toLowerCase()
   if (!needle) return queues.value
-  return queues.value.filter((q) => (q.name ?? '').toLowerCase().includes(needle))
+  return queues.value.filter(
+    (q) =>
+      (q.name ?? '').toLowerCase().includes(needle) ||
+      (q.address ?? '').toLowerCase().includes(needle),
+  )
+})
+const filteredAddresses = computed(() => {
+  const needle = addressFilter.value.trim().toLowerCase()
+  if (!needle) return addresses.value
+  return addresses.value.filter((a) => (a.name ?? '').toLowerCase().includes(needle))
 })
 
 // ---------- 图表 ----------
@@ -217,9 +236,9 @@ const worstQueueStatus = computed(() => {
     </n-card>
 
     <template v-else-if="overview">
-      <n-space :size="12">
+      <div class="row">
         <!-- Heap：生产 MQ 内存问题核心指标，突出显示 + 阈值着色 -->
-        <n-card size="small" style="flex: 1.2" title="JVM Heap（MQ 进程内存）">
+        <n-card size="small" class="grow-2" title="JVM Heap（MQ 进程内存）">
           <div class="heap-row">
             <div class="heap-big" :style="{ color: pctColor(heapPct) }">
               {{ heapPct ?? '?' }}<span class="unit">%</span>
@@ -227,11 +246,10 @@ const worstQueueStatus = computed(() => {
             <div class="heap-sub">
               <div>{{ fmtBytes(overview.jvm.heap_used) }} / {{ fmtBytes(overview.jvm.heap_max) }}</div>
               <div>NonHeap {{ fmtBytes(overview.jvm.non_heap_used) }} · 线程 {{ overview.jvm.threads ?? '-' }}</div>
-              <div style="color: #999">≥80% 黄 / ≥90% 红 —— 生产"MQ 内存占满"即此处逼近上限</div>
             </div>
           </div>
         </n-card>
-        <n-card size="small" style="flex: 1" title="Broker">
+        <n-card size="small" class="grow-1" title="Broker">
           <div class="kv">
             <span>版本 <b>{{ overview.version ?? '-' }}</b></span>
             <span>运行 <b>{{ overview.uptime ?? '-' }}</b></span>
@@ -241,36 +259,37 @@ const worstQueueStatus = computed(() => {
             <span>地址 <b>{{ overview.addresses ?? '-' }}</b></span>
           </div>
         </n-card>
-      </n-space>
+      </div>
 
-      <n-space :size="12">
-        <n-card size="small" style="flex: 1" title="Heap 趋势（每分钟采样）">
-          <base-chart v-if="heapSeries.length" :option="heapOption" height="220px" />
-          <div v-else style="color: #999; font-size: 12px; padding: 20px 0; text-align: center">
-            采样收集中，约 1 分钟后出现趋势线
+      <div class="row">
+        <n-card size="small" class="grow-1" title="Heap 趋势（约 5s 采样）">
+          <base-chart v-if="heapSeries.length" :option="heapOption" height="300px" />
+          <div v-else style="color: #999; font-size: 12px; padding: 40px 0; text-align: center">
+            采样收集中，几秒后出现趋势线
           </div>
         </n-card>
-        <n-card size="small" style="flex: 1" title="队列堆积 Top 10">
-          <base-chart v-if="queues.length" :option="topQueuesOption" height="220px" />
-          <div v-else style="color: #999; font-size: 12px; padding: 20px 0; text-align: center">无队列数据</div>
+        <n-card size="small" class="grow-1" title="队列堆积 Top 10（消息数最多的队列）">
+          <base-chart v-if="queues.length" :option="topQueuesOption" height="300px" />
+          <div v-else style="color: #999; font-size: 12px; padding: 40px 0; text-align: center">无队列数据</div>
         </n-card>
-      </n-space>
+      </div>
 
-      <n-card size="small" title="Queues">
+      <n-card size="small" title="Queues（队列：实际存放消息处；topic 型 Address 下每个消费者一个队列）">
         <template #header-extra>
-          <n-input v-model:value="queueFilter" size="small" style="width: 220px"
-            placeholder="模糊搜索队列名（忽略大小写）" />
+          <n-input v-model:value="queueFilter" size="small" style="width: 240px"
+            placeholder="模糊搜索队列名或 Address" />
         </template>
         <n-table :single-line="false" size="small">
           <thead>
             <tr>
-              <th>Queue</th><th>状态</th><th>消息数</th><th>消费者</th>
+              <th>Queue</th><th>所属 Address</th><th>状态</th><th>消息数</th><th>消费者</th>
               <th>Delivering</th><th>5 分钟前</th><th>增长</th><th>问题</th>
             </tr>
           </thead>
           <tbody>
             <tr v-for="q in filteredQueues" :key="q.name">
               <td class="mono" :title="q.name">{{ q.name }}</td>
+              <td class="mono" :title="q.address ?? ''">{{ q.address ?? '-' }}</td>
               <td><status-badge :status="q.diagnosis?.status" /></td>
               <td :style="{ fontWeight: (q.message_count ?? 0) > 5000 ? 700 : 400 }">{{ q.message_count ?? '-' }}</td>
               <td>{{ q.consumer_count ?? '-' }}</td>
@@ -285,19 +304,23 @@ const worstQueueStatus = computed(() => {
               <td>{{ q.diagnosis?.issues?.map((i) => i.type).join(', ') || '-' }}</td>
             </tr>
             <tr v-if="!filteredQueues.length">
-              <td colspan="8" style="text-align: center; color: #999">无匹配队列</td>
+              <td colspan="9" style="text-align: center; color: #999">无匹配队列</td>
             </tr>
           </tbody>
         </n-table>
       </n-card>
 
-      <n-card size="small" title="Addresses">
+      <n-card size="small" title="Addresses（目的地：相当于 topic / 队列的名字空间，本身不存消息）">
+        <template #header-extra>
+          <n-input v-model:value="addressFilter" size="small" style="width: 240px"
+            placeholder="模糊搜索 Address / topic" />
+        </template>
         <n-table :single-line="false" size="small">
           <thead>
             <tr><th>Address</th><th>消息数</th><th>消费者</th><th>生产者</th></tr>
           </thead>
           <tbody>
-            <tr v-for="a in addresses" :key="a.name">
+            <tr v-for="a in filteredAddresses" :key="a.name">
               <td class="mono">{{ a.name }}</td>
               <td>{{ a.message_count ?? '-' }}</td>
               <td>{{ a.consumer_count ?? '-' }}</td>
@@ -315,6 +338,20 @@ const worstQueueStatus = computed(() => {
 </template>
 
 <style scoped>
+/* 卡片行布局：原生 flex（n-space 会塌缩子项宽度） */
+.row {
+  display: flex;
+  gap: 12px;
+  align-items: stretch;
+}
+.grow-1 {
+  flex: 1;
+  min-width: 0;
+}
+.grow-2 {
+  flex: 1.4;
+  min-width: 0;
+}
 .badge-line {
   display: inline-flex;
   align-items: center;

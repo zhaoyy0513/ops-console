@@ -11,7 +11,7 @@ from backend.app.shared import testconn
 from backend.app.shared.retry import with_retry
 from backend.app.shared.concurrency import get_semaphore
 
-CACHE_TTL = 5  # PRD §14：Server Metrics TTL 5~10s
+CACHE_TTL = 3  # 与前端 3s 轮询对齐：每次轮询都能拿到新数据（单飞锁防重复 SSH）
 
 
 def _build_provider(config: dict[str, Any]) -> SSHServerMetricsProvider:

@@ -43,20 +43,21 @@ const cursor = ref(0)
 const loading = ref(false)
 const info = ref<RedisInfo | null>(null)
 
-/** DB 下拉：DB5 [102]（数字灰色弱化）；选中框与选项同渲染 */
+/** DB 下拉：label 'DB5'（选中框显示），render-label 在数字后加灰色 [key 数] */
 const DB_OPTIONS = computed(() =>
-  Array.from({ length: 16 }, (_, i) => {
-    const n = info.value?.db_sizes?.[i]
-    return {
-      value: i,
-      render: () =>
-        h('span', { class: 'db-option' }, [
-          h('span', null, `DB${i}`),
-          n != null ? h('span', { class: 'db-count' }, `  [${n}]`) : null,
-        ]),
-    }
-  }),
+  Array.from({ length: 16 }, (_, i) => ({
+    label: `DB${i}`,
+    value: i,
+  })),
 )
+
+function renderDbLabel(option: { label?: string; value?: number }) {
+  const n = info.value?.db_sizes?.[option.value as number]
+  return h('span', { class: 'db-option' }, [
+    h('span', null, `DB${option.value}`),
+    n != null ? h('span', { class: 'db-count' }, `  [${n}]`) : null,
+  ])
+}
 
 async function loadInstances() {
   const siteId = siteStore.currentSiteId
@@ -409,8 +410,9 @@ const INFO_METRICS = computed(() => {
         <span>实例</span>
         <n-select v-model:value="instanceId" size="small" style="width: 200px"
           placeholder="选择 Redis" :options="instances" />
-        <n-select v-model:value="db" size="small" style="width: 150px" :options="DB_OPTIONS"
-          @update:value="refreshDb" />
+        <span>DB</span>
+        <n-select v-model:value="db" size="small" style="width: 160px" :options="DB_OPTIONS"
+          :render-label="renderDbLabel" @update:value="refreshDb" />
         <n-input v-model:value="pattern" size="small" style="width: 240px"
           placeholder="模糊搜索，忽略大小写" @keyup.enter="refreshDb" />
         <n-button size="small" :loading="loading" @click="refreshDb">刷新</n-button>
