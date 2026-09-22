@@ -214,6 +214,13 @@ class HttpRobotProvider(RobotProvider):
             data = await self._get(c, self._list_request_path())
         return [normalize_robot(x, self._field_map) for x in self._unwrap_list(data)]
 
+    async def get_raw_sample(self) -> dict[str, Any] | None:
+        """取第一条原始 JSON 数据（字段映射配置用，未经 normalize）。"""
+        async with self._client() as c:
+            data = await self._get(c, self._list_request_path())
+        raw = self._unwrap_list(data)
+        return raw[0] if raw else None
+
     async def get_robot_detail(self, robot_id: str) -> dict[str, Any]:
         # 列表已含全部展示字段（现场两个环境均如此）：详情 = 列表内查找，
         # 免去第二个端点的格式假设

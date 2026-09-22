@@ -6,6 +6,15 @@ from backend.app.modules.sites.service import NotFound
 router = APIRouter(tags=["robot"])
 
 
+@router.get("/sites/{site_id}/robot-instances/{robot_id}/sample-fields")
+async def get_sample_fields(site_id: str, robot_id: str) -> dict:
+    """取一条原始 JSON 数据及其字段名（字段映射配置用）。"""
+    try:
+        return await service.get_raw_sample(site_id, robot_id)
+    except NotFound as e:
+        raise HTTPException(status_code=404, detail=str(e)) from None
+
+
 @router.get("/sites/{site_id}/robots")
 async def list_robots(site_id: str, instance: str | None = None) -> list[dict]:
     """列出机器人；instance 指定单个实例（页面下拉选择），缺省聚合全部启用实例。"""

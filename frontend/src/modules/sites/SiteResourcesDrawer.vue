@@ -4,28 +4,21 @@ import {
   NButton,
   NDrawer,
   NDrawerContent,
-  NForm,
-  NFormItem,
-  NInput,
-  NInputNumber,
-  NModal,
   NPopconfirm,
-  NSelect,
   NSpace,
-  NSwitch,
   NTabPane,
   NTabs,
   NTable,
   useMessage,
 } from 'naive-ui'
-import ResourceTestButton from '../../components/ResourceTestButton.vue'
 import {
   sitesApi,
-  TEST_TYPE,
   type ResourceConfig,
   type ResourceType,
   type Site,
 } from './api'
+import ResourceEditModal from './ResourceEditModal.vue'
+import FieldMappingDialog from './FieldMappingDialog.vue'
 
 const props = defineProps<{ show: boolean; site: Site | null }>()
 const emit = defineEmits<{ (e: 'update:show', v: boolean): void; (e: 'changed'): void }>()
@@ -37,74 +30,72 @@ const TYPES: Array<{ key: ResourceType; label: string }> = [
   { key: 'robots', label: 'Robot' },
 ]
 
-/** 各类型的专有字段（name/enabled 通用，PRD §5.2）；required 表单必填。
- *  host 输入形态：server 手输；redis/mq 可输可选（候选 = 同站点 Server 的 host）
- *  field_map：Robot 实例级字段映射（业务字段 -> 上游字段名，JSON） */
-const FIELD_DEFS: Record<
-  ResourceType,
-  Array<{ key: string; label: string; kind?: 'number' | 'host-input' | 'host-select' | 'json'; ph?: string; required?: boolean }>
-> = {
+/** 各 tab 表格的列定义（编辑表单字段定义在 ResourceEditModal 内） */
+const COLUMN_DEFS: Record<ResourceType, Array<{ key: string; label: string }>> = {
   servers: [
-    { key: 'host', label: 'Host', kind: 'host-input', required: true },
-    { key: 'port', label: 'Port', kind: 'number' },
-    { key: 'username', label: '用户名', required: true },
-    { key: 'password', label: '密码', required: true },
+    { key: 'host', label: 'Host' },
+    { key: 'port', label: 'Port' },
+    { key: 'username', label: '用户名' },
+    { key: 'password', label: '密码' },
   ],
   redis: [
-    { key: 'host', label: 'Host', kind: 'host-select', required: true },
-    { key: 'port', label: 'Port', kind: 'number' },
+    { key: 'host', label: 'Host' },
+    { key: 'port', label: 'Port' },
     { key: 'username', label: '用户名' },
     { key: 'password', label: '密码' },
   ],
   mq: [
-    { key: 'host', label: 'Host', kind: 'host-select', required: true },
-    { key: 'port', label: 'Port', kind: 'number', ph: 'Jolokia HTTP 端口，默认 8161' },
+    { key: 'host', label: 'Host' },
+    { key: 'port', label: 'Port' },
     { key: 'username', label: '用户名' },
     { key: 'password', label: '密码' },
   ],
   robots: [
-    { key: 'base_url', label: 'Base URL', required: true },
-    {
-      key: 'field_map',
-      label: '字段映射',
-      kind: 'json',
-      ph: '{"id": "robotCode", "status": "runState"}',
-    },
+    { key: 'base_url', label: 'Base URL' },
+    { key: 'field_map', label: '字段映射' },
   ],
 }
 
-/** 新增时的字段预填默认值（端口按协议：Jolokia 走 HTTP 8161；61616 是消息端口非管理口） */
-const CREATE_DEFAULTS: Record<ResourceType, Record<string, unknown>> = {
-  servers: { port: 22 },
-  redis: { port: 6379 },
-  mq: { port: 8161, username: 'prime_admin', password: 'hElloPr1me' },
-  robots: {},
-}
-
 const message = useMessage()
-const activeType = ref<ResourceType>('servers') // 默认最左侧 Server
+const activeType = ref<ResourceType>('servers')
 const items = ref<ResourceConfig[]>([])
-const showModal = ref(false)
-const editingId = ref<string | null>(null)
-// ponytail: 动态表单混合 string/number/password 字段，强类型化 v-model 得不偿失
-const form = ref<Record<string, any>>({})
 
 const siteId = computed(() => props.site?.id ?? '')
+const columns = computed(() => COLUMN_DEFS[activeType.value] ?? [])
 
-/** host 下拉候选：同站点已配置 Server 的 host（redis/mq 常与 server 同机） */
-const hostOptions = ref<Array<{ label: string; value: string }>>([])
+/** 编辑弹窗状态（独立组件，与 Drawer 平级渲染——嵌套时焦点陷阱锁输入） */
+const editShow = ref(false)
+const editTarget = ref<{
+  id: string | null
+  type: ResourceType
+  item: Record<string, any>
+  hostOptions: Array<{ label: string; value: string }>
+  siteId: string
+} | null>(null)
+
+/** Robot 字段映射弹窗 */
+const mappingShow = ref(false)
+const mappingRobot = ref<ResourceConfig | null>(null)
 
 async function load() {
   if (!props.show || !siteId.value) return
   try {
     items.value = await sitesApi.listResources(siteId.value, activeType.value)
+  } catch (e) {
+    message.error((e as Error).message)
+  }
+}
+
+async function loadHostOptions(): Promise<Array<{ label: string; value: string }>> {
+  if (!siteId.value) return []
+  try {
     const servers = await sitesApi.listResources(siteId.value, 'servers')
-    hostOptions.value = [...new Set(servers.map((s) => String(s.host)))].map((h) => ({
+    return [...new Set(servers.map((s) => String(s.host)))].map((h) => ({
       label: h,
       value: h,
     }))
-  } catch (e) {
-    message.error((e as Error).message)
+  } catch {
+    return []
   }
 }
 
@@ -114,80 +105,35 @@ watch(
   { immediate: true },
 )
 
-function openCreate() {
-  editingId.value = null
-  form.value = { name: '', ...CREATE_DEFAULTS[activeType.value] }
-  showModal.value = true
+async function openCreate() {
+  const hostOptions = activeType.value !== 'robots' ? await loadHostOptions() : []
+  editTarget.value = {
+    id: null,
+    type: activeType.value,
+    item: {},
+    hostOptions,
+    siteId: siteId.value,
+  }
+  editShow.value = true
 }
 
-function openEdit(item: ResourceConfig) {
-  editingId.value = item.id
-  const copy: Record<string, any> = { ...item }
-  // field_map 是对象存储，表单里以 JSON 文本编辑；未配置时置空串（NInput 不接受 null）
-  if (copy.field_map && typeof copy.field_map === 'object') {
-    copy.field_map = JSON.stringify(copy.field_map, null, 2)
-  } else if (copy.field_map == null) {
-    copy.field_map = ''
+async function openEdit(item: ResourceConfig) {
+  const hostOptions = activeType.value === 'redis' || activeType.value === 'mq'
+    ? await loadHostOptions()
+    : []
+  editTarget.value = {
+    id: item.id,
+    type: activeType.value,
+    item: { ...item },
+    hostOptions,
+    siteId: siteId.value,
   }
-  form.value = copy
+  editShow.value = true
 }
 
-/** 提交前把 JSON 文本字段解析回对象；解析失败返回 null 并提示 */
-function parseJsonFields(data: Record<string, any>): Record<string, any> | null {
-  for (const f of FIELD_DEFS[activeType.value]) {
-    if (f.kind === 'json' && typeof data[f.key] === 'string') {
-      const text = (data[f.key] as string).trim()
-      if (!text) {
-        delete data[f.key] // 留空 = 不配置映射
-        continue
-      }
-      try {
-        const parsed = JSON.parse(text)
-        if (typeof parsed !== 'object' || Array.isArray(parsed) || parsed === null) {
-          message.error(`${f.label} 必须是 JSON 对象，如 {"status": "runState"}`)
-          return null
-        }
-        data[f.key] = parsed
-      } catch (e) {
-        message.error(`${f.label} JSON 格式错误：${(e as Error).message}`)
-        return null
-      }
-    }
-  }
-  return data
-}
-
-async function save() {
-  if (!String(form.value.name ?? '').trim()) {
-    message.warning('名称必填')
-    return
-  }
-  for (const f of FIELD_DEFS[activeType.value]) {
-    if (f.required && !String(form.value[f.key] ?? '').trim()) {
-      message.warning(`${f.label} 必填`)
-      return
-    }
-  }
-  // 空值字段不提交 null/undefined（number 控件产生 null）；空串照常提交（全明文语义：提交什么存什么）
-  let data = Object.fromEntries(
-    Object.entries(form.value).filter(([, v]) => v !== null && v !== undefined),
-  )
-  const parsed = parseJsonFields(data)
-  if (parsed === null) return // JSON 字段校验失败
-  data = parsed
-  try {
-    if (editingId.value) {
-      await sitesApi.updateResource(siteId.value, activeType.value, editingId.value, data)
-    } else {
-      await sitesApi.createResource(siteId.value, activeType.value, data)
-    }
-    showModal.value = false
-    message.success('已保存')
-    await load()
-    emit('changed')
-  } catch (e) {
-    message.error((e as Error).message)
-  }
+function onSaved() {
+  load()
+  emit('changed')
 }
 
 async function remove(item: ResourceConfig) {
@@ -199,8 +145,11 @@ async function remove(item: ResourceConfig) {
 function displayValue(item: ResourceConfig, key: string): string {
   const v = item[key]
   if (v === undefined || v === '') return '-'
+  if (typeof v === 'object') return JSON.stringify(v)
   return String(v)
 }
+
+const hasMapping = computed(() => activeType.value === 'robots')
 </script>
 
 <template>
@@ -215,20 +164,24 @@ function displayValue(item: ResourceConfig, key: string): string {
             <thead>
               <tr>
                 <th>名称</th>
-                <th v-for="f in FIELD_DEFS[activeType]" :key="f.key">{{ f.label }}</th>
-                <th style="width: 150px">操作</th>
+                <th v-for="f in columns" :key="f.key">{{ f.label }}</th>
+                <th style="width: 210px">操作</th>
               </tr>
             </thead>
             <tbody>
               <tr v-for="item in items" :key="item.id">
                 <td>{{ item.name }}</td>
-                <td v-for="f in FIELD_DEFS[activeType]" :key="f.key">
+                <td v-for="f in columns" :key="f.key">
                   {{ displayValue(item, f.key) }}
                 </td>
                 <td>
                   <n-space :size="4">
-                    <!-- 已存资源的行级测试需 per-resource test 端点（PRD §18），落地后补 -->
                     <n-button size="tiny" @click="openEdit(item)">编辑</n-button>
+                    <n-button
+                      v-if="hasMapping && item.id"
+                      size="tiny"
+                      @click="((mappingRobot = item), (mappingShow = true))"
+                    >字段映射</n-button>
                     <n-popconfirm @positive-click="remove(item)">
                       <template #trigger>
                         <n-button size="tiny" type="error" ghost>删除</n-button>
@@ -239,7 +192,7 @@ function displayValue(item: ResourceConfig, key: string): string {
                 </td>
               </tr>
               <tr v-if="!items.length">
-                <td :colspan="FIELD_DEFS[activeType].length + 2" style="text-align: center; color: #999">
+                <td :colspan="columns.length + 2" style="text-align: center; color: #999">
                   暂无配置
                 </td>
               </tr>
@@ -250,95 +203,18 @@ function displayValue(item: ResourceConfig, key: string): string {
     </n-drawer-content>
   </n-drawer>
 
-  <!-- 编辑弹窗移到 Drawer 外：嵌套时 Drawer 的焦点陷阱会锁住弹窗输入（"编辑不可用"根因） -->
-  <n-modal
-    v-model:show="showModal"
-    preset="card"
-    :title="editingId ? '编辑配置' : `新增 ${TYPES.find((t) => t.key === activeType)?.label} 配置`"
-    style="width: 520px"
-  >
-    <n-form label-placement="left" label-width="90">
-      <n-form-item label="名称" required>
-        <n-input v-model:value="form.name" placeholder="如：redis-01" />
-      </n-form-item>
-      <n-form-item label="启用">
-        <n-switch v-model:value="form.enabled" :default-value="true" />
-      </n-form-item>
-      <n-form-item
-        v-for="f in FIELD_DEFS[activeType]"
-        :key="f.key"
-        :label="f.label"
-        :required="f.required"
-      >
-        <!-- 条件链必须单链：此前 v-if 断链导致 port 渲染出两个输入框 -->
-        <n-input-number
-          v-if="f.kind === 'number'"
-          v-model:value="form[f.key]"
-          style="width: 100%"
-          :placeholder="f.ph"
-        />
-        <!-- server 手输；redis/mq 可输可选（tag 模式自由输入，候选来自已有 Server） -->
-        <n-input v-else-if="f.kind === 'host-input'" v-model:value="form[f.key]"
-          placeholder="IP 或主机名" />
-        <n-select
-          v-else-if="f.kind === 'host-select'"
-          v-model:value="form[f.key]"
-          filterable
-          tag
-          default-first-option
-          :options="hostOptions"
-          :placeholder="hostOptions.length ? '选择已有 Server 的 Host 或直接输入' : '输入地址'"
-        />
-        <!-- 内部工具全明文；编辑预填原密码，改动即覆盖 -->
-        <n-input v-else-if="f.kind !== 'json'" v-model:value="form[f.key]" />
-        <!-- field_map 等 JSON 配置：textarea 编辑 + 提交前校验 -->
-        <div v-else style="width: 100%">
-          <n-input
-            :value="String(form[f.key] ?? '')"
-            type="textarea"
-            :rows="4"
-            :placeholder="f.ph"
-            class="mono"
-            :input-props="{ spellcheck: false }"
-            @update:value="form[f.key] = $event"
-          />
-        </div>
-      </n-form-item>
-    </n-form>
-    <template #footer>
-      <div class="footer">
-        <!-- Test 独占一行：结果标签需要整行宽度才看得全 -->
-        <div class="footer-test">
-          <!-- 表单内连接测试：无需先保存（PRD §13.1），使用表单当前值 -->
-          <resource-test-button :type="TEST_TYPE[activeType]" :config="form" />
-          <span v-if="activeType === 'mq'" class="hint">
-            平台经 Jolokia HTTP(8161) 读取管理数据；61616 是消息端口，平台不使用
-          </span>
-        </div>
-        <n-space justify="end" :size="8">
-          <n-button @click="showModal = false">取消</n-button>
-          <n-button type="primary" @click="save">保存</n-button>
-        </n-space>
-      </div>
-    </template>
-  </n-modal>
-</template>
+  <!-- 编辑/新增弹窗：独立组件，与 Drawer 平级（嵌套时焦点陷阱锁输入） -->
+  <resource-edit-modal
+    v-model:show="editShow"
+    :target="editTarget"
+    @saved="onSaved"
+  />
 
-<style scoped>
-.footer {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.footer-test {
-  /* 与上方表单控件左缘对齐（label-placement left, label-width 90） */
-  padding-left: 90px;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-.hint {
-  color: #999;
-  font-size: 12px;
-}
-</style>
+  <!-- Robot 字段映射弹窗 -->
+  <field-mapping-dialog
+    v-model:show="mappingShow"
+    :site-id="siteId"
+    :robot="mappingRobot"
+    @saved="onSaved"
+  />
+</template>

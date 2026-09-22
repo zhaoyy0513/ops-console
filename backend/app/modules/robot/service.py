@@ -49,6 +49,24 @@ async def get_robot(site_id: str, robot_id: str, rid: str) -> dict[str, Any]:
     return await cached(f"ops:cache:robot:{robot_id}:detail:{rid}", CACHE_TTL, with_retry(factory))
 
 
+async def get_raw_sample(site_id: str, robot_id: str) -> dict[str, Any]:
+    """取一条原始 JSON 数据（字段映射配置用）。"""
+    config = await _require_robot_config(site_id, robot_id)
+    provider = _build_provider(config)
+
+    async def factory():
+        async with get_semaphore("robot"):
+            return await provider.get_raw_sample()
+
+    sample = await with_retry(factory)()
+    if not sample:
+        raise NotFound("接口未返回任何 Robot 数据，无法提取字段")
+    return {
+        "fields": sorted(sample.keys()),
+        "sample": sample,
+    }
+
+
 async def robot_tester(config: dict[str, Any]) -> dict[str, Any]:
     started = time.perf_counter()
     provider = _build_provider(config)
