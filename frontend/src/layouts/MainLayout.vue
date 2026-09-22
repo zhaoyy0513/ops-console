@@ -13,22 +13,24 @@ const modules = getModules()
 const menuOptions = modules.map((m) => ({ label: m.title, key: m.routePath }))
 const activeKey = computed(() => String(route.params.moduleId ?? ''))
 
-onMounted(() => {
-  siteStore.loadSites().then(() => {
-    // 当前 URL 的 siteId 不存在 → 自动跳第一个真实站点；
-    // 一个站点都没有 → 引导去站点管理
-    const current = String(route.params.siteId ?? '')
-    const options = siteStore.options
-    if (route.path.startsWith('/console/site/') && !options.some((o) => o.value === current)) {
-      if (options.length) {
-        const target = String(route.params.moduleId ?? modules[0]?.routePath ?? 'overview')
-        router.replace(`/console/site/${options[0].value}/${target}`)
-      } else {
-        router.replace('/sites')
-      }
-    }
-  })
-})
+/** 校验当前 URL 的 siteId：站点被删后立即踢出（响应式，列表/路由变化都触发） */
+function ensureValidSite() {
+  const current = String(route.params.siteId ?? '')
+  if (!route.path.startsWith('/console/site/')) return
+  const options = siteStore.options
+  if (options.some((o) => o.value === current)) return
+  if (options.length) {
+    const target = String(route.params.moduleId ?? modules[0]?.routePath ?? 'overview')
+    router.replace(`/console/site/${options[0].value}/${target}`)
+  } else {
+    siteStore.setSite('') // 站点已删，清空选中态（下拉不再显示老 ID）
+    router.replace('/sites')
+  }
+}
+
+onMounted(() => siteStore.loadSites().then(ensureValidSite))
+watch(() => siteStore.sites, ensureValidSite) // 删除站点后立即纠偏
+watch(() => route.fullPath, ensureValidSite) // 手输 URL / 后退进入无效站点时兜底
 
 watch(
   () => route.params.siteId,
