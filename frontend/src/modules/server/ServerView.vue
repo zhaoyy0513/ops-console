@@ -57,8 +57,8 @@ async function load(silent = false) {
     ])
     metrics.value = m
     processes.value = p
-    // 趋势（读取时采样，3s 轮询 = 3s 一个点）
-    const rid = `server:${serverId.value}`
+    // 趋势（读取时采样，3s 轮询 = 3s 一个点；rid 带站点维度）
+    const rid = `server:${siteStore.currentSiteId}:${serverId.value}`
     getSamples(rid, 'cpu').then((s) => (cpuSeries.value = [...s].reverse())).catch(() => {})
     getSamples(rid, 'mem').then((s) => (memSeries.value = [...s].reverse())).catch(() => {})
   } catch (e) {

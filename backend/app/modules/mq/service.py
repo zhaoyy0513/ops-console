@@ -44,7 +44,7 @@ async def get_overview(site_id: str, mq_id: str) -> dict[str, Any]:
             # Heap 采样（趋势图数据源）：仅真实读取时记录，缓存命中不重复采样
             heap = overview.get("jvm", {}).get("heap_used")
             if isinstance(heap, (int, float)):
-                await sampling.push_sample(mq_id, "heap", heap)
+                await sampling.push_sample(f"mq:{site_id}:{mq_id}", "heap", heap)
             return overview
 
     return await cached(f"ops:cache:mq:{mq_id}:overview", CACHE_TTL, with_retry(factory))
@@ -62,7 +62,7 @@ async def get_queues(site_id: str, mq_id: str) -> list[dict[str, Any]]:
     queues = await cached(f"ops:cache:mq:{mq_id}:queues", CACHE_TTL, with_retry(factory))
     for q in queues:
         name = q.get("name") or ""
-        series = _series_key(mq_id, name)
+        series = _series_key(site_id, mq_id, name)
         old = await sampling.value_minutes_ago(series, "backlog", minutes=5)
         current = q.get("message_count")
         if isinstance(current, (int, float)):
@@ -74,11 +74,11 @@ async def get_queues(site_id: str, mq_id: str) -> list[dict[str, Any]]:
     return queues
 
 
-def _series_key(mq_id: str, queue_name: str) -> str:
-    # queue 名可能含特殊字符，用 hash 化避免 key 结构被污染
+def _series_key(site_id: str, mq_id: str, queue_name: str) -> str:
+    # queue 名可能含特殊字符，用 hash 化避免 key 结构被污染；带站点维度防跨站同名
     import hashlib
 
-    return f"{mq_id}:{hashlib.md5(queue_name.encode()).hexdigest()[:10]}"
+    return f"mq:{site_id}:{mq_id}:{hashlib.md5(queue_name.encode()).hexdigest()[:10]}"
 
 
 def diagnose_queue(q: dict[str, Any]) -> dict[str, Any]:

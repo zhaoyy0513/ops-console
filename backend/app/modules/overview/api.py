@@ -26,10 +26,13 @@ async def refresh(site_id: str) -> dict:
 
 @router.get("/samples")
 async def get_samples(rid: str, series: str, limit: int = 60) -> list[dict]:
-    """采样序列查询（趋势图数据源）：rid 形如 server:s1 / redis:r1 / <mq_id>。"""
+    """采样序列查询（趋势图数据源）：rid 形如 server:<site>:<id> / mq:<site>:<id>。"""
     from backend.app.core.sampling import read_series
 
     # 仅允许安全的 key 组成部分，防止拼出任意 Redis key
     if not rid or not series or any(c in rid + series for c in " {}*?\0\n"):
         raise HTTPException(status_code=400, detail="invalid rid/series")
-    return await read_series(rid, series, limit)
+    try:
+        return await read_series(rid, series, limit)
+    except Exception:  # noqa: BLE001 - 采样读失败降级为空（趋势图缺数据不该 500）
+        return []

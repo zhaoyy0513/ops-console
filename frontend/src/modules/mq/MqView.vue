@@ -5,7 +5,7 @@ import BaseChart from '../../components/BaseChart.vue'
 import StatusBadge from '../../components/StatusBadge.vue'
 import { useSiteStore } from '../../stores/site'
 import { getSamples } from '../overview/api'
-import { mqApi, type AddressRow, type MqOverview, type QueueRow } from './api'
+import { mqApi, type MqOverview, type QueueRow } from './api'
 
 const siteStore = useSiteStore()
 const message = useMessage()
@@ -14,14 +14,12 @@ const instances = ref<Array<{ label: string; value: string }>>([])
 const instanceId = ref<string | null>(null)
 const overview = ref<MqOverview | null>(null)
 const queues = ref<QueueRow[]>([])
-const addresses = ref<AddressRow[]>([])
 const loading = ref(false) // 首次加载（转圈而非白屏）
 const heapSeries = ref<Array<{ ts: number; v: number }>>([])
 const loadError = ref('')
 const queuesError = ref('')
-const addressesError = ref('')
 
-/** 轮询分层：overview/heap 轻量 3s；queues/addresses 响应大，15s + 手动刷新 */
+/** 轮询分层：overview/heap 轻量 3s；queues 响应大，15s + 手动刷新 */
 async function loadLight(toastOnFail = false) {
   const siteId = siteStore.currentSiteId
   if (!siteId || !instanceId.value) return
@@ -29,7 +27,8 @@ async function loadLight(toastOnFail = false) {
     const o = await mqApi.overview(siteId, instanceId.value)
     overview.value = o
     loadError.value = ''
-    getSamples(instanceId.value, 'heap').then((s) => (heapSeries.value = [...s].reverse())).catch(() => {})
+    getSamples(`mq:${siteId}:${instanceId.value}`, 'heap')
+      .then((s) => (heapSeries.value = [...s].reverse())).catch(() => {})
   } catch (e) {
     overview.value = null
     loadError.value = (e as Error).message
@@ -47,14 +46,6 @@ async function loadHeavy() {
     queues.value = []
     queuesError.value = (e as Error).message
     message.error(`Queues 读取失败：${queuesError.value}`)
-  }
-  try {
-    addresses.value = await mqApi.addresses(siteId, instanceId.value)
-    addressesError.value = ''
-  } catch (e) {
-    addresses.value = []
-    addressesError.value = (e as Error).message
-    message.error(`Addresses 读取失败：${addressesError.value}`)
   }
 }
 
@@ -77,14 +68,14 @@ async function loadInstances() {
   }
 }
 
-/** 手动/首次：全量刷新（overview + queues + addresses，失败弹 toast） */
+/** 手动/首次：全量刷新（overview + queues，失败弹 toast） */
 async function load() {
   await loadLight(true)
   await loadHeavy()
 }
 onMounted(loadInstances)
 
-// 轮询分层：overview/heap 轻量 3s；queues/addresses 响应大 15s 一次（页面在场才轮询）
+// 轮询分层：overview/heap 轻量 3s；queues 响应大 15s 一次（页面在场才轮询）
 let pollTimer: number | null = null
 let heavyTick = 0
 
@@ -125,9 +116,8 @@ watch(() => siteStore.currentSiteId, () => {
 })
 watch(instanceId, load)
 
-// ---------- 搜索（Queues 匹配队列名+所属 Address；Addresses 匹配地址名） ----------
+// ---------- 搜索（匹配队列名 + 所属 Address，忽略大小写） ----------
 const queueFilter = ref('')
-const addressFilter = ref('')
 const filteredQueues = computed(() => {
   const needle = queueFilter.value.trim().toLowerCase()
   if (!needle) return queues.value
@@ -136,11 +126,6 @@ const filteredQueues = computed(() => {
       (q.name ?? '').toLowerCase().includes(needle) ||
       (q.address ?? '').toLowerCase().includes(needle),
   )
-})
-const filteredAddresses = computed(() => {
-  const needle = addressFilter.value.trim().toLowerCase()
-  if (!needle) return addresses.value
-  return addresses.value.filter((a) => (a.name ?? '').toLowerCase().includes(needle))
 })
 
 // ---------- 图表 ----------
@@ -259,7 +244,7 @@ const worstQueueStatus = computed(() => {
     <template v-else-if="overview">
       <div class="row">
         <!-- Heap：生产 MQ 内存问题核心指标，突出显示 + 阈值着色 -->
-        <n-card size="small" class="grow-2" title="JVM Heap（MQ 进程内存）">
+        <n-card size="small" class="grow-2" title="JVM Heap（约 5s 采样）">
           <div class="heap-row">
             <div class="heap-big" :style="{ color: pctColor(heapPct) }">
               {{ heapPct ?? '?' }}<span class="unit">%</span>
@@ -289,13 +274,13 @@ const worstQueueStatus = computed(() => {
             采样收集中，几秒后出现趋势线
           </div>
         </n-card>
-        <n-card size="small" class="grow-1" title="队列堆积 Top 10（消息数最多的队列）">
+        <n-card size="small" class="grow-1" title="队列堆积 Top 10">
           <base-chart v-if="queues.length" :option="topQueuesOption" height="300px" />
           <div v-else style="color: #999; font-size: 12px; padding: 40px 0; text-align: center">无队列数据</div>
         </n-card>
       </div>
 
-      <n-card size="small" title="Queues">
+      <n-card size="small" title="Topics / Queues">
         <template #header-extra>
           <n-input v-model:value="queueFilter" size="small" style="width: 240px"
             placeholder="模糊搜索队列名或 Address" />
@@ -304,7 +289,7 @@ const worstQueueStatus = computed(() => {
         <n-table :single-line="false" size="small">
           <thead>
             <tr>
-              <th>Queue</th><th>所属 Address</th><th>状态</th><th>消息数</th><th>消费者</th>
+              <th>Topic / Queue</th><th>所属 Address</th><th>状态</th><th>消息数</th><th>消费者</th>
               <th>Delivering</th><th>5 分钟前</th><th>增长</th><th>问题</th>
             </tr>
           </thead>
@@ -327,27 +312,6 @@ const worstQueueStatus = computed(() => {
             </tr>
             <tr v-if="!filteredQueues.length">
               <td colspan="9" style="text-align: center; color: #999">无匹配队列</td>
-            </tr>
-          </tbody>
-        </n-table>
-      </n-card>
-
-      <n-card size="small" title="Addresses">
-        <template #header-extra>
-          <n-input v-model:value="addressFilter" size="small" style="width: 240px"
-            placeholder="模糊搜索 Address / topic" />
-        </template>
-        <div v-if="addressesError" class="pane-error">Addresses 读取失败：{{ addressesError }}（每 15s 自动重试）</div>
-        <n-table :single-line="false" size="small">
-          <thead>
-            <tr><th>Address</th><th>消息数</th><th>消费者</th><th>生产者</th></tr>
-          </thead>
-          <tbody>
-            <tr v-for="a in filteredAddresses" :key="a.name">
-              <td class="mono">{{ a.name }}</td>
-              <td>{{ a.message_count ?? '-' }}</td>
-              <td>{{ a.consumer_count ?? '-' }}</td>
-              <td>{{ a.producer_count ?? '-' }}</td>
             </tr>
           </tbody>
         </n-table>
