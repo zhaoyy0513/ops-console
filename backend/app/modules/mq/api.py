@@ -45,3 +45,15 @@ async def empty_queue(site_id: str, mq_id: str, body: EmptyQueueIn) -> dict:
         raise HTTPException(status_code=404, detail=str(e)) from None
     except service.OpsError as e:
         raise HTTPException(status_code=e.status_code, detail=e.message) from None
+
+
+@router.get("/sites/{site_id}/mq/{mq_id}/queues/messages")
+async def browse_queue_messages(site_id: str, mq_id: str, mbean: str, queue: str,
+                                limit: int = 20) -> list[dict]:
+    """浏览队列内消息（QueueControl.browse()，只读预览，默认前 20 条）。"""
+    try:
+        return await service.browse_queue(site_id, mq_id, mbean, queue, limit)
+    except NotFound as e:
+        raise HTTPException(status_code=404, detail=str(e)) from None
+    except service.OpsError as e:
+        raise HTTPException(status_code=e.status_code, detail=e.message) from None

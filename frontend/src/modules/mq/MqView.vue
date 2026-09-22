@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { NButton, NCard, NInput, NSelect, NSpace, NSpin, NTable, useMessage } from 'naive-ui'
+import { NButton, NCard, NInput, NModal, NSelect, NSpace, NSpin, NTable, useMessage } from 'naive-ui'
 import CountdownConfirm from '../../components/CountdownConfirm.vue'
 import BaseChart from '../../components/BaseChart.vue'
 import StatusBadge from '../../components/StatusBadge.vue'
 import { useSiteStore } from '../../stores/site'
 import { getSamples } from '../overview/api'
-import { mqApi, type MqOverview, type QueueRow } from './api'
+import { mqApi, type MqOverview, type QueueMessage, type QueueRow } from './api'
 
 const siteStore = useSiteStore()
 const message = useMessage()
@@ -206,6 +206,28 @@ async function emptyQueue(q: QueueRow) {
   }
 }
 
+// ---------- 消息浏览（browse() 只读预览） ----------
+const messagesShow = ref(false)
+const messagesLoading = ref(false)
+const messages = ref<QueueMessage[]>([])
+const messagesQueue = ref('')
+
+async function viewMessages(q: QueueRow) {
+  const siteId = siteStore.currentSiteId
+  if (!siteId || !instanceId.value || !q._mbean) return
+  messagesQueue.value = q.name
+  messagesShow.value = true
+  messagesLoading.value = true
+  try {
+    messages.value = await mqApi.browse(siteId, instanceId.value, q._mbean, q.name, 20)
+  } catch (e) {
+    messages.value = []
+    message.error((e as Error).message)
+  } finally {
+    messagesLoading.value = false
+  }
+}
+
 function fmtBytes(n: number | null | undefined): string {
   if (n == null) return '-'
   const units = ['B', 'KB', 'MB', 'GB']
@@ -315,16 +337,19 @@ const worstQueueStatus = computed(() => {
               <td>{{ q.consumer_count ?? '-' }}</td>
               <td>{{ q.messages_added ?? '-' }}</td>
               <td>
-                <!-- 清空积压：5 秒倒计时确认（破坏性操作，记录操作日志） -->
-                <countdown-confirm
-                  v-if="q._mbean && (q.message_count ?? 0) > 0"
-                  label="清空积压"
-                  confirm-text="确认清空"
-                  :target="q.name"
-                  :seconds="5"
-                  @confirm="emptyQueue(q)"
-                />
-                <span v-else style="color: #999">-</span>
+                <n-space :size="4" :wrap="false">
+                  <n-button v-if="q._mbean" size="tiny" @click="viewMessages(q)">查看</n-button>
+                  <!-- 清空积压：10 秒倒计时确认（破坏性操作，记录操作日志） -->
+                  <countdown-confirm
+                    v-if="q._mbean && (q.message_count ?? 0) > 0"
+                    label="清空"
+                    confirm-text="确认清空"
+                    :target="q.name"
+                    :seconds="10"
+                    @confirm="emptyQueue(q)"
+                  />
+                  <span v-if="!q._mbean" style="color: #999">-</span>
+                </n-space>
               </td>
             </tr>
             <tr v-if="!filteredQueues.length">
@@ -338,6 +363,24 @@ const worstQueueStatus = computed(() => {
     <n-card v-else-if="!loading" size="small">
       <span style="color: #999">该站点暂无 MQ 配置——请在「站点管理 → 资源 → ActiveMQ」中添加并测试连接</span>
     </n-card>
+
+    <!-- 消息浏览弹窗（browse() 只读预览，前 20 条） -->
+    <n-modal v-model:show="messagesShow" preset="card"
+      :title="`Messages · ${messagesQueue}`" style="width: 720px">
+      <n-spin :show="messagesLoading">
+        <div v-if="!messages.length && !messagesLoading" style="text-align: center; color: #999; padding: 24px 0">
+          队列为空，没有可预览的消息
+        </div>
+        <div v-for="(m, i) in messages" :key="m.message_id ?? i" class="msg-block">
+          <div class="msg-head">
+            <span class="mono">#{{ i + 1 }}</span>
+            <span class="mono" :title="String(m.message_id ?? '')">id: {{ m.message_id ?? '-' }}</span>
+            <span v-if="m.timestamp" class="mono">{{ new Date(m.timestamp).toLocaleString() }}</span>
+          </div>
+          <pre class="msg-body mono">{{ m.body_preview }}</pre>
+        </div>
+      </n-spin>
+    </n-modal>
   </n-space>
 </template>
 
@@ -405,5 +448,29 @@ const worstQueueStatus = computed(() => {
   color: #d03050;
   font-size: 12px;
   margin-bottom: 8px;
+}
+.msg-block {
+  border: 1px solid #e5e6eb;
+  border-radius: 4px;
+  padding: 8px 12px;
+  margin-bottom: 10px;
+}
+.msg-head {
+  display: flex;
+  gap: 16px;
+  color: #666;
+  font-size: 12px;
+  margin-bottom: 6px;
+}
+.msg-body {
+  background: #fafbfc;
+  margin: 0;
+  padding: 8px;
+  border-radius: 3px;
+  font-size: 12px;
+  max-height: 200px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
 }
 </style>

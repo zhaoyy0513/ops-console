@@ -44,6 +44,14 @@ export interface AddressRow {
   address_size: number | null
 }
 
+export interface QueueMessage {
+  message_id: string | number | null
+  priority: number | null
+  timestamp: number | null
+  durable: boolean | null
+  body_preview: string
+}
+
 export const mqApi = {
   overview: (siteId: string, id: string) => api.get<MqOverview>(`/sites/${siteId}/mq/${id}/overview`),
   queues: (siteId: string, id: string) => api.get<QueueRow[]>(`/sites/${siteId}/mq/${id}/queues`),
@@ -54,4 +62,9 @@ export const mqApi = {
       mbean,
       queue,
     }),
+  /** 浏览队列内消息（只读预览，前 limit 条） */
+  browse: (siteId: string, id: string, mbean: string, queue: string, limit = 20) =>
+    api.get<QueueMessage[]>(
+      `/sites/${siteId}/mq/${id}/queues/messages?mbean=${encodeURIComponent(mbean)}&queue=${encodeURIComponent(queue)}&limit=${limit}`,
+    ),
 }

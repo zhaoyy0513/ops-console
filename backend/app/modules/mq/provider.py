@@ -97,6 +97,38 @@ class ArtemisProvider:
         """清空队列积压消息（Artemis emptyQueue 管理操作，用户明确要求的功能）。"""
         await self.exec_operation(mbean, "emptyQueue")
 
+    async def browse_queue(self, mbean: str, limit: int = 20) -> list[dict[str, Any]]:
+        """浏览队列消息（QueueControl.browse()，返回 JSON 字符串需二次解析）。
+
+        只取前 limit 条预览；消息体可能很大，body 截断到 2000 字符。
+        """
+        value = await self.exec_operation(mbean, "browse")
+        messages: list[dict[str, Any]] = []
+        # Artemis browse() 返回 JSON 字符串；某些 Jolokia 配置已自动解析
+        if isinstance(value, str):
+            try:
+                value = json.loads(value)
+            except ValueError:
+                raise OpsError("REMOTE_BAD_RESPONSE", "browse 返回非 JSON", self._host) from None
+        if isinstance(value, dict):  # 某些版本包在 {data: [...]} / {messages: [...]} 信封
+            for key in ("data", "messages", "result"):
+                if isinstance(value.get(key), list):
+                    value = value[key]
+                    break
+        if isinstance(value, list):
+            for m in value[:limit]:
+                if not isinstance(m, dict):
+                    continue
+                body = m.get("body") or m.get("message") or ""
+                messages.append({
+                    "message_id": m.get("messageID") or m.get("MessageID"),
+                    "priority": m.get("priority"),
+                    "timestamp": m.get("timestamp"),
+                    "durable": m.get("durable"),
+                    "body_preview": str(body)[:2000],
+                })
+        return messages
+
     # ---------- 数据获取 ----------
 
     async def get_overview(self) -> dict[str, Any]:

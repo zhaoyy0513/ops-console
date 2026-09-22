@@ -123,9 +123,11 @@ function openCreate() {
 function openEdit(item: ResourceConfig) {
   editingId.value = item.id
   const copy: Record<string, any> = { ...item }
-  // field_map 是对象存储，表单里以 JSON 文本编辑
+  // field_map 是对象存储，表单里以 JSON 文本编辑；未配置时置空串（NInput 不接受 null）
   if (copy.field_map && typeof copy.field_map === 'object') {
     copy.field_map = JSON.stringify(copy.field_map, null, 2)
+  } else if (copy.field_map == null) {
+    copy.field_map = ''
   }
   form.value = copy
 }
@@ -245,79 +247,81 @@ function displayValue(item: ResourceConfig, key: string): string {
           </n-table>
         </n-tab-pane>
       </n-tabs>
-
-      <n-modal
-        v-model:show="showModal"
-        preset="card"
-        :title="editingId ? '编辑配置' : `新增 ${TYPES.find((t) => t.key === activeType)?.label} 配置`"
-        style="width: 520px"
-      >
-        <n-form label-placement="left" label-width="90">
-          <n-form-item label="名称" required>
-            <n-input v-model:value="form.name" placeholder="如：redis-01" />
-          </n-form-item>
-          <n-form-item label="启用">
-            <n-switch v-model:value="form.enabled" :default-value="true" />
-          </n-form-item>
-          <n-form-item
-            v-for="f in FIELD_DEFS[activeType]"
-            :key="f.key"
-            :label="f.label"
-            :required="f.required"
-          >
-            <!-- 条件链必须单链：此前 v-if 断链导致 port 渲染出两个输入框 -->
-            <n-input-number
-              v-if="f.kind === 'number'"
-              v-model:value="form[f.key]"
-              style="width: 100%"
-              :placeholder="f.ph"
-            />
-            <!-- server 手输；redis/mq 可输可选（tag 模式自由输入，候选来自已有 Server） -->
-            <n-input v-else-if="f.kind === 'host-input'" v-model:value="form[f.key]"
-              placeholder="IP 或主机名" />
-            <n-select
-              v-else-if="f.kind === 'host-select'"
-              v-model:value="form[f.key]"
-              filterable
-              tag
-              default-first-option
-              :options="hostOptions"
-              :placeholder="hostOptions.length ? '选择已有 Server 的 Host 或直接输入' : '输入地址'"
-            />
-            <!-- 内部工具全明文；编辑预填原密码，改动即覆盖 -->
-            <n-input v-else-if="f.kind !== 'json'" v-model:value="form[f.key]" />
-            <!-- field_map 等 JSON 配置：textarea 编辑 + 提交前校验 -->
-            <div v-else style="width: 100%">
-              <n-input
-                v-model:value="form[f.key]"
-                type="textarea"
-                :rows="4"
-                :placeholder="f.ph"
-                class="mono"
-                :input-props="{ spellcheck: false }"
-              />
-            </div>
-          </n-form-item>
-        </n-form>
-        <template #footer>
-          <div class="footer">
-            <!-- Test 独占一行：结果标签需要整行宽度才看得全 -->
-            <div class="footer-test">
-              <!-- 表单内连接测试：无需先保存（PRD §13.1），使用表单当前值 -->
-              <resource-test-button :type="TEST_TYPE[activeType]" :config="form" />
-              <span v-if="activeType === 'mq'" class="hint">
-                平台经 Jolokia HTTP(8161) 读取管理数据；61616 是消息端口，平台不使用
-              </span>
-            </div>
-            <n-space justify="end" :size="8">
-              <n-button @click="showModal = false">取消</n-button>
-              <n-button type="primary" @click="save">保存</n-button>
-            </n-space>
-          </div>
-        </template>
-      </n-modal>
     </n-drawer-content>
   </n-drawer>
+
+  <!-- 编辑弹窗移到 Drawer 外：嵌套时 Drawer 的焦点陷阱会锁住弹窗输入（"编辑不可用"根因） -->
+  <n-modal
+    v-model:show="showModal"
+    preset="card"
+    :title="editingId ? '编辑配置' : `新增 ${TYPES.find((t) => t.key === activeType)?.label} 配置`"
+    style="width: 520px"
+  >
+    <n-form label-placement="left" label-width="90">
+      <n-form-item label="名称" required>
+        <n-input v-model:value="form.name" placeholder="如：redis-01" />
+      </n-form-item>
+      <n-form-item label="启用">
+        <n-switch v-model:value="form.enabled" :default-value="true" />
+      </n-form-item>
+      <n-form-item
+        v-for="f in FIELD_DEFS[activeType]"
+        :key="f.key"
+        :label="f.label"
+        :required="f.required"
+      >
+        <!-- 条件链必须单链：此前 v-if 断链导致 port 渲染出两个输入框 -->
+        <n-input-number
+          v-if="f.kind === 'number'"
+          v-model:value="form[f.key]"
+          style="width: 100%"
+          :placeholder="f.ph"
+        />
+        <!-- server 手输；redis/mq 可输可选（tag 模式自由输入，候选来自已有 Server） -->
+        <n-input v-else-if="f.kind === 'host-input'" v-model:value="form[f.key]"
+          placeholder="IP 或主机名" />
+        <n-select
+          v-else-if="f.kind === 'host-select'"
+          v-model:value="form[f.key]"
+          filterable
+          tag
+          default-first-option
+          :options="hostOptions"
+          :placeholder="hostOptions.length ? '选择已有 Server 的 Host 或直接输入' : '输入地址'"
+        />
+        <!-- 内部工具全明文；编辑预填原密码，改动即覆盖 -->
+        <n-input v-else-if="f.kind !== 'json'" v-model:value="form[f.key]" />
+        <!-- field_map 等 JSON 配置：textarea 编辑 + 提交前校验 -->
+        <div v-else style="width: 100%">
+          <n-input
+            :value="String(form[f.key] ?? '')"
+            type="textarea"
+            :rows="4"
+            :placeholder="f.ph"
+            class="mono"
+            :input-props="{ spellcheck: false }"
+            @update:value="form[f.key] = $event"
+          />
+        </div>
+      </n-form-item>
+    </n-form>
+    <template #footer>
+      <div class="footer">
+        <!-- Test 独占一行：结果标签需要整行宽度才看得全 -->
+        <div class="footer-test">
+          <!-- 表单内连接测试：无需先保存（PRD §13.1），使用表单当前值 -->
+          <resource-test-button :type="TEST_TYPE[activeType]" :config="form" />
+          <span v-if="activeType === 'mq'" class="hint">
+            平台经 Jolokia HTTP(8161) 读取管理数据；61616 是消息端口，平台不使用
+          </span>
+        </div>
+        <n-space justify="end" :size="8">
+          <n-button @click="showModal = false">取消</n-button>
+          <n-button type="primary" @click="save">保存</n-button>
+        </n-space>
+      </div>
+    </template>
+  </n-modal>
 </template>
 
 <style scoped>

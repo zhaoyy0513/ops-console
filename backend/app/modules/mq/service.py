@@ -115,16 +115,17 @@ async def get_addresses(site_id: str, mq_id: str) -> list[dict[str, Any]]:
     return await cached(f"ops:cache:mq:{mq_id}:addresses", CACHE_TTL, with_retry(factory))
 
 
-async def empty_queue(site_id: str, mq_id: str, mbean: str, queue_name: str) -> dict[str, Any]:
-    """清空指定队列的积压消息（用户要求的管理操作；写 oplog）。
-
-    mbean 必须来自本平台的队列列表（_mbean 由 wildcard read 返回），
-    防止构造任意 MBean 调用。
-    """
-    config = await _require_mq_config(site_id, mq_id)
+def _validate_queue_mbean(mbean: str) -> None:
+    """mbean 必须形如队列 ObjectName（来自本平台队列列表），防任意 MBean 调用。"""
     if "component=addresses" not in mbean or "subcomponent=queues" not in mbean \
             or mbean.count('"') % 2 != 0 or any(c in mbean for c in "\r\n{}"):
         raise OpsError("INVALID_OPERATION", "invalid queue mbean", status_code=400)
+
+
+async def empty_queue(site_id: str, mq_id: str, mbean: str, queue_name: str) -> dict[str, Any]:
+    """清空指定队列的积压消息（用户要求的管理操作；写 oplog）。"""
+    config = await _require_mq_config(site_id, mq_id)
+    _validate_queue_mbean(mbean)
     provider = _build_provider(config)
     started = time.perf_counter()
     async with get_semaphore("mq"):
@@ -137,6 +138,16 @@ async def empty_queue(site_id: str, mq_id: str, mbean: str, queue_name: str) -> 
     await oplog.record(site_id, f"mq/{mq_id}", "MQ_EMPTY_QUEUE", target=queue_name,
                        params={"op": "emptyQueue"})
     return {"success": True, "latency_ms": int((time.perf_counter() - started) * 1000)}
+
+
+async def browse_queue(site_id: str, mq_id: str, mbean: str, queue_name: str,
+                       limit: int = 20) -> list[dict[str, Any]]:
+    """浏览队列内消息（只读预览，前 limit 条）。"""
+    config = await _require_mq_config(site_id, mq_id)
+    _validate_queue_mbean(mbean)
+    provider = _build_provider(config)
+    async with get_semaphore("mq"):
+        return await provider.browse_queue(mbean, limit)
 
 
 # ---------- 连接测试 ----------
