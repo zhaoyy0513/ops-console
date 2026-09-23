@@ -20,8 +20,10 @@ export interface EditTarget {
   type: 'servers' | 'redis' | 'mq' | 'robots'
   /** 编辑时的初始值（新增时传 {}） */
   item: Record<string, any>
-  /** host 下拉候选（redis/mq 用） */
+  /** host 下拉候选（redis/mq/robots 用） */
   hostOptions: Array<{ label: string; value: string }>
+  /** 名称下拉候选（redis/mq/robots 用，来自同站点 Server 的名称） */
+  nameOptions: Array<{ label: string; value: string }>
   /** 资源所属站点（保存与测试请求的目标） */
   siteId: string
 }
@@ -32,6 +34,14 @@ const emit = defineEmits<{
   (e: 'saved'): void
 }>()
 
+/** 连接测试类型：不能用 replace(/s$/) —— redis 结尾的 s 会被误删成 "red" */
+const TEST_TYPE: Record<string, string> = {
+  servers: 'server',
+  redis: 'redis',
+  mq: 'mq',
+  robots: 'robot',
+}
+
 const TYPES: Record<string, string> = {
   servers: 'Server',
   redis: 'Redis',
@@ -41,7 +51,7 @@ const TYPES: Record<string, string> = {
 
 const FIELD_DEFS: Record<
   string,
-  Array<{ key: string; label: string; kind?: 'number' | 'host-input' | 'host-select'; ph?: string; required?: boolean }>
+  Array<{ key: string; label: string; kind?: 'number' | 'host-input' | 'host-select' | 'name-select' | 'base-url-select'; ph?: string; required?: boolean }>
 > = {
   servers: [
     { key: 'host', label: 'Host', kind: 'host-input', required: true },
@@ -50,18 +60,23 @@ const FIELD_DEFS: Record<
     { key: 'password', label: '密码', required: true },
   ],
   redis: [
+    { key: 'name', label: '名称', kind: 'name-select', required: true },
     { key: 'host', label: 'Host', kind: 'host-select', required: true },
     { key: 'port', label: 'Port', kind: 'number' },
     { key: 'username', label: '用户名' },
     { key: 'password', label: '密码' },
   ],
   mq: [
+    { key: 'name', label: '名称', kind: 'name-select', required: true },
     { key: 'host', label: 'Host', kind: 'host-select', required: true },
     { key: 'port', label: 'Port', kind: 'number', ph: 'Jolokia HTTP 端口，默认 8161' },
     { key: 'username', label: '用户名' },
     { key: 'password', label: '密码' },
   ],
-  robots: [{ key: 'base_url', label: 'Base URL', required: true }],
+  robots: [
+    { key: 'name', label: '名称', kind: 'name-select', required: true },
+    { key: 'base_url', label: 'Base URL', kind: 'base-url-select', required: true },
+  ],
 }
 
 const CREATE_DEFAULTS: Record<string, Record<string, unknown>> = {
@@ -157,6 +172,24 @@ async function save() {
           style="width: 100%"
           :placeholder="f.ph"
         />
+        <n-select
+          v-else-if="f.kind === 'name-select'"
+          v-model:value="form[f.key]"
+          filterable
+          tag
+          default-first-option
+          :options="props.target?.nameOptions ?? []"
+          :placeholder="(props.target?.nameOptions ?? []).length ? '选择已有 Server 的名称或直接输入' : '输入名称'"
+        />
+        <n-select
+          v-else-if="f.kind === 'base-url-select'"
+          v-model:value="form[f.key]"
+          filterable
+          tag
+          default-first-option
+          :options="(props.target?.hostOptions ?? []).map((h) => ({ label: `http://${h.value}:19030`, value: `http://${h.value}:19030` }))"
+          placeholder="选择 Server 主机生成的地址或输入完整 URL"
+        />
         <n-input v-else-if="f.kind === 'host-input'" v-model:value="form[f.key]"
           placeholder="IP 或主机名" />
         <n-select
@@ -170,15 +203,17 @@ async function save() {
         />
         <n-input v-else v-model:value="form[f.key]" />
       </n-form-item>
-    </n-form>
-    <template #footer>
-      <div class="footer">
-        <div class="footer-test">
-          <resource-test-button :type="props.target?.type?.replace(/s$/, '') ?? 'server'" :config="form" />
+      <n-form-item label=" ">
+        <div class="form-test">
+          <resource-test-button :type="TEST_TYPE[props.target?.type ?? 'servers'] ?? 'server'" :config="form" />
           <span v-if="props.target?.type === 'mq'" class="hint">
             平台经 Jolokia HTTP(8161) 读取管理数据
           </span>
         </div>
+      </n-form-item>
+    </n-form>
+    <template #footer>
+      <div class="footer">
         <n-space justify="end" :size="8">
           <n-button @click="emit('update:show', false)">取消</n-button>
           <n-button type="primary" :loading="saving" @click="save">保存</n-button>
@@ -191,12 +226,9 @@ async function save() {
 <style scoped>
 .footer {
   display: flex;
-  flex-direction: column;
-  gap: 14px;
-  margin-top: 6px;
+  justify-content: flex-end;
 }
-.footer-test {
-  padding-left: 90px;
+.form-test {
   display: flex;
   align-items: center;
   gap: 12px;

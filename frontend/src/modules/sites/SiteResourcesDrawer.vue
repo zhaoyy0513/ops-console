@@ -69,6 +69,7 @@ const editTarget = ref<{
   type: ResourceType
   item: Record<string, any>
   hostOptions: Array<{ label: string; value: string }>
+  nameOptions: Array<{ label: string; value: string }>
   siteId: string
 } | null>(null)
 
@@ -85,16 +86,20 @@ async function load() {
   }
 }
 
-async function loadHostOptions(): Promise<Array<{ label: string; value: string }>> {
-  if (!siteId.value) return []
+/** 同站点 Server 候选（host / 名称），供 redis/mq/robots 快速选择 */
+async function loadServerOptions(): Promise<{
+  hostOptions: Array<{ label: string; value: string }>
+  nameOptions: Array<{ label: string; value: string }>
+}> {
+  if (!siteId.value) return { hostOptions: [], nameOptions: [] }
   try {
     const servers = await sitesApi.listResources(siteId.value, 'servers')
-    return [...new Set(servers.map((s) => String(s.host)))].map((h) => ({
-      label: h,
-      value: h,
-    }))
+    return {
+      hostOptions: [...new Set(servers.map((x) => String(x.host)))].map((h) => ({ label: h, value: h })),
+      nameOptions: [...new Set(servers.map((x) => String(x.name)))].map((n) => ({ label: n, value: n })),
+    }
   } catch {
-    return []
+    return { hostOptions: [], nameOptions: [] }
   }
 }
 
@@ -105,26 +110,30 @@ watch(
 )
 
 async function openCreate() {
-  const hostOptions = activeType.value !== 'robots' ? await loadHostOptions() : []
+  const { hostOptions, nameOptions } = activeType.value !== 'servers'
+    ? await loadServerOptions()
+    : { hostOptions: [], nameOptions: [] }
   editTarget.value = {
     id: null,
     type: activeType.value,
     item: {},
     hostOptions,
+    nameOptions,
     siteId: siteId.value,
   }
   editShow.value = true
 }
 
 async function openEdit(item: ResourceConfig) {
-  const hostOptions = activeType.value === 'redis' || activeType.value === 'mq'
-    ? await loadHostOptions()
-    : []
+  const { hostOptions, nameOptions } = activeType.value !== 'servers'
+    ? await loadServerOptions()
+    : { hostOptions: [], nameOptions: [] }
   editTarget.value = {
     id: item.id,
     type: activeType.value,
     item: { ...item },
     hostOptions,
+    nameOptions,
     siteId: siteId.value,
   }
   editShow.value = true
