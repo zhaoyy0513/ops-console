@@ -27,4 +27,14 @@ export const robotApi = {
     api.get<{ fields: string[]; sample: Record<string, unknown> }>(
       `/sites/${siteId}/robot-instances/${encodeURIComponent(robotId)}/sample-fields`,
     ),
+  /** 全部站点 Robot 实例的映射配置（克隆用，不分站点） */
+  listMappings: () =>
+    api.get<Array<{
+      site_id: string
+      site_name: string
+      robot_id: string
+      robot_name: string
+      field_map: Record<string, string> | null
+      value_map: Record<string, Record<string, string>> | null
+    }>>('/robots/mappings'),
 }

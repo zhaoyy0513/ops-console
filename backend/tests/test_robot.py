@@ -147,3 +147,25 @@ def test_value_map_independent_per_instance():
     assert normalize_robot({"id": "b", "status": 1}, None, vm_b)["status"] == "ONLINE"
     # 无 value_map 的实例不受影响
     assert normalize_robot({"id": "c", "status": 1})["status"] == 1
+
+
+async def test_robot_mappings_global_listing(client, fake_platform_redis, monkeypatch):
+    """克隆数据源：/robots/mappings 列出全部站点实例的映射配置（不分站点）。"""
+    monkeypatch.setattr(service, "_build_provider", lambda config: StubProvider(config))
+    await client.post("/api/sites", json={"id": "s1", "name": "S1"})
+    await client.post("/api/sites", json={"id": "s2", "name": "S2"})
+    await client.post("/api/sites/s1/robot-instances", json={
+        "id": "ra", "name": "A", "base_url": "http://x",
+        "field_map": {"status": "st"}, "value_map": {"status": {"1": "ON"}}})
+    await client.post("/api/sites/s2/robot-instances", json={"id": "rb", "name": "B", "base_url": "http://y"})
+
+    r = await client.get("/api/robots/mappings")
+    assert r.status_code == 200
+    items = {x["robot_id"]: x for x in r.json()}
+    # rc1 来自 client fixture 的种子实例
+    assert set(items) == {"ra", "rb", "rc1"}  # 跨站点聚合
+    assert items["ra"]["field_map"] == {"status": "st"}
+    assert items["ra"]["value_map"] == {"status": {"1": "ON"}}
+    assert items["ra"]["site_name"] == "S1"
+    assert items["rb"]["field_map"] is None
+    assert items["rc1"]["field_map"] is None

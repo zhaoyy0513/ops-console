@@ -15,6 +15,25 @@ async def get_sample_fields(site_id: str, robot_id: str) -> dict:
         raise HTTPException(status_code=404, detail=str(e)) from None
 
 
+@router.get("/robots/mappings")
+async def list_robot_mappings() -> list[dict]:
+    """全局列出所有站点 Robot 实例的字段映射配置（克隆功能用，不分站点）。"""
+    from backend.app.modules.sites import service as sites_service
+
+    out: list[dict] = []
+    for site in await sites_service.list_sites():
+        for inst in await sites_service.list_resources(site["id"], "robots"):
+            out.append({
+                "site_id": site["id"],
+                "site_name": site["name"],
+                "robot_id": inst["id"],
+                "robot_name": inst["name"],
+                "field_map": inst.get("field_map"),
+                "value_map": inst.get("value_map"),
+            })
+    return out
+
+
 @router.get("/sites/{site_id}/robots")
 async def list_robots(site_id: str, instance: str | None = None) -> list[dict]:
     """列出机器人；instance 指定单个实例（页面下拉选择），缺省聚合全部启用实例。"""
