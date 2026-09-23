@@ -22,6 +22,8 @@ export interface EditTarget {
   item: Record<string, any>
   /** host 下拉候选（redis/mq 用） */
   hostOptions: Array<{ label: string; value: string }>
+  /** 资源所属站点（保存与测试请求的目标） */
+  siteId: string
 }
 
 const props = defineProps<{ show: boolean; target: EditTarget | null }>()
@@ -113,9 +115,9 @@ async function save() {
   saving.value = true
   try {
     if (target.id) {
-      await sitesApi.updateResource(target.id && data.__siteId, target.type, target.id, data)
+      await sitesApi.updateResource(target.siteId, target.type, target.id, data)
     } else {
-      await sitesApi.createResource(data.__siteId, target.type, data)
+      await sitesApi.createResource(target.siteId, target.type, data)
     }
     message.success('已保存')
     emit('update:show', false)
@@ -190,13 +192,15 @@ async function save() {
 .footer {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 14px;
+  margin-top: 6px;
 }
 .footer-test {
   padding-left: 90px;
   display: flex;
   align-items: center;
   gap: 12px;
+  min-height: 28px;
 }
 .hint {
   color: #999;

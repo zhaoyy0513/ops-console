@@ -1,5 +1,6 @@
 """应用日志（PRD §29）：Loguru + rotation/retention + 请求关联字段。"""
 
+import logging
 import sys
 import uuid
 
@@ -11,6 +12,17 @@ _FORMAT = (
 )
 
 
+class InterceptHandler(logging.Handler):
+    """把标准 logging（uvicorn 访问日志等）转发到 loguru——统一带时间戳格式。"""
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            level = logger.level(record.levelname).name
+        except ValueError:
+            level = record.levelno
+        logger.opt(depth=6, exception=record.exc_info).log(level, record.getMessage())
+
+
 def setup_logging(level: str = "INFO") -> None:
     logger.remove()
     logger.configure(extra={"request_id": "-", "site_id": "-", "resource_id": "-"})
@@ -19,6 +31,12 @@ def setup_logging(level: str = "INFO") -> None:
                encoding="utf-8", format=_FORMAT)
     logger.add("logs/error/error.log", level="ERROR", rotation="10 MB", retention="30 days",
                encoding="utf-8", format=_FORMAT)
+
+    # 接管 uvicorn / 根 logger：访问日志也带时间（用户要求）
+    logging.basicConfig(handlers=[InterceptHandler()], level=0, force=True)
+    for name in ("uvicorn", "uvicorn.access", "uvicorn.error", "uvicorn.asgi"):
+        logging.getLogger(name).handlers = [InterceptHandler()]
+        logging.getLogger(name).propagate = False
 
 
 def new_request_id() -> str:
