@@ -49,7 +49,8 @@ export interface QueueMessage {
   priority: number | null
   timestamp: number | null
   durable: boolean | null
-  body_preview: string
+  /** 业务自定义属性（2.19 管理接口不提供消息正文） */
+  properties: Record<string, string | number | boolean>
 }
 
 export const mqApi = {

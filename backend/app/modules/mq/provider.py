@@ -98,10 +98,10 @@ class ArtemisProvider:
         await self.exec_operation(mbean, "emptyQueue")
 
     async def browse_queue(self, mbean: str, limit: int = 20) -> list[dict[str, Any]]:
-        """浏览队列消息（Artemis 2.19 用 listMessages(filter)——没有新版 browse 操作）。
+        """浏览队列消息（Artemis 2.19 用 listMessages(filter)——没有 browse/getMessage）。
 
-        只取前 limit 条；2.19 的 listMessages 不含消息体，逐条 getMessage
-        尽力补全 body（失败则留空，不影响元数据展示）。
+        2.19 管理接口不提供消息正文（body），只能返回元数据 + 业务自定义
+        属性（过滤 _AMQ_/__HDR_ 内部键）；升级 2.21+ 后可扩展 body 展示。
         """
         value = await self.exec_operation(mbean, "listMessages", [""])
         messages: list[dict[str, Any]] = []
@@ -119,21 +119,18 @@ class ArtemisProvider:
             for m in value[:limit]:
                 if not isinstance(m, dict):
                     continue
-                mid = m.get("messageID") or m.get("MessageID")
-                body = ""
-                if mid is not None:
-                    try:
-                        detail = await self.exec_operation(mbean, "getMessage", [str(mid)])
-                        if isinstance(detail, dict):
-                            body = str(detail.get("body") or "")
-                    except OpsError:  # noqa: BLE001 - 单条 body 获取失败不影响列表
-                        body = ""
+                properties = {
+                    k: (v if isinstance(v, (str, int, float, bool)) else str(v))
+                    for k, v in m.items()
+                    if not k.startswith(("_AMQ_", "__AMQ_", "__HDR_"))
+                    and k not in ("messageID", "timestamp", "priority", "durable")
+                }
                 messages.append({
-                    "message_id": mid,
+                    "message_id": m.get("messageID"),
                     "priority": m.get("priority"),
                     "timestamp": m.get("timestamp"),
                     "durable": m.get("durable"),
-                    "body_preview": body[:2000],
+                    "properties": properties,
                 })
         return messages
 

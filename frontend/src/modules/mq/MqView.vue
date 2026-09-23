@@ -379,10 +379,13 @@ const worstQueueStatus = computed(() => {
       <span style="color: #999">该站点暂无 MQ 配置——请在「站点管理 → 资源 → ActiveMQ」中添加并测试连接</span>
     </n-card>
 
-    <!-- 消息浏览弹窗（browse() 只读预览，前 20 条） -->
+    <!-- 消息浏览弹窗（listMessages 只读预览，前 20 条） -->
     <n-modal v-model:show="messagesShow" preset="card"
       :title="`Messages · ${messagesQueue}`" style="width: 720px">
       <n-spin :show="messagesLoading">
+        <div class="msg-note">
+          当前 Artemis 版本（2.19）的管理接口不提供消息正文，以下为消息元数据与业务属性。
+        </div>
         <div v-if="!messages.length && !messagesLoading" style="text-align: center; color: #999; padding: 24px 0">
           队列为空，没有可预览的消息
         </div>
@@ -390,9 +393,17 @@ const worstQueueStatus = computed(() => {
           <div class="msg-head">
             <span class="mono">#{{ i + 1 }}</span>
             <span class="mono" :title="String(m.message_id ?? '')">id: {{ m.message_id ?? '-' }}</span>
+            <span class="mono">优先级 {{ m.priority ?? '-' }}</span>
+            <span class="mono">{{ m.durable ? '持久化' : '非持久化' }}</span>
             <span v-if="m.timestamp" class="mono">{{ new Date(m.timestamp).toLocaleString() }}</span>
           </div>
-          <pre class="msg-body mono">{{ m.body_preview }}</pre>
+          <div v-if="Object.keys(m.properties ?? {}).length" class="msg-props">
+            <div v-for="(v, k) in m.properties" :key="k" class="msg-prop">
+              <span class="mono prop-key">{{ k }}</span>
+              <span class="mono">{{ v }}</span>
+            </div>
+          </div>
+          <div v-else class="msg-props" style="color: #999">（无业务属性）</div>
         </div>
       </n-spin>
     </n-modal>
@@ -482,15 +493,30 @@ const worstQueueStatus = computed(() => {
   font-size: 12px;
   margin-bottom: 6px;
 }
-.msg-body {
+.msg-props {
   background: #fafbfc;
-  margin: 0;
-  padding: 8px;
-  border-radius: 3px;
+  border: 1px solid #f0f1f3;
+  border-radius: 4px;
+  padding: 8px 10px;
   font-size: 12px;
-  max-height: 200px;
-  overflow: auto;
-  white-space: pre-wrap;
+}
+.msg-prop {
+  display: flex;
+  gap: 10px;
+  padding: 1px 0;
+}
+.prop-key {
+  color: #0b63ce;
+  min-width: 160px;
   word-break: break-all;
+}
+.msg-note {
+  background: #fdf6ec;
+  border: 1px solid #f3e3c3;
+  color: #946b2d;
+  border-radius: 4px;
+  padding: 8px 12px;
+  font-size: 12px;
+  margin-bottom: 10px;
 }
 </style>
