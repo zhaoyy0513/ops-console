@@ -37,16 +37,19 @@ async function loadLight(toastOnFail = false) {
   }
 }
 
-async function loadHeavy() {
+let queuesWereOk = true
+async function loadHeavy(silent = false) {
   const siteId = siteStore.currentSiteId
   if (!siteId || !instanceId.value) return
   try {
     queues.value = await mqApi.queues(siteId, instanceId.value)
     queuesError.value = ''
+    queuesWereOk = true
   } catch (e) {
-    queues.value = []
+    // 保留上一次成功的数据不清空；仅在 成功->失败 边缘提示一次（避免轮询 toast 轰炸）
     queuesError.value = (e as Error).message
-    message.error(`Queues 读取失败：${queuesError.value}`)
+    if (!silent && queuesWereOk) message.error(`Queues 读取失败（显示的是上次数据）：${queuesError.value}`)
+    queuesWereOk = false
   }
 }
 
@@ -72,7 +75,7 @@ async function loadInstances() {
 /** 手动/首次：全量刷新（overview + queues，失败弹 toast） */
 async function load() {
   await loadLight(true)
-  await loadHeavy()
+  await loadHeavy(false)
 }
 onMounted(loadInstances)
 
@@ -85,7 +88,7 @@ function startPolling() {
   pollTimer = window.setInterval(() => {
     if (!instanceId.value || document.hidden) return
     loadLight()
-    if (++heavyTick % 5 === 0) loadHeavy()
+    if (++heavyTick % 5 === 0) loadHeavy(true)
   }, 3000)
 }
 
@@ -335,7 +338,7 @@ const worstQueueStatus = computed(() => {
                   </template>
                   {{ q.diagnosis?.issues?.length
                     ? q.diagnosis.issues.map((i) => i.message).join('；')
-                    : '诊断正常：无积压、有消费者' }}
+                    : '诊断正常' }}
                 </n-tooltip>
               </td>
               <td :style="{ fontWeight: (q.message_count ?? 0) > 5000 ? 700 : 400 }">{{ q.message_count ?? '-' }}</td>
@@ -343,7 +346,7 @@ const worstQueueStatus = computed(() => {
               <td>{{ q.messages_added ?? '-' }}</td>
               <td>
                 <n-space :size="4" :wrap="false">
-                  <n-button v-if="q._mbean" size="tiny" @click="viewMessages(q)">查看</n-button>
+                  <n-button v-if="q._mbean" size="small" style="min-width: 64px" @click="viewMessages(q)">查看</n-button>
                   <!-- 清空积压：10 秒倒计时确认（破坏性操作，记录操作日志） -->
                   <countdown-confirm
                     v-if="q._mbean && (q.message_count ?? 0) > 0"
@@ -351,6 +354,7 @@ const worstQueueStatus = computed(() => {
                     confirm-text="确认清空"
                     :target="q.name"
                     :seconds="10"
+                    width="64px"
                     @confirm="emptyQueue(q)"
                   />
                   <span v-if="!q._mbean" style="color: #999">-</span>

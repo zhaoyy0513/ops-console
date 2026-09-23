@@ -11,6 +11,7 @@ const props = defineProps<{
   target: string
   seconds?: number
   confirmText?: string
+  width?: string
 }>()
 const emit = defineEmits<{ (e: 'confirm'): void }>()
 
@@ -39,7 +40,7 @@ watch(show, (v) => {
 
 <template>
   <!-- 触发按钮与 Save 同规格（small 实心红），风格统一 -->
-  <n-button size="small" type="error" @click="show = true">{{ label }}</n-button>
+  <n-button size="small" type="error" :style="width ? { width } : undefined" @click="show = true">{{ label }}</n-button>
   <n-modal v-model:show="show">
     <n-card style="width: 440px" title="危险操作确认" size="small" :bordered="false">
       <p>You are about to delete:</p>
