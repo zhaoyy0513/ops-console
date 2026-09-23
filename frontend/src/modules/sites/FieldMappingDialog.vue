@@ -110,7 +110,11 @@ async function openClone() {
   cloneLoading.value = true
   try {
     const { robotApi } = await import('../robot/api')
-    cloneList.value = await robotApi.listMappings()
+    const all = await robotApi.listMappings()
+    // 排除当前编辑的实例（自己克隆自己没有意义）
+    cloneList.value = all.filter(
+      (x) => !(x.site_id === props.siteId && x.robot_id === props.robot?.id),
+    )
   } catch (e) {
     message.error((e as Error).message)
   } finally {
@@ -125,6 +129,7 @@ function applyClone() {
     return
   }
   applyMapping(src.field_map, src.value_map)
+  robotKey.value = `${robotKey.value}#clone`  // 强制重建控件，确保覆盖/清空立即生效
   cloneShow.value = false
   message.success(`已克隆 ${src.site_name} / ${src.robot_name} 的映射配置（保存后生效）`)
 }
@@ -242,7 +247,7 @@ async function save() {
       </n-spin>
       <template #footer>
         <div class="footer-row">
-          <n-button @click="openClone">克隆</n-button>
+          <n-button type="primary" ghost @click="openClone">克隆</n-button>
           <div style="flex: 1" />
           <n-button @click="emit('update:show', false)">取消</n-button>
           <n-button type="primary" :loading="saving" @click="save">保存映射</n-button>
