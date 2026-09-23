@@ -8,7 +8,6 @@ import {
   NInputNumber,
   NModal,
   NSelect,
-  NSpace,
   NSwitch,
   useMessage,
 } from 'naive-ui'
@@ -154,8 +153,8 @@ async function save() {
     @update:show="emit('update:show', $event)"
   >
     <n-form label-placement="left" label-width="90">
-      <n-form-item label="名称" required>
-        <n-input v-model:value="form.name" placeholder="如：redis-01" />
+      <n-form-item v-if="props.target?.type === 'servers'" label="名称" required>
+        <n-input v-model:value="form.name" placeholder="如：server-01" />
       </n-form-item>
       <n-form-item label="启用">
         <n-switch v-model:value="form.enabled" :default-value="true" />
@@ -209,30 +208,21 @@ async function save() {
           <span v-if="props.target?.type === 'mq'" class="hint">
             平台经 Jolokia HTTP(8161) 读取管理数据
           </span>
+          <div style="flex: 1" />
+          <n-button @click="emit('update:show', false)">取消</n-button>
+          <n-button type="primary" :loading="saving" @click="save">保存</n-button>
         </div>
       </n-form-item>
     </n-form>
-    <template #footer>
-      <div class="footer">
-        <n-space justify="end" :size="8">
-          <n-button @click="emit('update:show', false)">取消</n-button>
-          <n-button type="primary" :loading="saving" @click="save">保存</n-button>
-        </n-space>
-      </div>
-    </template>
   </n-modal>
 </template>
 
 <style scoped>
-.footer {
-  display: flex;
-  justify-content: flex-end;
-}
 .form-test {
   display: flex;
   align-items: center;
-  gap: 12px;
-  min-height: 28px;
+  gap: 10px;
+  width: 100%;
 }
 .hint {
   color: #999;
