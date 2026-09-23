@@ -50,7 +50,7 @@ const TYPES: Record<string, string> = {
 
 const FIELD_DEFS: Record<
   string,
-  Array<{ key: string; label: string; kind?: 'number' | 'host-input' | 'host-select' | 'name-select' | 'base-url-select'; ph?: string; required?: boolean }>
+  Array<{ key: string; label: string; kind?: 'number' | 'host-input' | 'host-select' | 'name-select'; ph?: string; required?: boolean }>
 > = {
   servers: [
     { key: 'host', label: 'Host', kind: 'host-input', required: true },
@@ -74,7 +74,7 @@ const FIELD_DEFS: Record<
   ],
   robots: [
     { key: 'name', label: '名称', kind: 'name-select', required: true },
-    { key: 'base_url', label: 'Base URL', kind: 'base-url-select', required: true },
+    { key: 'base_url', label: 'Base URL', required: true },
   ],
 }
 
@@ -181,15 +181,6 @@ async function save() {
           default-first-option
           :options="props.target?.nameOptions ?? []"
           placeholder="选择已有 Server 的名称或直接输入"
-        />
-        <n-select
-          v-else-if="f.kind === 'base-url-select'"
-          v-model:value="form[f.key]"
-          filterable
-          tag
-          default-first-option
-          :options="(props.target?.hostOptions ?? []).map((h) => ({ label: `http://${h.value}:19030`, value: `http://${h.value}:19030` }))"
-          placeholder="选择 Server 主机生成的地址或输入完整 URL"
         />
         <n-input v-else-if="f.kind === 'host-input'" v-model:value="form[f.key]"
           placeholder="IP 或主机名" />
