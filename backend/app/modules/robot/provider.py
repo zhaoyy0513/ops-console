@@ -244,7 +244,12 @@ class HttpRobotProvider(RobotProvider):
     async def get_robot_list(self) -> list[dict[str, Any]]:
         async with self._client() as c:
             data = await self._get(c, self._list_request_path())
-        return [normalize_robot(x, self._field_map, self._value_map) for x in self._unwrap_list(data)]
+        out = []
+        for raw in self._unwrap_list(data):
+            item = normalize_robot(raw, self._field_map, self._value_map)
+            item["_raw"] = raw  # 原始完整 JSON，详情弹窗展示用
+            out.append(item)
+        return out
 
     async def get_raw_sample(self) -> dict[str, Any] | None:
         """取第一条原始 JSON 数据（字段映射配置用，未经 normalize）。"""

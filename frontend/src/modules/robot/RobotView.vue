@@ -64,7 +64,8 @@ function openDetail(r: RobotRow) {
   detailShow.value = true
 }
 
-const detailJson = computed(() => JSON.stringify(detail.value, null, 2))
+// 详情展示原始接口返回的完整 JSON（_raw 由后端附带），而非 normalize 后的结构
+const detailJson = computed(() => JSON.stringify((detail.value as any)?._raw ?? detail.value, null, 2))
 
 /** ISO -> 本地 yyyy-MM-dd HH:mm:ss；非 ISO 原样展示 */
 function fmtTime(v: string | null): string {
