@@ -29,10 +29,10 @@ const templates = ref<Record<string, string>>({})
 // 值->展示映射（枚举翻译），紧凑格式 "1=CREATE, 2=Free"；每实例独立
 const valueMaps = ref<Record<string, string>>({})
 
-/** 解析 "1=CREATE, 2=Free"（支持中英文逗号）；非法片段忽略 */
+/** 解析值映射：换行或逗号分隔的 k=v（支持中英文逗号）；非法片段忽略 */
 function parseValueMap(s: string | undefined): Record<string, string> {
   const out: Record<string, string> = {}
-  for (const part of (s ?? '').split(/[,，]/)) {
+  for (const part of (s ?? '').split(/\r?\n|,|，/)) {
     const i = part.indexOf('=')
     if (i > 0) {
       const k = part.slice(0, i).trim()
@@ -44,7 +44,7 @@ function parseValueMap(s: string | undefined): Record<string, string> {
 }
 
 function serializeValueMap(m: Record<string, string> | undefined): string {
-  return Object.entries(m ?? {}).map(([k, v]) => `${k}=${v}`).join(', ')
+  return Object.entries(m ?? {}).map(([k, v]) => `${k}=${v}`).join('\n')
 }
 
 /** 最终展示：取值/模板求值 -> 值映射查表（字符串化匹配，未命中原样） */
@@ -137,22 +137,22 @@ async function save() {
 </script>
 
 <template>
-  <n-drawer :show="props.show" :width="760" placement="right"
+  <n-drawer :show="props.show" :width="920" placement="right"
     @update:show="emit('update:show', $event)">
     <n-drawer-content :title="`字段映射 · ${props.robot?.name ?? ''}`" closable>
       <n-spin :show="loading">
         <p style="margin-bottom: 12px; color: #666; font-size: 13px">
           绑定字段 = 直接取该 JSON 字段的值；模板 = 按模板拼接，用 <code>{x}</code> 引用 JSON 字段（如 <code>({x},{y})</code> 合成坐标）；
-          值映射 = 把取到的值翻译成展示文本（如 <code>1=CREATE, 2=Free</code>），未命中显示原值。
+          值映射 = 把取到的值翻译成展示文本（每行一条 <code>1=CREATE</code>，也可逗号分隔），未命中显示原值。
           <b>绑定与模板都填时模板优先</b>；都留空走内置自动识别。
         </p>
-        <n-table :single-line="false" size="small">
+        <n-table :single-line="false" size="small" class="mapping-table">
           <thead>
             <tr>
-              <th style="width: 16%">业务字段（平台展示）</th>
-              <th style="width: 22%">绑定 JSON 字段</th>
-              <th style="width: 22%">模板（优先）</th>
-              <th style="width: 22%">值映射（枚举翻译）</th>
+              <th style="width: 13%">业务字段</th>
+              <th style="width: 19%">绑定 JSON 字段</th>
+              <th style="width: 19%">模板（优先）</th>
+              <th style="width: 27%">值映射（每行一条）</th>
               <th>当前值预览</th>
             </tr>
           </thead>
@@ -180,8 +180,9 @@ async function save() {
               <td>
                 <n-input
                   v-model:value="valueMaps[f.key]"
-                  size="small"
-                  placeholder="如 1=CREATE, 2=Free"
+                  type="textarea"
+                  :autosize="{ minRows: 1, maxRows: 8 }"
+                  placeholder="每行一条：1=CREATE"
                 />
               </td>
               <td style="font-family: ui-monospace, monospace; font-size: 12px; word-break: break-all">
@@ -200,3 +201,11 @@ async function save() {
     </n-drawer-content>
   </n-drawer>
 </template>
+<style scoped>
+.mapping-table :deep(td) {
+  vertical-align: top;
+}
+.mapping-table :deep(th) {
+  vertical-align: bottom;
+}
+</style>
