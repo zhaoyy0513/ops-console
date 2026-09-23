@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
-import { NButton, NDrawer, NDrawerContent, NInput, NModal, NSelect, NSpace, NSpin, NTable, useMessage } from 'naive-ui'
+import { NButton, NDrawer, NDrawerContent, NInput, NModal, NRadio, NSelect, NSpace, NSpin, NTable, useMessage } from 'naive-ui'
 import { ROBOT_FIELDS } from '../robot/fields'
 
 const props = defineProps<{
