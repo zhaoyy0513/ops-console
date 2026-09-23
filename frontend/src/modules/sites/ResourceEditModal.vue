@@ -156,15 +156,17 @@ async function save() {
       <n-form-item v-if="props.target?.type === 'servers'" label="名称" required>
         <n-input v-model:value="form.name" placeholder="如：server-01" />
       </n-form-item>
-      <n-form-item label="启用">
+      <n-form-item v-if="props.target?.type === 'servers'" label="启用">
         <n-switch v-model:value="form.enabled" :default-value="true" />
       </n-form-item>
-      <n-form-item
-        v-for="f in fields"
-        :key="f.key"
-        :label="f.label"
-        :required="f.required"
-      >
+      <template v-for="(f, fi) in fields" :key="f.key">
+        <n-form-item v-if="fi === 1 && props.target?.type !== 'servers'" label="启用">
+          <n-switch v-model:value="form.enabled" :default-value="true" />
+        </n-form-item>
+        <n-form-item
+          :label="f.label"
+          :required="f.required"
+        >
         <n-input-number
           v-if="f.kind === 'number'"
           v-model:value="form[f.key]"
@@ -178,7 +180,7 @@ async function save() {
           tag
           default-first-option
           :options="props.target?.nameOptions ?? []"
-          :placeholder="(props.target?.nameOptions ?? []).length ? '选择已有 Server 的名称或直接输入' : '输入名称'"
+          placeholder="选择已有 Server 的名称或直接输入"
         />
         <n-select
           v-else-if="f.kind === 'base-url-select'"
@@ -201,14 +203,18 @@ async function save() {
           :placeholder="(props.target?.hostOptions ?? []).length ? '选择已有 Server 的 Host 或直接输入' : '输入地址'"
         />
         <n-input v-else v-model:value="form[f.key]" />
-      </n-form-item>
+        </n-form-item>
+      </template>
       <n-form-item label=" ">
         <div class="form-test">
           <resource-test-button :type="TEST_TYPE[props.target?.type ?? 'servers'] ?? 'server'" :config="form" />
           <span v-if="props.target?.type === 'mq'" class="hint">
             平台经 Jolokia HTTP(8161) 读取管理数据
           </span>
-          <div style="flex: 1" />
+        </div>
+      </n-form-item>
+      <n-form-item label=" ">
+        <div class="form-actions">
           <n-button @click="emit('update:show', false)">取消</n-button>
           <n-button type="primary" :loading="saving" @click="save">保存</n-button>
         </div>
@@ -223,6 +229,13 @@ async function save() {
   align-items: center;
   gap: 10px;
   width: 100%;
+}
+.form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  width: 100%;
+  margin-top: 34px; /* 与 Test 行隔约一个按钮高度的留白 */
 }
 .hint {
   color: #999;
