@@ -12,7 +12,7 @@ const REFRESH_SECONDS = 30
 
 /** 状态徽标语义映射（robot 侧状态词 -> 红绿灯） */
 function statusTagType(r: RobotRow): 'success' | 'warning' | 'error' | 'default' {
-  const s = (r.status ?? '').toLowerCase()
+  const s = String(r.status ?? '').toLowerCase()
   if (['error', 'fault', 'offline', 'down'].includes(s) || r.error) return 'error'
   if (['running', 'working', 'active', 'online'].includes(s)) return 'success'
   if (['idle', 'charging', 'standby', 'paused'].includes(s)) return 'warning'
