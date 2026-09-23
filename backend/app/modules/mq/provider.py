@@ -98,19 +98,19 @@ class ArtemisProvider:
         await self.exec_operation(mbean, "emptyQueue")
 
     async def browse_queue(self, mbean: str, limit: int = 20) -> list[dict[str, Any]]:
-        """浏览队列消息（QueueControl.browse()，返回 JSON 字符串需二次解析）。
+        """浏览队列消息（Artemis 2.19 用 listMessages(filter)——没有新版 browse 操作）。
 
-        只取前 limit 条预览；消息体可能很大，body 截断到 2000 字符。
+        只取前 limit 条；2.19 的 listMessages 不含消息体，逐条 getMessage
+        尽力补全 body（失败则留空，不影响元数据展示）。
         """
-        value = await self.exec_operation(mbean, "browse")
+        value = await self.exec_operation(mbean, "listMessages", [""])
         messages: list[dict[str, Any]] = []
-        # Artemis browse() 返回 JSON 字符串；某些 Jolokia 配置已自动解析
         if isinstance(value, str):
             try:
                 value = json.loads(value)
             except ValueError:
-                raise OpsError("REMOTE_BAD_RESPONSE", "browse 返回非 JSON", self._host) from None
-        if isinstance(value, dict):  # 某些版本包在 {data: [...]} / {messages: [...]} 信封
+                raise OpsError("REMOTE_BAD_RESPONSE", "listMessages 返回非 JSON", self._host) from None
+        if isinstance(value, dict):  # 某些版本包在 {data: [...]} 信封
             for key in ("data", "messages", "result"):
                 if isinstance(value.get(key), list):
                     value = value[key]
@@ -119,13 +119,21 @@ class ArtemisProvider:
             for m in value[:limit]:
                 if not isinstance(m, dict):
                     continue
-                body = m.get("body") or m.get("message") or ""
+                mid = m.get("messageID") or m.get("MessageID")
+                body = ""
+                if mid is not None:
+                    try:
+                        detail = await self.exec_operation(mbean, "getMessage", [str(mid)])
+                        if isinstance(detail, dict):
+                            body = str(detail.get("body") or "")
+                    except OpsError:  # noqa: BLE001 - 单条 body 获取失败不影响列表
+                        body = ""
                 messages.append({
-                    "message_id": m.get("messageID") or m.get("MessageID"),
+                    "message_id": mid,
                     "priority": m.get("priority"),
                     "timestamp": m.get("timestamp"),
                     "durable": m.get("durable"),
-                    "body_preview": str(body)[:2000],
+                    "body_preview": body[:2000],
                 })
         return messages
 

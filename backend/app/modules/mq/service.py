@@ -90,16 +90,16 @@ def diagnose_queue(q: dict[str, Any]) -> dict[str, Any]:
     if isinstance(count, (int, float)):
         if count >= BACKLOG_CRITICAL:
             issues.append({"type": "BACKLOG_HIGH", "severity": "CRITICAL", "value": count,
-                           "message": f"Backlog {count}"})
+                           "message": f"积压 {count} 条消息"})
         elif count >= BACKLOG_WARNING:
             issues.append({"type": "BACKLOG_HIGH", "severity": "WARNING", "value": count,
-                           "message": f"Backlog {count}"})
+                           "message": f"积压 {count} 条消息"})
     if isinstance(consumers, (int, float)) and consumers == 0 and isinstance(count, (int, float)) and count > 0:
         issues.append({"type": "NO_CONSUMER", "severity": "WARNING", "value": 0,
-                       "message": f"{count} messages with no consumer"})
+                       "message": f"有 {count} 条消息但没有任何消费者"})
     if isinstance(growth, (int, float)) and growth >= GROWTH_WARNING:
         issues.append({"type": "BACKLOG_GROWING", "severity": "WARNING", "value": growth,
-                       "message": f"+{growth} in 5 min"})
+                       "message": f"5 分钟内增长 {growth} 条"})
     return {"status": ("CRITICAL" if any(i["severity"] == "CRITICAL" for i in issues)
                        else "WARNING" if issues else "HEALTHY"), "issues": issues}
 
