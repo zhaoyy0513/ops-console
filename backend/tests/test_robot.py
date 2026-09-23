@@ -127,3 +127,23 @@ async def test_robot_tester(client):
 async def test_provider_requires_base_url():
     with pytest.raises(Exception):
         HttpRobotProvider({})
+
+
+def test_value_map_enum_translation():
+    """值->展示映射：数字/字符串键互通，未命中保留原值。"""
+    vm = {"status": {"1": "CREATE", "2": "Free", "4": "Busy"}}
+    assert normalize_robot({"robotCode": "R1", "status": 1}, None, vm)["status"] == "CREATE"
+    assert normalize_robot({"robotCode": "R1", "status": "2"}, None, vm)["status"] == "Free"
+    assert normalize_robot({"robotCode": "R1", "status": 4}, None, vm)["status"] == "Busy"
+    assert normalize_robot({"robotCode": "R1", "status": 9}, None, vm)["status"] == 9  # 未命中原样
+    assert normalize_robot({"robotCode": "R1", "status": 1}, None, None)["status"] == 1  # 未配置
+
+
+def test_value_map_independent_per_instance():
+    """实例独立性：同字段不同实例的映射互不影响（配置随实例存储）。"""
+    vm_a = {"status": {"1": "CREATE"}}
+    vm_b = {"status": {"1": "ONLINE"}}
+    assert normalize_robot({"id": "a", "status": 1}, None, vm_a)["status"] == "CREATE"
+    assert normalize_robot({"id": "b", "status": 1}, None, vm_b)["status"] == "ONLINE"
+    # 无 value_map 的实例不受影响
+    assert normalize_robot({"id": "c", "status": 1})["status"] == 1

@@ -69,7 +69,11 @@ def _last_update(raw: dict[str, Any]) -> Any:
     return None
 
 
-def normalize_robot(raw: dict[str, Any], field_map: dict[str, str] | None = None) -> dict[str, Any]:
+def normalize_robot(
+    raw: dict[str, Any],
+    field_map: dict[str, str] | None = None,
+    value_map: dict[str, dict[str, str]] | None = None,
+) -> dict[str, Any]:
     """原始 API 字典 -> PRD §12.1 统一结构（纯函数）。
 
     field_map（实例级配置）的值支持两种形态：
@@ -77,6 +81,9 @@ def normalize_robot(raw: dict[str, Any], field_map: dict[str, str] | None = None
     2. 模板拼接："station": "({x},{y})" -> 求值占位符得 "(33,37)"
        含 {xxx} 占位符的值按模板处理，{xxx} 替换为 raw 中的对应值
     未配置的字段走内置候选。
+
+    value_map（实例级配置）为值->展示映射：{"status": {"1": "CREATE"}}，
+    作用于字段取值/模板求值之后，字符串化匹配，未命中保留原值。
     """
     import re
 
@@ -133,16 +140,25 @@ def normalize_robot(raw: dict[str, Any], field_map: dict[str, str] | None = None
                 return v
         return None
 
+    def apply_value_map(v: Any, field: str) -> Any:
+        """值->展示映射（枚举翻译）：字符串化匹配（数字 1 与 "1" 互通），
+        未命中返回原值。作用于字段映射求值之后的最终值。"""
+        vm = value_map.get(field) if value_map else None
+        if vm and v is not None:
+            return vm.get(str(v), v)
+        return v
+
     return {
-        "id": pick("id"),
-        "name": pick("name"),
-        "status": online_to_status(),
-        "battery": pick("battery"),
-        "station": station(),
-        "lift": raw.get("lift"),
-        "shelf_code": raw.get("shelfCode") or raw.get("shelf_code"),
-        "task": pick("task"),
-        "error": pick("error"),
+        "id": apply_value_map(pick("id"), "id"),
+        "name": apply_value_map(pick("name"), "name"),
+        "status": apply_value_map(online_to_status(), "status"),
+        "battery": apply_value_map(pick("battery"), "battery"),
+        "station": apply_value_map(station(), "station"),
+        "lift": apply_value_map(raw.get("lift"), "lift"),
+        "shelf_code": apply_value_map(
+            raw.get("shelfCode") or raw.get("shelf_code"), "shelf_code"),
+        "task": apply_value_map(pick("task"), "task"),
+        "error": apply_value_map(pick("error"), "error"),
         "last_update": last_update(),
         "x": raw.get("x"),
         "y": raw.get("y"),
@@ -173,6 +189,7 @@ class HttpRobotProvider(RobotProvider):
         self._password: str = config.get("password") or ""
         # 实例级字段映射（业务字段 -> 上游字段名），应对不同环境的响应结构差异
         self._field_map: dict[str, str] | None = config.get("field_map") or None
+        self._value_map: dict[str, dict[str, str]] | None = config.get("value_map") or None
 
     def _client(self) -> httpx.AsyncClient:
         return httpx.AsyncClient(
@@ -224,7 +241,7 @@ class HttpRobotProvider(RobotProvider):
     async def get_robot_list(self) -> list[dict[str, Any]]:
         async with self._client() as c:
             data = await self._get(c, self._list_request_path())
-        return [normalize_robot(x, self._field_map) for x in self._unwrap_list(data)]
+        return [normalize_robot(x, self._field_map, self._value_map) for x in self._unwrap_list(data)]
 
     async def get_raw_sample(self) -> dict[str, Any] | None:
         """取第一条原始 JSON 数据（字段映射配置用，未经 normalize）。"""

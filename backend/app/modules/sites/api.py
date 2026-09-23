@@ -60,6 +60,9 @@ class RobotConfig(ResourceBase):
     # 实例级字段映射（业务字段 -> 上游字段名），应对不同环境响应结构差异。
     # 例：{"status": "runState", "battery": "power"}；未配置的字段走内置候选
     field_map: dict[str, str] | None = None
+    # 实例级值->展示映射（枚举翻译），作用于字段映射后的最终值。
+    # 例：{"status": {"1": "CREATE", "2": "Free"}}；每个实例独立，未命中显示原值
+    value_map: dict[str, dict[str, str]] | None = None
 
 
 def _update_model(model: type[BaseModel]) -> type[BaseModel]:

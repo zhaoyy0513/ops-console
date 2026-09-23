@@ -6,7 +6,12 @@ import { ROBOT_FIELDS } from '../robot/fields'
 const props = defineProps<{
   show: boolean
   siteId: string
-  robot: { id: string; name: string; field_map?: Record<string, string> | null } | null
+  robot: {
+    id: string
+    name: string
+    field_map?: Record<string, string> | null
+    value_map?: Record<string, Record<string, string>> | null
+  } | null
 }>()
 const emit = defineEmits<{ (e: 'update:show', v: boolean): void; (e: 'saved'): void }>()
 
@@ -21,21 +26,49 @@ const sample = ref<Record<string, unknown> | null>(null)
 // 两列独立配置：绑定字段（下拉）与模板（输入框）；保存时模板优先
 const bindings = ref<Record<string, string | null>>({})
 const templates = ref<Record<string, string>>({})
+// 值->展示映射（枚举翻译），紧凑格式 "1=CREATE, 2=Free"；每实例独立
+const valueMaps = ref<Record<string, string>>({})
+
+/** 解析 "1=CREATE, 2=Free"（支持中英文逗号）；非法片段忽略 */
+function parseValueMap(s: string | undefined): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const part of (s ?? '').split(/[,，]/)) {
+    const i = part.indexOf('=')
+    if (i > 0) {
+      const k = part.slice(0, i).trim()
+      const v = part.slice(i + 1).trim()
+      if (k) out[k] = v
+    }
+  }
+  return out
+}
+
+function serializeValueMap(m: Record<string, string> | undefined): string {
+  return Object.entries(m ?? {}).map(([k, v]) => `${k}=${v}`).join(', ')
+}
+
+/** 最终展示：取值/模板求值 -> 值映射查表（字符串化匹配，未命中原样） */
+function applyValueMap(v: unknown, key: string): string {
+  const m = parseValueMap(valueMaps.value[key])
+  return m ? (m[String(v)] ?? String(v ?? '-')) : String(v ?? '-')
+}
 
 function isTemplate(v: string | null | undefined): boolean {
   return !!v && v.includes('{')
 }
 
-/** 预览求值：模板优先（{xxx} 用示例数据插值），否则取绑定字段值 */
+/** 预览求值：模板优先（{xxx} 用示例数据插值），否则取绑定字段值；再过值映射 */
 function preview(key: string): string {
   if (!sample.value) return '-'
+  let v: unknown
   const tpl = templates.value[key]?.trim()
   if (tpl) {
-    return tpl.replace(/\{(\w+)\}/g, (_, f) => String(sample.value?.[f] ?? ''))
+    v = tpl.replace(/\{(\w+)\}/g, (_, f) => String(sample.value?.[f] ?? ''))
+  } else {
+    const b = bindings.value[key]
+    v = b ? sample.value[b] : sample.value[key]
   }
-  const b = bindings.value[key]
-  if (b) return String(sample.value[b] ?? '-')
-  return String(sample.value[key] ?? '-')
+  return applyValueMap(v, key)
 }
 
 async function fetchSample() {
@@ -55,6 +88,12 @@ async function fetchSample() {
     }
     bindings.value = b
     templates.value = t
+    // 值映射回填（序列化为紧凑文本）
+    const vm: Record<string, string> = {}
+    for (const [k, m] of Object.entries(props.robot.value_map ?? {})) {
+      vm[k] = serializeValueMap(m)
+    }
+    valueMaps.value = vm
   } catch (e) {
     message.error((e as Error).message)
   } finally {
@@ -76,10 +115,17 @@ async function save() {
     if (tpl) clean[f.key] = tpl
     else if (bind) clean[f.key] = bind
   }
+  // 值映射：有内容才存
+  const vClean: Record<string, Record<string, string>> = {}
+  for (const f of BIZ_FIELDS) {
+    const m = parseValueMap(valueMaps.value[f.key])
+    if (Object.keys(m).length) vClean[f.key] = m
+  }
   const { sitesApi } = await import('./api')
   try {
     await sitesApi.updateResource(props.siteId, 'robots', props.robot.id, {
       field_map: Object.keys(clean).length ? clean : null,
+      value_map: Object.keys(vClean).length ? vClean : null,
     })
     message.success('字段映射已保存')
     emit('update:show', false)
@@ -96,15 +142,17 @@ async function save() {
     <n-drawer-content :title="`字段映射 · ${props.robot?.name ?? ''}`" closable>
       <n-spin :show="loading">
         <p style="margin-bottom: 12px; color: #666; font-size: 13px">
-          绑定字段 = 直接取该 JSON 字段的值；模板 = 按模板拼接，用 <code>{x}</code> 引用 JSON 字段（如 <code>({'{'}x{'},{'}'}y{'})'}</code> 合成坐标）。
-          <b>两者都填时模板优先</b>；都留空走内置自动识别。
+          绑定字段 = 直接取该 JSON 字段的值；模板 = 按模板拼接，用 <code>{x}</code> 引用 JSON 字段（如 <code>({x},{y})</code> 合成坐标）；
+          值映射 = 把取到的值翻译成展示文本（如 <code>1=CREATE, 2=Free</code>），未命中显示原值。
+          <b>绑定与模板都填时模板优先</b>；都留空走内置自动识别。
         </p>
         <n-table :single-line="false" size="small">
           <thead>
             <tr>
-              <th style="width: 20%">业务字段（平台展示）</th>
-              <th style="width: 26%">绑定 JSON 字段</th>
-              <th style="width: 26%">模板（优先）</th>
+              <th style="width: 16%">业务字段（平台展示）</th>
+              <th style="width: 22%">绑定 JSON 字段</th>
+              <th style="width: 22%">模板（优先）</th>
+              <th style="width: 22%">值映射（枚举翻译）</th>
               <th>当前值预览</th>
             </tr>
           </thead>
@@ -127,6 +175,13 @@ async function save() {
                   v-model:value="templates[f.key]"
                   size="small"
                   placeholder="如 ({x},{y})"
+                />
+              </td>
+              <td>
+                <n-input
+                  v-model:value="valueMaps[f.key]"
+                  size="small"
+                  placeholder="如 1=CREATE, 2=Free"
                 />
               </td>
               <td style="font-family: ui-monospace, monospace; font-size: 12px; word-break: break-all">
