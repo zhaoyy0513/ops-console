@@ -105,9 +105,12 @@ def normalize_robot(
         m = mapped(field)
         if m is not None:
             return m
+        # 候选匹配忽略大小写（robotCode/RobotCode/ROBOTCODE 互通）
+        lower_raw = {k.lower(): v for k, v in raw.items()}
         for key in _FIELD_CANDIDATES[field]:
-            if key in raw and raw[key] is not None:
-                return raw[key]
+            v = lower_raw.get(key.lower())
+            if v is not None:
+                return v
         return None
 
     def online_to_status() -> Any:

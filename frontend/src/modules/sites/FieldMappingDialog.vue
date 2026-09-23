@@ -76,7 +76,7 @@ function preview(key: string): string {
 async function fetchSample() {
   if (!props.show || !props.siteId || !props.robot?.id) return
   loading.value = true
-  robotKey.value = props.robot.id
+  robotKey.value = `${props.robot.id}#${Date.now()}`  // 每次打开换新 key，控件全新（无高度残留）
   try {
     const { robotApi } = await import('../robot/api')
     const result = await robotApi.sampleFields(props.siteId, props.robot.id)
@@ -246,8 +246,8 @@ async function save() {
         </n-table>
       </n-spin>
       <template #footer>
-        <div class="footer-row">
-          <n-button type="primary" ghost @click="openClone">克隆</n-button>
+        <div style="display: flex; align-items: center; gap: 10px">
+          <n-button style="color: #0b63ce; border-color: #0b63ce" @click="openClone">克隆</n-button>
           <div style="flex: 1" />
           <n-button @click="emit('update:show', false)">取消</n-button>
           <n-button type="primary" :loading="saving" @click="save">保存映射</n-button>
