@@ -195,61 +195,55 @@ async function save() {
         <p style="margin-bottom: 12px; color: #666; font-size: 13px">
           绑定字段 = 直接取该 JSON 字段的值；模板 = 按模板拼接，用 <code>{x}</code> 引用 JSON 字段（如 <code>({x},{y})</code> 合成坐标）；
           值映射 = 把取到的值翻译成展示文本（每行一条 <code>1=CREATE</code>，也可逗号分隔），未命中显示原值。
-          <b>绑定与模板都填时模板优先</b>；都留空时由后端内置规则取值（大小写不敏感匹配 robotCode 等常见字段名）。
+          <b>绑定与模板都填时模板优先</b>；都留空则该字段不展示。
         </p>
-        <n-table :single-line="false" size="small" class="mapping-table">
-          <thead>
-            <tr>
-              <th style="width: 13%">业务字段</th>
-              <th style="width: 19%">绑定 JSON 字段</th>
-              <th style="width: 19%">模板（优先）</th>
-              <th style="width: 27%">值映射（每行一条）</th>
-              <th>当前值预览</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="f in BIZ_FIELDS" :key="f.key">
-              <td style="font-weight: 600">{{ f.label }}</td>
-              <td>
-                <!-- key 绑定 robotKey：切换实例时销毁重建，修复 textarea 高度残留 -->
-                <n-select
-                  :key="`b-${robotKey}-${f.key}`"
-                  v-model:value="bindings[f.key]"
-                  size="small"
-                  clearable
-                  filterable
-                  :options="jsonFields.map((jf) => ({ label: jf, value: jf }))"
-                  placeholder="未配置则由后端内置规则取值"
-                  style="width: 100%"
-                />
-              </td>
-              <td>
-                <n-input
-                  :key="`t-${robotKey}-${f.key}`"
-                  v-model:value="templates[f.key]"
-                  size="small"
-                  placeholder="如 ({x},{y})"
-                />
-              </td>
-              <td>
-                <n-input
-                  :key="`v-${robotKey}-${f.key}`"
-                  v-model:value="valueMaps[f.key]"
-                  type="textarea"
-                  :rows="4"
-                  placeholder="每行一条：1=CREATE"
-                />
-              </td>
-              <td style="font-family: ui-monospace, monospace; font-size: 12px; word-break: break-all">
-                {{ preview(f.key) }}
-              </td>
-            </tr>
-          </tbody>
-        </n-table>
+        <div class="mapping-list">
+          <div class="mapping-head">
+            <span class="col-a">业务字段</span>
+            <span class="col-b">绑定 JSON 字段</span>
+            <span class="col-b">模板（优先）</span>
+            <span class="col-c">值映射（每行一条）</span>
+            <span class="col-d">当前值预览</span>
+          </div>
+          <div v-for="f in BIZ_FIELDS" :key="f.key" class="mapping-row">
+            <div class="col-a field-label">{{ f.label }}</div>
+            <div class="col-b">
+              <!-- key 绑定 robotKey：切换实例时销毁重建，修复 textarea 高度残留 -->
+              <n-select
+                :key="`b-${robotKey}-${f.key}`"
+                v-model:value="bindings[f.key]"
+                size="small"
+                clearable
+                filterable
+                :options="jsonFields.map((jf) => ({ label: jf, value: jf }))"
+                placeholder="请选择"
+                style="width: 100%"
+              />
+            </div>
+            <div class="col-b">
+              <n-input
+                :key="`t-${robotKey}-${f.key}`"
+                v-model:value="templates[f.key]"
+                size="small"
+                placeholder="如 ({x},{y})"
+              />
+            </div>
+            <div class="col-c">
+              <n-input
+                :key="`v-${robotKey}-${f.key}`"
+                v-model:value="valueMaps[f.key]"
+                type="textarea"
+                :rows="4"
+                placeholder="每行一条：1=CREATE"
+              />
+            </div>
+            <div class="col-d preview mono">{{ preview(f.key) }}</div>
+          </div>
+        </div>
       </n-spin>
       <template #footer>
         <div style="display: flex; align-items: center; gap: 10px; width: 100%">
-          <n-button style="color: #0b63ce; border-color: #0b63ce" @click="openClone">克隆</n-button>
+          <n-button style="background: #f08c00; color: #fff" @click="openClone">克隆</n-button>
           <div style="flex: 1" />
           <n-button @click="emit('update:show', false)">取消</n-button>
           <n-button type="primary" :loading="saving" @click="save">保存映射</n-button>
@@ -292,11 +286,46 @@ async function save() {
   </n-modal>
 </template>
 <style scoped>
-.mapping-table :deep(td) {
-  vertical-align: top;
+.mapping-list {
+  display: flex;
+  flex-direction: column;
 }
-.mapping-table :deep(th) {
-  vertical-align: bottom;
+.mapping-head,
+.mapping-row {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 10px 4px;
+}
+.mapping-head {
+  color: #86909c;
+  font-size: 12px;
+  border-bottom: 1px solid #e5e6eb;
+}
+.mapping-row {
+  border-bottom: 1px solid #f0f1f3;
+}
+.mapping-row:last-child {
+  border-bottom: none;
+}
+.col-a { width: 12%; flex: none; }
+.col-b { width: 20%; flex: none; }
+.col-c { width: 27%; flex: none; }
+.col-d { flex: 1; min-width: 0; }
+.field-label {
+  font-weight: 600;
+  padding-top: 5px;
+}
+.preview {
+  font-size: 12px;
+  word-break: break-all;
+  padding-top: 5px;
+}
+.mapping-head .col-a,
+.mapping-head .col-b,
+.mapping-head .col-c,
+.mapping-head .col-d {
+  padding-top: 2px;
 }
 </style>
 <style>
