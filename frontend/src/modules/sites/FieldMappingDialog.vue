@@ -59,16 +59,18 @@ function isTemplate(v: string | null | undefined): boolean {
   return !!v && v.includes('{')
 }
 
-/** 预览求值：模板优先（{xxx} 用示例数据插值），否则取绑定字段值；再过值映射 */
+/** 预览：仅反映显式配置（绑定/模板 -> 值映射）；未配置显示提示，
+ *  不再回退 sample[key] —— 那与后端真实取值（候选+大小写匹配）不一致，造成误导 */
 function preview(key: string): string {
   if (!sample.value) return '-'
-  let v: unknown
   const tpl = templates.value[key]?.trim()
+  const b = bindings.value[key]
+  if (!tpl && !b) return '未配置'
+  let v: unknown
   if (tpl) {
     v = tpl.replace(/\{(\w+)\}/g, (_, f) => String(sample.value?.[f] ?? ''))
   } else {
-    const b = bindings.value[key]
-    v = b ? sample.value[b] : sample.value[key]
+    v = sample.value[b as string] ?? '-'
   }
   return applyValueMap(v, key)
 }
@@ -193,7 +195,7 @@ async function save() {
         <p style="margin-bottom: 12px; color: #666; font-size: 13px">
           绑定字段 = 直接取该 JSON 字段的值；模板 = 按模板拼接，用 <code>{x}</code> 引用 JSON 字段（如 <code>({x},{y})</code> 合成坐标）；
           值映射 = 把取到的值翻译成展示文本（每行一条 <code>1=CREATE</code>，也可逗号分隔），未命中显示原值。
-          <b>绑定与模板都填时模板优先</b>；都留空走内置自动识别。
+          <b>绑定与模板都填时模板优先</b>；都留空时由后端内置规则取值（大小写不敏感匹配 robotCode 等常见字段名）。
         </p>
         <n-table :single-line="false" size="small" class="mapping-table">
           <thead>
@@ -217,7 +219,7 @@ async function save() {
                   clearable
                   filterable
                   :options="jsonFields.map((jf) => ({ label: jf, value: jf }))"
-                  placeholder="自动识别"
+                  placeholder="未配置则由后端内置规则取值"
                   style="width: 100%"
                 />
               </td>
@@ -234,7 +236,7 @@ async function save() {
                   :key="`v-${robotKey}-${f.key}`"
                   v-model:value="valueMaps[f.key]"
                   type="textarea"
-                  :autosize="{ minRows: 1, maxRows: 8 }"
+                  :rows="4"
                   placeholder="每行一条：1=CREATE"
                 />
               </td>
@@ -246,7 +248,7 @@ async function save() {
         </n-table>
       </n-spin>
       <template #footer>
-        <div style="display: flex; align-items: center; gap: 10px">
+        <div style="display: flex; align-items: center; gap: 10px; width: 100%">
           <n-button style="color: #0b63ce; border-color: #0b63ce" @click="openClone">克隆</n-button>
           <div style="flex: 1" />
           <n-button @click="emit('update:show', false)">取消</n-button>
