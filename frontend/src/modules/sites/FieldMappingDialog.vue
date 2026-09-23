@@ -241,13 +241,12 @@ async function save() {
         </n-table>
       </n-spin>
       <template #footer>
-        <n-space justify="space-between" :size="8">
-          <n-button size="small" @click="openClone">克隆</n-button>
-          <n-space :size="8">
-            <n-button @click="emit('update:show', false)">取消</n-button>
-            <n-button type="primary" :loading="saving" @click="save">保存映射</n-button>
-          </n-space>
-        </n-space>
+        <div class="footer-row">
+          <n-button @click="openClone">克隆</n-button>
+          <div style="flex: 1" />
+          <n-button @click="emit('update:show', false)">取消</n-button>
+          <n-button type="primary" :loading="saving" @click="save">保存映射</n-button>
+        </div>
       </template>
     </n-drawer-content>
   </n-drawer>
@@ -258,14 +257,16 @@ async function save() {
       选择一个来源实例，其绑定/模板/值映射会回显到当前表单（保存后生效）。
     </p>
     <n-spin :show="cloneLoading">
-      <n-table :single-line="false" size="small">
+      <n-table :single-line="false" size="small" class="clone-table">
         <thead>
-          <tr><th style="width: 40%">站点</th><th>Robot 名称</th></tr>
+          <tr><th style="width: 50px">选择</th><th style="width: 40%">站点</th><th>Robot 名称</th></tr>
         </thead>
         <tbody>
           <tr v-for="x in cloneList" :key="x.site_id + '/' + x.robot_id"
-            :style="{ cursor: 'pointer', background: cloneSelected === x.site_id + '/' + x.robot_id ? 'rgba(11,99,206,0.08)' : undefined }"
+            class="clone-row"
+            :class="{ 'clone-selected': cloneSelected === x.site_id + '/' + x.robot_id }"
             @click="cloneSelected = x.site_id + '/' + x.robot_id">
+            <td><n-radio :checked="cloneSelected === x.site_id + '/' + x.robot_id" /></td>
             <td>{{ x.site_name }}</td>
             <td>{{ x.robot_name }}</td>
           </tr>
@@ -289,5 +290,22 @@ async function save() {
 }
 .mapping-table :deep(th) {
   vertical-align: bottom;
+}
+</style>
+<style>
+/* 克隆选择：选中行高亮（modal 挂 body，样式需全局） */
+.clone-row {
+  cursor: pointer;
+}
+.clone-row.clone-selected > td {
+  background: rgba(11, 99, 206, 0.1);
+}
+</style>
+
+<style scoped>
+.footer-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 </style>
