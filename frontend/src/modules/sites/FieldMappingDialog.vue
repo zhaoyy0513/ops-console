@@ -197,47 +197,48 @@ async function save() {
           值映射 = 把取到的值翻译成展示文本（每行一条 <code>1=CREATE</code>，也可逗号分隔），未命中显示原值。
           <b>绑定与模板都填时模板优先</b>；都留空则该字段不展示。
         </p>
-        <div class="mapping-list">
-          <div class="mapping-head">
-            <span class="col-a">业务字段</span>
-            <span class="col-b">绑定 JSON 字段</span>
-            <span class="col-b">模板（优先）</span>
-            <span class="col-c">值映射（每行一条）</span>
-            <span class="col-d">当前值预览</span>
-          </div>
-          <div v-for="f in BIZ_FIELDS" :key="f.key" class="mapping-row">
-            <div class="col-a field-label">{{ f.label }}</div>
-            <div class="col-b">
-              <!-- key 绑定 robotKey：切换实例时销毁重建，修复 textarea 高度残留 -->
-              <n-select
-                :key="`b-${robotKey}-${f.key}`"
-                v-model:value="bindings[f.key]"
-                size="small"
-                clearable
-                filterable
-                :options="jsonFields.map((jf) => ({ label: jf, value: jf }))"
-                placeholder="请选择"
-                style="width: 100%"
-              />
+        <div class="field-groups">
+          <div v-for="f in BIZ_FIELDS" :key="f.key" class="field-group">
+            <div class="field-title">{{ f.label }}</div>
+            <div class="field-controls">
+              <div class="f-item">
+                <div class="f-label">绑定 JSON 字段</div>
+                <!-- key 绑定 robotKey：切换实例时销毁重建，杜绝上一个 Robot 的内容/高度残留 -->
+                <n-select
+                  :key="`b-${robotKey}-${f.key}`"
+                  v-model:value="bindings[f.key]"
+                  size="small"
+                  clearable
+                  filterable
+                  :options="jsonFields.map((jf) => ({ label: jf, value: jf }))"
+                  placeholder="请选择"
+                  style="width: 100%"
+                />
+              </div>
+              <div class="f-item">
+                <div class="f-label">模板（优先）</div>
+                <n-input
+                  :key="`t-${robotKey}-${f.key}`"
+                  v-model:value="templates[f.key]"
+                  size="small"
+                  placeholder="如 ({x},{y})"
+                />
+              </div>
+              <div class="f-item">
+                <div class="f-label">值映射（如 1=CREATE）</div>
+                <n-input
+                  :key="`v-${robotKey}-${f.key}`"
+                  v-model:value="valueMaps[f.key]"
+                  type="textarea"
+                  :rows="1"
+                  placeholder="如 1=CREATE（可拖拽右下角扩大）"
+                />
+              </div>
+              <div class="f-item">
+                <div class="f-label">当前值预览</div>
+                <div class="preview mono">{{ preview(f.key) }}</div>
+              </div>
             </div>
-            <div class="col-b">
-              <n-input
-                :key="`t-${robotKey}-${f.key}`"
-                v-model:value="templates[f.key]"
-                size="small"
-                placeholder="如 ({x},{y})"
-              />
-            </div>
-            <div class="col-c">
-              <n-input
-                :key="`v-${robotKey}-${f.key}`"
-                v-model:value="valueMaps[f.key]"
-                type="textarea"
-                :rows="4"
-                placeholder="每行一条：1=CREATE"
-              />
-            </div>
-            <div class="col-d preview mono">{{ preview(f.key) }}</div>
           </div>
         </div>
       </n-spin>
@@ -286,62 +287,41 @@ async function save() {
   </n-modal>
 </template>
 <style scoped>
-.mapping-list {
+.field-groups {
   display: flex;
   flex-direction: column;
+  gap: 14px;
 }
-.mapping-head,
-.mapping-row {
-  display: flex;
-  gap: 12px;
-  align-items: flex-start;
-  padding: 10px 4px;
+.field-group {
+  padding-bottom: 10px;
+  border-bottom: 1px solid #f5f6f8;
 }
-.mapping-head {
-  color: #86909c;
-  font-size: 12px;
-  border-bottom: 1px solid #e5e6eb;
-}
-.mapping-row {
-  border-bottom: 1px solid #f0f1f3;
-}
-.mapping-row:last-child {
+.field-group:last-child {
   border-bottom: none;
 }
-.col-a { width: 12%; flex: none; }
-.col-b { width: 20%; flex: none; }
-.col-c { width: 27%; flex: none; }
-.col-d { flex: 1; min-width: 0; }
-.field-label {
+.field-title {
   font-weight: 600;
-  padding-top: 5px;
+  font-size: 13px;
+  margin-bottom: 8px;
+}
+.field-controls {
+  display: flex;
+  gap: 12px;
+  align-items: flex-end;
+}
+.f-item {
+  flex: 1;
+  min-width: 0;
+}
+.f-label {
+  color: #86909c;
+  font-size: 12px;
+  margin-bottom: 4px;
 }
 .preview {
   font-size: 12px;
   word-break: break-all;
-  padding-top: 5px;
-}
-.mapping-head .col-a,
-.mapping-head .col-b,
-.mapping-head .col-c,
-.mapping-head .col-d {
-  padding-top: 2px;
-}
-</style>
-<style>
-/* 克隆选择：选中行高亮（modal 挂 body，样式需全局） */
-.clone-row {
-  cursor: pointer;
-}
-.clone-row.clone-selected > td {
-  background: rgba(11, 99, 206, 0.1);
-}
-</style>
-
-<style scoped>
-.footer-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
+  padding: 5px 0;
+  min-height: 24px;
 }
 </style>
