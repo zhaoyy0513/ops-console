@@ -258,18 +258,8 @@ const worstQueueStatus = computed(() => {
           placeholder="选择 Artemis" :options="instances" />
         <n-button size="small" @click="load">刷新</n-button>
         <!-- 状态标签带语义前缀，不再莫名其妙 -->
-        <n-tooltip v-if="overview" trigger="hover">
-          <template #trigger>
-            <span class="badge-line tip">Broker <status-badge :status="overview.status" /></span>
-          </template>
-          Broker 运行状态：能读取到管理数据即为 Started（在线）
-        </n-tooltip>
-        <n-tooltip v-if="queues.length" trigger="hover" :style="{ maxWidth: '360px' }">
-          <template #trigger>
-            <span class="badge-line tip">队列最差状态 <status-badge :status="worstQueueStatus" /></span>
-          </template>
-          取下方所有队列诊断结果中最严重的一个：Healthy=全部正常；Warning=存在积压、消息无消费者或快速增长；Critical=积压严重。具体是哪些队列见表格的「状态/问题」列（鼠标放上去可看详情）。
-        </n-tooltip>
+        <span v-if="overview" class="badge-line">Broker <status-badge :status="overview.status" /></span>
+        <span v-if="queues.length" class="badge-line">队列最差状态 <status-badge :status="worstQueueStatus" /></span>
       </n-space>
     </n-card>
 
@@ -431,6 +421,7 @@ const worstQueueStatus = computed(() => {
   gap: 6px;
   color: #666;
   font-size: 13px;
+  white-space: nowrap;
 }
 .tip {
   cursor: help;
