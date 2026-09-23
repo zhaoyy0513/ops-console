@@ -53,12 +53,12 @@ def test_normalize_robot_camel_case():
         "lastUpdate": "2026-09-21T10:00:00",
     })
     assert r["name"] == "alpha" and r["status"] == "running"
-    assert r["station"] == "S3" and r["task"] == "deliver"
+    assert r["station"] == "S3"
 
 
 def test_normalize_robot_snake_case_and_missing():
     r = normalize_robot({"id": "R2", "status": "idle", "battery_level": 50})
-    assert r["battery"] == 50 and r["task"] is None and r["error"] is None
+    assert r["battery"] == 50 and r["error"] is None
     assert normalize_robot({})["id"] is None
 
 

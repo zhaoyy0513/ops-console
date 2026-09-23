@@ -875,7 +875,6 @@ Name
 Status
 Battery
 Current Station
-Task
 Last Update
 ```
 
@@ -886,7 +885,6 @@ Basic Information
 Status
 Battery
 Position
-Task
 Error
 ```
 

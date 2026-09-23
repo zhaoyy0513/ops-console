@@ -8,7 +8,6 @@ export interface RobotRow {
   station: string | null
   lift: number | string | null
   shelf_code: string | null
-  task: string | null
   error: string | null
   last_update: string | null
   instance?: string

@@ -169,7 +169,6 @@ watch(instanceId, load)
             <tr><th>Robot Name</th><td>{{ detail.name ?? '-' }}</td></tr>
             <tr><th>Battery</th><td>{{ detail.battery ?? '-' }}{{ detail.battery != null ? '%' : '' }}</td></tr>
             <tr><th>Position</th><td>{{ detail.station ?? '-' }}</td></tr>
-            <tr><th>Task</th><td>{{ detail.task ?? '-' }}</td></tr>
             <tr><th>Last Update</th><td>{{ fmtTime(detail.last_update) }}</td></tr>
           </tbody>
         </n-table>

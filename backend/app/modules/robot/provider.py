@@ -21,7 +21,6 @@ _FIELD_CANDIDATES: dict[str, tuple[str, ...]] = {
     "status": ("online", "status", "state", "runStatus", "run_status"),
     "battery": ("battery", "batteryLevel", "battery_level", "power"),
     "station": ("station", "currentStation", "current_station", "position", "location"),
-    "task": ("task", "currentTask", "current_task", "taskName"),
     "error": ("errorCode", "error", "errorMsg", "error_message", "fault"),
     "last_update": ("lastUpdate", "last_update", "updateTime", "timestamp"),
     "x": ("x",),
@@ -160,7 +159,6 @@ def normalize_robot(
         "lift": apply_value_map(raw.get("lift"), "lift"),
         "shelf_code": apply_value_map(
             raw.get("shelfCode") or raw.get("shelf_code"), "shelf_code"),
-        "task": apply_value_map(pick("task"), "task"),
         "error": apply_value_map(pick("error"), "error"),
         "last_update": last_update(),
         "x": raw.get("x"),
