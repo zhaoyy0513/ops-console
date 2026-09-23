@@ -2,12 +2,22 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { NButton, NCard, NModal, NSelect, NSpace, NTable, NTag, useMessage } from 'naive-ui'
 import { useSiteStore } from '../../stores/site'
+import { ROBOT_FIELDS } from './fields'
 import { robotApi, type RobotRow } from './api'
 
 const siteStore = useSiteStore()
 const message = useMessage()
 
 const REFRESH_SECONDS = 30
+
+/** 状态徽标语义映射（robot 侧状态词 -> 红绿灯） */
+function statusTagType(r: RobotRow): 'success' | 'warning' | 'error' | 'default' {
+  const s = (r.status ?? '').toLowerCase()
+  if (['error', 'fault', 'offline', 'down'].includes(s) || r.error) return 'error'
+  if (['running', 'working', 'active', 'online'].includes(s)) return 'success'
+  if (['idle', 'charging', 'standby', 'paused'].includes(s)) return 'warning'
+  return 'default'
+}
 
 const instances = ref<Array<{ label: string; value: string }>>([])
 const instanceId = ref<string | null>(null)
@@ -118,27 +128,29 @@ watch(instanceId, load)
       <n-table :single-line="false" size="small">
         <thead>
           <tr>
-            <th>Robot Code</th><th>Robot Name</th><th>Battery</th>
-            <th>Position</th><th>Task</th><th>Last Update</th><th style="width: 80px">Action</th>
+            <!-- 表头由 robot/fields.ts 公用定义驱动（与字段映射配置同源） -->
+            <th v-for="f in ROBOT_FIELDS" :key="f.key">{{ f.label }}</th>
+            <th style="width: 80px">Action</th>
           </tr>
         </thead>
         <tbody>
           <tr v-for="r in robots" :key="r.id ?? ''">
-            <td style="font-family: ui-monospace, monospace">{{ r.id ?? '?' }}</td>
-            <td>{{ r.name ?? '-' }}</td>
-            <td>
-              <n-tag v-if="r.battery != null" :type="Number(r.battery) < 20 ? 'error' : 'default'" size="small" :bordered="false">
-                {{ r.battery }}%
-              </n-tag>
-              <span v-else>-</span>
+            <td v-for="f in ROBOT_FIELDS" :key="f.key" :class="{ mono: f.key === 'id' }">
+              <template v-if="f.key === 'status'">
+                <n-tag :type="statusTagType(r)" size="small" :bordered="false">{{ r.status ?? '-' }}</n-tag>
+              </template>
+              <template v-else-if="f.key === 'battery'">
+                <n-tag v-if="r.battery != null" :type="Number(r.battery) < 20 ? 'error' : 'default'" size="small" :bordered="false">
+                  {{ r.battery }}%
+                </n-tag>
+                <span v-else>-</span>
+              </template>
+              <template v-else>{{ (r as any)[f.key] ?? '-' }}</template>
             </td>
-            <td>{{ r.station ?? '-' }}</td>
-            <td>{{ r.task ?? '-' }}</td>
-            <td>{{ fmtTime(r.last_update) }}</td>
             <td><n-button size="tiny" @click="openDetail(r)">Detail</n-button></td>
           </tr>
           <tr v-if="!robots.length && !loading">
-            <td colspan="7" style="text-align: center; color: #999">
+            <td :colspan="ROBOT_FIELDS.length + 1" style="text-align: center; color: #999">
               {{ instanceId ? 'No robot data for this instance' : '暂无 Robot 实例，请在「站点管理 → 资源」中添加' }}
             </td>
           </tr>

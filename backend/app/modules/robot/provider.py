@@ -139,6 +139,8 @@ def normalize_robot(raw: dict[str, Any], field_map: dict[str, str] | None = None
         "status": online_to_status(),
         "battery": pick("battery"),
         "station": station(),
+        "lift": raw.get("lift"),
+        "shelf_code": raw.get("shelfCode") or raw.get("shelf_code"),
         "task": pick("task"),
         "error": pick("error"),
         "last_update": last_update(),

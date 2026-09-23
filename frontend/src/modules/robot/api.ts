@@ -6,6 +6,8 @@ export interface RobotRow {
   status: string | null
   battery: number | string | null
   station: string | null
+  lift: number | string | null
+  shelf_code: string | null
   task: string | null
   error: string | null
   last_update: string | null
