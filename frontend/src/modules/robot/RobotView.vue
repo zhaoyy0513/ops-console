@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { NButton, NCard, NModal, NSelect, NSpace, NTable, NTag, useMessage } from 'naive-ui'
 import { useSiteStore } from '../../stores/site'
 import { ROBOT_FIELDS } from './fields'
+import TabHelp from '../../components/TabHelp.vue'
 import { robotApi, type RobotRow } from './api'
 
 const siteStore = useSiteStore()
@@ -121,6 +122,7 @@ watch(instanceId, load)
         <n-select v-model:value="instanceId" size="small" style="width: 240px"
           placeholder="选择 Robot 接入实例" :options="instances" />
         <n-button size="small" :loading="loading" @click="load">刷新</n-button>
+        <tab-help topic="robot" />
         <span style="color: #999; font-size: 12px">不同实例可配置字段映射（站点管理 → 资源 → Robot）</span>
       </n-space>
     </n-card>

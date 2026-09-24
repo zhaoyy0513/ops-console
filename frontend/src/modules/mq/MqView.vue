@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { NButton, NCard, NInput, NModal, NSelect, NSpace, NSpin, NTable, useMessage } from 'naive-ui'
 import CountdownConfirm from '../../components/CountdownConfirm.vue'
 import BaseChart from '../../components/BaseChart.vue'
+import TabHelp from '../../components/TabHelp.vue'
 import StatusBadge from '../../components/StatusBadge.vue'
 import { useSiteStore } from '../../stores/site'
 import { getSamples } from '../overview/api'
@@ -260,6 +261,7 @@ const worstQueueStatus = computed(() => {
         <n-select v-model:value="instanceId" size="small" style="width: 220px"
           placeholder="选择 Artemis" :options="instances" />
         <n-button size="small" @click="load">刷新</n-button>
+        <tab-help topic="mq" />
         <!-- 状态标签带语义前缀，不再莫名其妙 -->
         <span v-if="overview" class="badge-line">Broker <status-badge :status="overview.status" /></span>
         <span v-if="queues.length" class="badge-line">队列最差状态 <status-badge :status="worstQueueStatus" /></span>

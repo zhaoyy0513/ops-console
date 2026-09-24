@@ -9,6 +9,7 @@ import {
   useMessage,
 } from 'naive-ui'
 import BaseChart from '../../components/BaseChart.vue'
+import TabHelp from '../../components/TabHelp.vue'
 import StatusBadge from '../../components/StatusBadge.vue'
 import { useSiteStore } from '../../stores/site'
 import { getSamples, type SamplePoint } from '../overview/api'
@@ -162,6 +163,7 @@ function pctColor(pct: number | null | undefined): string {
           :options="servers"
         />
         <n-button size="small" :loading="loading" @click="load(false)">刷新</n-button>
+        <tab-help topic="server" />
         <!-- 已存资源的行级测试需 per-resource test 端点（PRD §18 POST .../test），落地后补 -->
         <status-badge v-if="metrics" :status="metrics.diagnosis?.status" />
       </n-space>
@@ -192,19 +194,29 @@ function pctColor(pct: number | null | undefined): string {
       <!-- 指标卡在前，趋势图全宽在后 -->
       <n-space :size="12">
         <n-card size="small" title="CPU" style="flex: 1">
-          <div class="metric-big" :style="{ color: pctColor(metrics.cpu.usage) }">
+          <n-tooltip trigger="hover">
+            <template #trigger>
+              <div class="metric-big dashed" :style="{ color: pctColor(metrics.cpu.usage) }">
             {{ metrics.cpu.usage ?? '?' }}<span class="unit">%</span>
-          </div>
-          <div class="metric-sub">
+            </div>
+          </template>
+          进程与内核态占用的 CPU 总百分比（非生命周期平均）；≥80% 警告、≥90% 严重
+        </n-tooltip>
+        <div class="metric-sub">
             {{ metrics.cpu.cores ?? '?' }} cores · iowait {{ metrics.cpu.iowait ?? '?' }}% ·
             load {{ metrics.load.load1 ?? '?' }} / {{ metrics.load.load5 ?? '?' }} / {{ metrics.load.load15 ?? '?' }}
           </div>
         </n-card>
         <n-card size="small" title="内存" style="flex: 1">
-          <div class="metric-big" :style="{ color: pctColor(memPct) }">
+          <n-tooltip trigger="hover">
+            <template #trigger>
+              <div class="metric-big dashed" :style="{ color: pctColor(memPct) }">
             {{ memPct ?? '?' }}<span class="unit">%</span>
-          </div>
-          <div class="metric-sub">
+            </div>
+          </template>
+          已用物理内存 / 总内存；≥80% 警告、≥90% 严重（不含可回收缓存时会更宽松）
+        </n-tooltip>
+        <div class="metric-sub">
             used {{ metrics.memory.used ?? '?' }}MB / total {{ metrics.memory.total ?? '?' }}MB ·
             avail {{ metrics.memory.available ?? '?' }}MB · swap {{ metrics.memory.swap_used ?? 0 }}MB
           </div>
@@ -269,6 +281,10 @@ function pctColor(pct: number | null | undefined): string {
 </template>
 
 <style scoped>
+.metric-big.dashed {
+  cursor: help;
+  border-bottom: 2px dashed #d0d3d8;
+}
 .metric-big {
   font-size: 34px;
   font-weight: 600;

@@ -17,6 +17,7 @@ import {
 } from 'naive-ui'
 import { parser as jsonParser } from '@lezer/json'
 import CountdownConfirm from '../../components/CountdownConfirm.vue'
+import TabHelp from '../../components/TabHelp.vue'
 import CodeJsonEditor from '../../components/CodeJsonEditor.vue'
 import { useSiteStore } from '../../stores/site'
 import {
@@ -414,6 +415,7 @@ const INFO_METRICS = computed(() => {
         <n-input v-model:value="pattern" size="small" style="width: 240px"
           placeholder="模糊搜索，忽略大小写" @keyup.enter="refreshDb" />
         <n-button size="small" :loading="loading" @click="refreshDb">刷新</n-button>
+        <tab-help topic="redis" />
       </n-space>
     </n-card>
 

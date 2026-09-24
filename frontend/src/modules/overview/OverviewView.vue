@@ -3,6 +3,7 @@ import { onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { NButton, NCard, NSpace, NTable, NTag, useMessage } from 'naive-ui'
 import StatusBadge from '../../components/StatusBadge.vue'
+import TabHelp from '../../components/TabHelp.vue'
 import { useSiteStore } from '../../stores/site'
 import { overviewApi, type OverviewData } from './api'
 
@@ -67,6 +68,7 @@ function fmtTime(iso: string): string {
         <span style="font-size: 16px; font-weight: 600">{{ data?.site.name ?? siteStore.currentSiteId }}</span>
         <status-badge v-if="data" :status="data.overall" />
         <n-button size="small" :loading="loading" @click="refresh">立即检查</n-button>
+        <tab-help topic="overview" />
         <span v-if="data?.checked_at" style="color: #999; font-size: 12px">
           上次检查 {{ fmtTime(data.checked_at) }}（后台每 30 秒）
         </span>
