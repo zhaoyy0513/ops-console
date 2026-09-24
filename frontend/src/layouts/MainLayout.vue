@@ -3,11 +3,16 @@ import { computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { NButton, NMenu, NSelect } from 'naive-ui'
 import { getModules } from '../modules'
+import { locale, setLocale } from '../i18n'
 import { useSiteStore } from '../stores/site'
 
 const route = useRoute()
 const router = useRouter()
 const siteStore = useSiteStore()
+
+function toggleLocale() {
+  setLocale(locale.value === 'zh' ? 'en' : 'zh')
+}
 
 const modules = getModules()
 // 无有效站点时菜单全部置灰（事前可见优于事后弹窗打断），侧栏另有文字提示
@@ -73,8 +78,11 @@ function onSiteSelect(id: string) {
         @update:value="onSiteSelect"
       />
       <div style="flex: 1" />
-      <n-button size="small" quaternary @click="router.push('/audit')">操作日志</n-button>
-      <n-button size="small" quaternary @click="router.push('/sites')">站点管理</n-button>
+      <n-button size="small" quaternary @click="router.push('/audit')">{{ $t('layout.opsLog') }}</n-button>
+      <n-button size="small" quaternary @click="router.push('/sites')">{{ $t('layout.sites') }}</n-button>
+      <n-button size="small" quaternary @click="toggleLocale">
+        {{ locale === 'zh' ? 'EN' : '中文' }}
+      </n-button>
     </header>
     <div class="app-body">
       <aside class="app-sider">
