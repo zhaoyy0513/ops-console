@@ -11,6 +11,8 @@ export interface MqOverview {
   consumers: number | null
   producers: number | null
   addresses: number | null
+  address_memory_usage: number | null
+  global_max_size: number | null
   jvm: {
     heap_used: number | null
     heap_max: number | null

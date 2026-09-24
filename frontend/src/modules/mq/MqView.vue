@@ -191,6 +191,48 @@ const topQueuesOption = computed(() => {
   }
 })
 
+const addrMemPie = computed(() => {
+  const used = overview.value?.address_memory_usage
+  const max = overview.value?.global_max_size
+  if (!used || !max) return null
+  return {
+    tooltip: { trigger: 'item' },
+    series: [{
+      type: 'pie',
+      radius: ['55%', '80%'],
+      label: { show: false },
+      data: [
+        { name: 'Address Memory', value: used, itemStyle: { color: '#0b63ce' } },
+        { name: 'Free', value: Math.max(0, max - used), itemStyle: { color: '#e5e6eb' } },
+      ],
+    }],
+  }
+})
+
+const addrMemPct = computed(() => {
+  const u = overview.value?.address_memory_usage
+  const m = overview.value?.global_max_size
+  return u && m ? Math.round((u / m) * 100) : null
+})
+
+const heapPieOption = computed(() => {
+  const j = overview.value?.jvm
+  const used = j?.heap_used ?? 0
+  const max = j?.heap_max ?? 1
+  return {
+    tooltip: { trigger: 'item' },
+    series: [{
+      type: 'pie',
+      radius: ['55%', '80%'],
+      label: { show: false },
+      data: [
+        { name: 'Used', value: used, itemStyle: { color: '#d46b08' } },
+        { name: 'Free', value: Math.max(0, max - used), itemStyle: { color: '#e5e6eb' } },
+      ],
+    }],
+  }
+})
+
 function pctColor(pct: number | null): string {
   if (pct == null) return '#999'
   if (pct >= 90) return '#d03050'
@@ -313,6 +355,22 @@ const worstQueueStatus = computed(() => {
         <n-card size="small" class="grow-1" title="队列堆积 Top 10">
           <base-chart v-if="queues.length" :option="topQueuesOption" height="300px" />
           <div v-else style="color: #999; font-size: 12px; padding: 40px 0; text-align: center">无队列数据</div>
+        </n-card>
+      </div>
+
+      <div class="row">
+        <n-card size="small" class="grow-1" title="Address 内存（global-max-size 占比）">
+          <base-chart v-if="addrMemPie" :option="addrMemPie" height="220px" />
+          <div v-else style="color: #999; font-size: 12px; padding: 40px 0; text-align: center">
+            该 Broker 未报告 global-max-size
+          </div>
+          <div style="text-align: center; color: #666; font-size: 13px; margin-top: 4px">
+            地址内存 {{ fmtBytes(overview?.address_memory_usage) }} / {{ fmtBytes(overview?.global_max_size) }}
+            <b v-if="addrMemPct != null">（{{ addrMemPct }}%）</b>
+          </div>
+        </n-card>
+        <n-card size="small" class="grow-1" title="JVM Heap 分布">
+          <base-chart :option="heapPieOption" height="220px" />
         </n-card>
       </div>
 

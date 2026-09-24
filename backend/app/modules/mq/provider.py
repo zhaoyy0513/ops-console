@@ -197,6 +197,8 @@ def normalize_broker(attrs: dict[str, Any]) -> dict[str, Any]:
         "consumers": _int(attrs.get("TotalConsumerCount")),
         "producers": _int(attrs.get("TotalProducerCount")),
         "addresses": _int(attrs.get("AddressCount")),
+        "address_memory_usage": _int(attrs.get("AddressMemoryUsage")),
+        "global_max_size": _int(attrs.get("GlobalMaxSize")),
     }
 
 
