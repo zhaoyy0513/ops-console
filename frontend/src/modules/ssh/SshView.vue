@@ -409,6 +409,7 @@ async function confirmRun() {
   font-family: ui-monospace, Consolas, monospace;
 }
 .content-cell {
+  display: block;
   max-width: 320px;
   overflow: hidden;
   text-overflow: ellipsis;
