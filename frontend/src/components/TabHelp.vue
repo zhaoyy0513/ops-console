@@ -30,7 +30,7 @@ const section = computed<HelpSection>(() => {
     @keydown.enter="show = true"
   >?</span>
 
-  <n-modal v-model:show="show" preset="card" :style="{ width: '560px', maxWidth: '92vw' }" :bordered="false">
+  <n-modal :mask-closable="false" :close-on-esc="false" v-model:show="show" preset="card" :style="{ width: '560px', maxWidth: '92vw' }" :bordered="false">
     <template #header>
       <div class="help-modal-title">
         <span class="accent-bar" aria-hidden="true"></span>

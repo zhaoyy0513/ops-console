@@ -511,7 +511,7 @@ const INFO_METRICS = computed(() => {
     </div>
 
     <!-- 保存确认对话框（PRD §11.4） -->
-    <n-modal v-model:show="confirmShow" preset="card" :title="$t('redis.confirmSave')" style="width: 520px">
+    <n-modal :mask-closable="false" :close-on-esc="false" v-model:show="confirmShow" preset="card" :title="$t('redis.confirmSave')" style="width: 520px">
       <p>{{ $t('redis.writeKey') }} <b class="mono">{{ detail?.key }}</b></p>
       <p>{{ $t('redis.changeSummary') }}</p>
       <pre class="summary mono">{{ changeSummary }}</pre>

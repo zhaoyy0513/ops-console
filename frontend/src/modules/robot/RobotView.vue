@@ -162,7 +162,7 @@ watch(instanceId, load)
     </n-card>
 
     <!-- 详情弹窗：基础信息 + 完整 JSON -->
-    <n-modal v-model:show="detailShow" preset="card"
+    <n-modal :mask-closable="false" :close-on-esc="false" v-model:show="detailShow" preset="card"
       :title="$t('robot.detailTitle', { id: detail?.id ?? '' })" style="width: 640px">
       <template v-if="detail">
         <n-table :single-line="false" size="small">

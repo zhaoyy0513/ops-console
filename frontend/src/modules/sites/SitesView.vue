@@ -140,7 +140,7 @@ function goConsole(site: Site) {
     </n-table>
   </n-card>
 
-  <n-modal
+  <n-modal :mask-closable="false" :close-on-esc="false"
     v-model:show="showModal"
     preset="card"
     :title="editing ? $t('sites.editTitle', { name: editing.name }) : $t('sites.newSite')"

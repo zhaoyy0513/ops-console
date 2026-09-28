@@ -163,7 +163,7 @@ const hasMapping = computed(() => activeType.value === 'robots')
 </script>
 
 <template>
-  <n-drawer :show="props.show" :width="720" @update:show="emit('update:show', $event)">
+  <n-drawer :mask-closable="false" :close-on-esc="false" :show="props.show" :width="720" @update:show="emit('update:show', $event)">
     <n-drawer-content :title="$t('sites.resourcesTitle', { name: props.site?.name ?? '' })" closable>
       <n-tabs v-model:value="activeType" type="line" size="small">
         <n-tab-pane v-for="t in TYPES" :key="t.key" :name="t.key" :tab="t.label">

@@ -43,7 +43,7 @@ watch(show, (v) => {
 <template>
   <!-- 触发按钮与 Save 同规格（small 实心红），风格统一 -->
   <n-button size="small" type="error" :style="width ? { width } : undefined" @click="show = true">{{ label }}</n-button>
-  <n-modal v-model:show="show">
+  <n-modal :mask-closable="false" :close-on-esc="false" v-model:show="show">
     <n-card style="width: 440px" :title="t('countdown.title')" size="small" :bordered="false">
       <p>{{ t('countdown.about') }}</p>
       <p style="font-family: ui-monospace, monospace; font-weight: 600">{{ target }}</p>

@@ -148,7 +148,7 @@ async function save() {
 </script>
 
 <template>
-  <n-modal
+  <n-modal :mask-closable="false" :close-on-esc="false"
     :show="props.show"
     preset="card"
     :title="isEdit ? $t('sites.editResource', { type: typeLabel }) : $t('sites.newResource', { type: typeLabel })"

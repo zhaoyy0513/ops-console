@@ -190,7 +190,7 @@ async function save() {
 </script>
 
 <template>
-  <n-drawer :show="props.show" :width="920" placement="right"
+  <n-drawer :mask-closable="false" :close-on-esc="false" :show="props.show" :width="920" placement="right"
     @update:show="emit('update:show', $event)">
     <n-drawer-content :title="$t('fieldmap.title', { name: props.robot?.name ?? '' })" closable>
       <n-spin :show="loading">
@@ -254,7 +254,7 @@ async function save() {
   </n-drawer>
 
   <!-- 克隆来源选择：列出全部站点的 Robot 映射配置 -->
-  <n-modal v-model:show="cloneShow" preset="card" :title="$t('fieldmap.cloneTitle')" style="width: 520px">
+  <n-modal :mask-closable="false" :close-on-esc="false" v-model:show="cloneShow" preset="card" :title="$t('fieldmap.cloneTitle')" style="width: 520px">
     <p style="margin-bottom: 10px; color: #666; font-size: 13px">
       {{ $t('fieldmap.cloneIntro') }}
     </p>

@@ -6,6 +6,7 @@ import {
   NCard,
   NForm,
   NFormItem,
+  NIcon,
   NInput,
   NModal,
   NPopconfirm,
@@ -17,6 +18,7 @@ import {
   useMessage,
 } from 'naive-ui'
 import { useSiteStore } from '../../stores/site'
+import { ContractOutline, ExpandOutline } from '@vicons/ionicons5'
 import api from '../../api'
 import { sshApi, type SshScript } from './api'
 
@@ -55,15 +57,25 @@ const isCron = computed({
 
 const cronTesting = ref(false)
 const cronNextRuns = ref<string[]>([])
+const cronTzLabel = ref('')
 const cronInvalid = ref(false)
 
 async function testCron() {
   cronNextRuns.value = []
-  if (!form.value.cron.trim()) return
+  cronTzLabel.value = ''
+  if (!form.value.cron.trim()) {
+    cronInvalid.value = false
+    return
+  }
   cronTesting.value = true
   try {
-    const r = await api.post('/ssh/validate-cron', { cron: form.value.cron })
+    const r = await api.post('/ssh/validate-cron', {
+      cron: form.value.cron,
+      site_id: siteStore.currentSiteId,
+      server_id: form.value.server_id,
+    })
     cronNextRuns.value = (r as any).next_runs
+    cronTzLabel.value = (r as any).tz_label ?? ''
     cronInvalid.value = false
   } catch (e) {
     cronNextRuns.value = []
@@ -324,7 +336,7 @@ async function confirmRun() {
     </n-card>
 
     <!-- 编辑/新增脚本 -->
-    <n-modal v-model:show="editShow" preset="card"
+    <n-modal :mask-closable="false" :close-on-esc="false" v-model:show="editShow" preset="card"
       :title="editingId ? $t('ssh.editTitle') : $t('ssh.createTitle')" style="width: 640px">
       <n-form label-placement="top">
         <n-form-item :label="$t('ssh.formName')" required>
@@ -333,9 +345,9 @@ async function confirmRun() {
         <n-form-item :label="$t('ssh.isCron')">
           <n-switch v-model:value="isCron" />
         </n-form-item>
-        <n-form-item v-if="isCron" :label="$t('ssh.cronLabel')" :feedback="cronInvalid ? $t('ssh.cronInvalid') : undefined" :validation-status="cronInvalid ? 'error' : undefined">
-          <n-space vertical fill style="width: 100%">
-            <n-space align="center" :size="8">
+        <n-form-item v-if="isCron" :label="$t('ssh.cronLabel')" :show-feedback="false">
+          <div class="cron-block">
+            <div class="cron-row">
               <n-input
                 v-model:value="form.cron"
                 size="small"
@@ -345,12 +357,16 @@ async function confirmRun() {
                 @blur="testCron"
               />
               <n-button size="small" :loading="cronTesting" @click="testCron">{{ $t('ssh.cronTest') }}</n-button>
-            </n-space>
-            <div v-if="cronNextRuns.length" style="font-size: 12px; color: #18a058">
-              {{ $t('ssh.cronNext') }}
-              <div v-for="(t, i) in cronNextRuns" :key="i" class="cron-run">{{ t }}</div>
             </div>
-          </n-space>
+            <!-- 固定高度反馈区：错误/结果切换不改变布局（弹窗不再晃动） -->
+            <div class="cron-feedback" :class="{ invalid: cronInvalid }">
+              <template v-if="cronInvalid">{{ $t('ssh.cronInvalid') }}</template>
+              <template v-else-if="cronNextRuns.length">
+                {{ $t('ssh.cronNext') }}<template v-if="cronTzLabel">（{{ cronTzLabel }}）</template>
+                <div v-for="(t, i) in cronNextRuns" :key="i" class="cron-run">{{ t }}</div>
+              </template>
+            </div>
+          </div>
         </n-form-item>
         <n-form-item :label="$t('ssh.bindServer')" required>
           <n-select
@@ -381,7 +397,7 @@ async function confirmRun() {
     </n-modal>
 
     <!-- 执行确认 + 黑色 console（可全屏；header-extra 的全屏按钮位于关闭按钮左侧） -->
-    <n-modal
+    <n-modal :mask-closable="false" :close-on-esc="false"
       v-model:show="runShow"
       preset="card"
       :title="$t('ssh.runTitle', { name: runTarget?.name ?? '' })"
@@ -390,8 +406,9 @@ async function confirmRun() {
         : { width: '920px', maxWidth: '94vw' }"
     >
       <template #header-extra>
-        <n-button size="tiny" quaternary @click="runFullscreen = !runFullscreen">
-          {{ runFullscreen ? $t('ssh.restore') : $t('ssh.fullscreen') }}
+        <n-button size="tiny" quaternary :title="runFullscreen ? $t('ssh.restore') : $t('ssh.fullscreen')"
+          @click="runFullscreen = !runFullscreen">
+          <n-icon :component="runFullscreen ? ContractOutline : ExpandOutline" />
         </n-button>
       </template>
       <p class="run-desc">
@@ -450,6 +467,27 @@ async function confirmRun() {
   max-height: none;
   height: calc(92vh - 230px);
   min-height: 300px;
+}
+.cron-block {
+  width: 100%;
+}
+.cron-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.cron-feedback {
+  min-height: 64px;
+  margin-top: 6px;
+  font-size: 12px;
+  color: #18a058;
+  line-height: 1.5;
+}
+.cron-feedback.invalid {
+  color: #d03050;
+}
+.cron-run {
+  font-family: ui-monospace, monospace;
 }
 .run-desc {
   margin-bottom: 8px;

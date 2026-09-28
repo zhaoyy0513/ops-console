@@ -442,7 +442,7 @@ const worstQueueStatus = computed(() => {
     </n-card>
 
     <!-- 消息浏览弹窗（listMessages 只读预览，前 20 条） -->
-    <n-modal v-model:show="messagesShow" preset="card"
+    <n-modal :mask-closable="false" :close-on-esc="false" v-model:show="messagesShow" preset="card"
       :title="`Messages · ${messagesQueue}`" style="width: 720px">
       <n-spin :show="messagesLoading">
         <div class="msg-note">{{ $t("mq.msgNote") }}</div>
