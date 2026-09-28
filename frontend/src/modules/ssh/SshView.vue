@@ -441,8 +441,14 @@ async function confirmRun() {
 /* 操作列三按钮统一规格 */
 .act {
   min-width: 44px;
-}  table {
-    width: 100%;
-    table-layout: fixed;
-  }
+}
+/* 固定表格布局：内容列再长也不挤歪其他列（:deep 穿透 n-table 内部 <table>，
+   裸 table 选择器在 scoped 下匹配不到子组件内部元素——之前的修复因此未生效） */
+:deep(table) {
+  width: 100%;
+  table-layout: fixed;
+}
+:deep(td) {
+  overflow: hidden;
+}
 </style>
