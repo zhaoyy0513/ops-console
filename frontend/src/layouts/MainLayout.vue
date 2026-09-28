@@ -69,6 +69,7 @@ function onSiteSelect(id: string) {
   <div class="app-shell">
     <header class="app-header">
       <span class="brand">Ops Console</span>
+      <span class="build-stamp">b0928-1750</span>
       <n-select
         class="site-select"
         size="small"
@@ -99,6 +100,12 @@ function onSiteSelect(id: string) {
 </template>
 
 <style scoped>
+.build-stamp {
+  font-size: 10px;
+  color: #b0b3b8;
+  font-family: ui-monospace, monospace;
+  margin-left: 6px;
+}
 .sider-hint {
   padding: 12px 16px;
   color: #999;
