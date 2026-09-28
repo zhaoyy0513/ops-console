@@ -207,6 +207,10 @@ async function save() {
     message.warning(t('ssh.serverRequired'))
     return
   }
+  if (!form.value.content.trim()) {
+    message.warning(t('ssh.contentRequired'))
+    return
+  }
   try {
     if (editingId.value) {
       await sshApi.update(siteStore.currentSiteId, editingId.value, { ...form.value, server_id: form.value.server_id ?? '' })

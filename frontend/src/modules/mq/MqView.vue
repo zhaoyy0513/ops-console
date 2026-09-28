@@ -528,8 +528,8 @@ const worstQueueStatus = computed(() => {
 }
 .kv {
   display: flex;
-  flex-wrap: wrap;
-  gap: 4px 18px;
+  flex-direction: column;
+  gap: 6px;
   font-size: 13px;
   color: #666;
 }

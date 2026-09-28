@@ -21,10 +21,13 @@ body {
 .app-shell {
   display: flex;
   flex-direction: column;
-  height: 100%;
+  min-height: 100vh; /* 自然页面滚动：header/侧栏 sticky 固定，不随内容拉长 */
 }
 
 .app-header {
+  position: sticky;
+  top: 0;
+  z-index: 20;
   height: 48px;
   flex: none;
   display: flex;
@@ -47,22 +50,25 @@ body {
 .app-body {
   flex: 1;
   display: flex;
-  min-height: 0;
+  align-items: flex-start; /* 侧栏 sticky 需要子项不拉伸 */
 }
 
 .app-sider {
+  position: sticky;
+  top: 48px; /* header 高度 */
+  height: calc(100vh - 48px);
   width: 200px;
   flex: none;
   background: #fff;
   border-right: 1px solid #e5e6eb;
   display: flex;
   flex-direction: column;
+  overflow-y: auto;
 }
 
 .app-main {
   flex: 1;
   padding: 16px;
-  overflow: auto;
   /* 超宽屏不无限拉伸（约 80% 视觉宽度），窄窗口仍占满 */
   max-width: 1600px;
   margin: 0 auto;
