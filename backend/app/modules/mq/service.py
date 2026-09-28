@@ -130,14 +130,14 @@ async def empty_queue(site_id: str, mq_id: str, mbean: str, queue_name: str) -> 
     started = time.perf_counter()
     async with get_semaphore("mq"):
         try:
-            await provider.empty_queue(mbean)
+            removed = await provider.empty_queue(mbean)
         except OpsError as e:
             await oplog.record(site_id, f"mq/{mq_id}", "MQ_EMPTY_QUEUE", target=queue_name,
-                               params={"op": "emptyQueue"}, result="FAILED", error=e.message)
+                               params={"op": "removeMessages"}, result="FAILED", error=e.message)
             raise
     await oplog.record(site_id, f"mq/{mq_id}", "MQ_EMPTY_QUEUE", target=queue_name,
-                       params={"op": "emptyQueue"})
-    return {"success": True, "latency_ms": int((time.perf_counter() - started) * 1000)}
+                       params={"op": "removeMessages"})
+    return {"success": True, "removed": removed, "latency_ms": int((time.perf_counter() - started) * 1000)}
 
 
 async def browse_queue(site_id: str, mq_id: str, mbean: str, queue_name: str,

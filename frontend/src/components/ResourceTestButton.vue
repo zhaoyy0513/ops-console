@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { NButton, NSpace, NTag, NTooltip } from 'naive-ui'
+import { i18n } from '../i18n'
 import api from '../api'
 
 const props = defineProps<{
@@ -9,6 +10,9 @@ const props = defineProps<{
   /** 连接配置（表单当前值或已存完整配置，含密码） */
   config: Record<string, unknown>
 }>()
+
+// 直接用全局 i18n（测试环境不装插件也能挂载）；composer.t 对 locale 变化是响应式的
+const t = i18n.global.t
 
 interface TestResult {
   success: boolean
@@ -44,7 +48,7 @@ async function run() {
 
 <template>
   <n-space align="center" :size="8" :wrap="false">
-    <n-button size="small" :loading="loading" @click="run">Test</n-button>
+    <n-button size="small" :loading="loading" @click="run">{{ t('common.test') }}</n-button>
     <n-tooltip v-if="result" trigger="hover">
       <template #trigger>
         <n-tag

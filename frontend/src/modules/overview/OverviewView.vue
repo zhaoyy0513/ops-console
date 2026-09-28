@@ -67,17 +67,17 @@ function fmtTime(iso: string): string {
       <n-space align="center" :size="12">
         <span style="font-size: 16px; font-weight: 600">{{ data?.site.name ?? siteStore.currentSiteId }}</span>
         <status-badge v-if="data" :status="data.overall" />
-        <n-button size="small" :loading="loading" @click="refresh">立即检查</n-button>
+        <n-button size="small" :loading="loading" @click="refresh">{{ $t('overview.checkNow') }}</n-button>
         <tab-help topic="overview" />
         <span v-if="data?.checked_at" style="color: #999; font-size: 12px">
-          上次检查 {{ fmtTime(data.checked_at) }}（后台每 30 秒）
+          {{ $t('overview.lastCheck', { time: fmtTime(data.checked_at) }) }}
         </span>
       </n-space>
     </n-card>
 
     <n-space v-if="data" :size="12">
-      <n-card v-for="(meta, kind) in KIND_META" :key="kind" size="small"
-        :title="meta.label" style="flex: 1; cursor: pointer" @click="goIssueModule(kind)">
+      <n-card v-for="(_, kind) in KIND_META" :key="kind" size="small"
+        :title="$t(`tabs.${kind}`)" style="flex: 1; cursor: pointer" @click="goIssueModule(kind)">
         <div class="tile">
           <span class="total">{{ data.summary[kind as keyof typeof data.summary].total }}</span>
           <span class="dist">
@@ -90,15 +90,15 @@ function fmtTime(iso: string): string {
       </n-card>
     </n-space>
 
-    <n-card v-if="data?.issues?.length" size="small" title="异常摘要">
+    <n-card v-if="data?.issues?.length" size="small" :title="$t('overview.issues')">
       <n-table :single-line="false" size="small">
         <thead>
-          <tr><th style="width: 90px">级别</th><th style="width: 90px">类型</th><th>资源</th><th>详情</th><th style="width: 150px">检查时间</th></tr>
+          <tr><th style="width: 90px">{{ $t('overview.colLevel') }}</th><th style="width: 90px">{{ $t('overview.colType') }}</th><th>{{ $t('overview.colResource') }}</th><th>{{ $t('overview.colDetail') }}</th><th style="width: 150px">{{ $t('overview.colCheckedAt') }}</th></tr>
         </thead>
         <tbody>
           <tr v-for="i in data.issues" :key="i.kind + i.id">
             <td><status-badge :status="i.status" /></td>
-            <td>{{ KIND_META[i.kind]?.label ?? i.kind }}</td>
+            <td>{{ KIND_META[i.kind] ? $t(`tabs.${i.kind}`) : i.kind }}</td>
             <td>{{ i.name }}</td>
             <td>{{ i.message }}</td>
             <td>{{ fmtTime(i.checked_at) }}</td>
@@ -107,13 +107,13 @@ function fmtTime(iso: string): string {
       </n-table>
     </n-card>
 
-    <n-card v-if="data" size="small" title="最近操作">
+    <n-card v-if="data" size="small" :title="$t('overview.recentOps')">
       <template #header-extra>
-        <n-button size="tiny" quaternary @click="router.push('/audit')">全部日志</n-button>
+        <n-button size="tiny" quaternary @click="router.push('/audit')">{{ $t('overview.allLogs') }}</n-button>
       </template>
       <n-table :single-line="false" size="small">
         <thead>
-          <tr><th style="width: 130px">时间</th><th>资源</th><th>操作</th><th>目标</th><th style="width: 90px">结果</th></tr>
+          <tr><th style="width: 130px">{{ $t('overview.colTime') }}</th><th>{{ $t('overview.colResource') }}</th><th>{{ $t('overview.colOperation') }}</th><th>{{ $t('overview.colTarget') }}</th><th style="width: 90px">{{ $t('overview.colResult') }}</th></tr>
         </thead>
         <tbody>
           <tr v-for="(op, idx) in data.recent_ops" :key="idx">
@@ -126,7 +126,7 @@ function fmtTime(iso: string): string {
             </td>
           </tr>
           <tr v-if="!data.recent_ops.length">
-            <td colspan="5" style="text-align: center; color: #999">暂无操作记录</td>
+            <td colspan="5" style="text-align: center; color: #999">{{ $t('overview.noOps') }}</td>
           </tr>
         </tbody>
       </n-table>

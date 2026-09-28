@@ -118,22 +118,22 @@ watch(instanceId, load)
   <n-space vertical :size="12">
     <n-card size="small">
       <n-space align="center" :size="12" :wrap="false">
-        <span>Robot 实例</span>
+        <span>{{ $t('robot.instance') }}</span>
         <n-select v-model:value="instanceId" size="small" style="width: 240px"
-          placeholder="选择 Robot 接入实例" :options="instances" />
-        <n-button size="small" :loading="loading" @click="load">刷新</n-button>
+          :placeholder="$t('robot.selectInstance')" :options="instances" />
+        <n-button size="small" :loading="loading" @click="load">{{ $t('common.refresh') }}</n-button>
         <tab-help topic="robot" />
-        <span style="color: #999; font-size: 12px">不同实例可配置字段映射（站点管理 → 资源 → Robot）</span>
+        <span style="color: #999; font-size: 12px">{{ $t('robot.mappingHint') }}</span>
       </n-space>
     </n-card>
 
-    <n-card size="small" :title="`Robots（${REFRESH_SECONDS}s auto refresh）`">
+    <n-card size="small" :title="$t('robot.robotsTitle', { n: REFRESH_SECONDS })">
       <n-table :single-line="false" size="small">
         <thead>
           <tr>
-            <!-- 表头由 robot/fields.ts 公用定义驱动（与字段映射配置同源） -->
-            <th v-for="f in ROBOT_FIELDS" :key="f.key">{{ f.label }}</th>
-            <th style="width: 80px">Action</th>
+            <!-- 表头由 robot/fields.ts 公用定义驱动（与字段映射配置同源），文案随语言切换 -->
+            <th v-for="f in ROBOT_FIELDS" :key="f.key">{{ $t(`robot.fields.${f.key}`) }}</th>
+            <th style="width: 80px">{{ $t('robot.action') }}</th>
           </tr>
         </thead>
         <tbody>
@@ -150,11 +150,11 @@ watch(instanceId, load)
               </template>
               <template v-else>{{ (r as any)[f.key] ?? '-' }}</template>
             </td>
-            <td><n-button size="tiny" @click="openDetail(r)">Detail</n-button></td>
+            <td><n-button size="tiny" @click="openDetail(r)">{{ $t('robot.detail') }}</n-button></td>
           </tr>
           <tr v-if="!robots.length && !loading">
             <td :colspan="ROBOT_FIELDS.length + 1" style="text-align: center; color: #999">
-              {{ instanceId ? 'No robot data for this instance' : '暂无 Robot 实例，请在「站点管理 → 资源」中添加' }}
+              {{ instanceId ? $t('robot.emptyInstance') : $t('robot.emptyNone') }}
             </td>
           </tr>
         </tbody>
@@ -163,18 +163,18 @@ watch(instanceId, load)
 
     <!-- 详情弹窗：基础信息 + 完整 JSON -->
     <n-modal v-model:show="detailShow" preset="card"
-      :title="`Robot · ${detail?.id ?? ''}`" style="width: 640px">
+      :title="$t('robot.detailTitle', { id: detail?.id ?? '' })" style="width: 640px">
       <template v-if="detail">
         <n-table :single-line="false" size="small">
           <tbody>
-            <tr><th style="width: 140px">Robot Code</th><td style="font-family: ui-monospace, monospace">{{ detail.id ?? '-' }}</td></tr>
-            <tr><th>Robot Name</th><td>{{ detail.name ?? '-' }}</td></tr>
-            <tr><th>Battery</th><td>{{ detail.battery ?? '-' }}{{ detail.battery != null ? '%' : '' }}</td></tr>
-            <tr><th>Position</th><td>{{ detail.station ?? '-' }}</td></tr>
-            <tr><th>Last Update</th><td>{{ fmtTime(detail.last_update) }}</td></tr>
+            <tr><th style="width: 140px">{{ $t('robot.robotCode') }}</th><td style="font-family: ui-monospace, monospace">{{ detail.id ?? '-' }}</td></tr>
+            <tr><th>{{ $t('robot.robotName') }}</th><td>{{ detail.name ?? '-' }}</td></tr>
+            <tr><th>{{ $t('robot.battery') }}</th><td>{{ detail.battery ?? '-' }}{{ detail.battery != null ? '%' : '' }}</td></tr>
+            <tr><th>{{ $t('robot.position') }}</th><td>{{ detail.station ?? '-' }}</td></tr>
+            <tr><th>{{ $t('robot.lastUpdate') }}</th><td>{{ fmtTime(detail.last_update) }}</td></tr>
           </tbody>
         </n-table>
-        <div style="margin: 14px 0 6px; color: #666; font-size: 13px">Raw JSON</div>
+        <div style="margin: 14px 0 6px; color: #666; font-size: 13px">{{ $t('robot.rawJson') }}</div>
         <pre class="detail-json">{{ detailJson }}</pre>
       </template>
     </n-modal>

@@ -2,15 +2,19 @@
 import { mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import CountdownConfirm from './CountdownConfirm.vue'
+import { i18n, setLocale } from '../i18n'
 
-beforeEach(() => vi.useFakeTimers())
+beforeEach(() => {
+  vi.useFakeTimers()
+  setLocale('en') // 组件文案已迁移 i18n；断言基于英文
+})
 afterEach(() => vi.useRealTimers())
 
 describe('CountdownConfirm', () => {
   async function open(seconds = 5) {
     const wrapper = mount(CountdownConfirm, {
       props: { label: 'Delete', target: 'robot:001', seconds },
-      global: { stubs: { teleport: true } },
+      global: { plugins: [i18n], stubs: { teleport: true } },
     })
     await wrapper.find('button').trigger('click') // 打开确认框
     return wrapper

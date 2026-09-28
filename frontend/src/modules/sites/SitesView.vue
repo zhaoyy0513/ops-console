@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import {
   NButton,
@@ -21,6 +22,7 @@ import SiteResourcesDrawer from './SiteResourcesDrawer.vue'
 
 const router = useRouter()
 const message = useMessage()
+const { t } = useI18n()
 const siteStore = useSiteStore()
 
 const showModal = ref(false)
@@ -51,7 +53,7 @@ function openEdit(site: Site) {
 
 async function save() {
   if (!form.value.name.trim()) {
-    message.warning('站点名称必填')
+    message.warning(t('sites.nameRequired'))
     return
   }
   try {
@@ -59,7 +61,7 @@ async function save() {
       await sitesApi.update(editing.value.id, form.value)
     } else {
       const site = await sitesApi.create(form.value)
-      message.success('已创建，去配置资源？')
+      message.success(t('sites.created'))
       drawerSite.value = site
       drawerShow.value = true
     }
@@ -78,7 +80,7 @@ async function toggle(site: Site) {
 async function remove(site: Site) {
   try {
     await sitesApi.remove(site.id)
-    message.success('已删除')
+    message.success(t('sites.deleted'))
     await load()
   } catch (e) {
     message.error((e as Error).message)
@@ -96,19 +98,19 @@ function goConsole(site: Site) {
 </script>
 
 <template>
-  <n-card title="站点管理" size="small">
+  <n-card :title="$t('sites.title')" size="small">
     <template #header-extra>
-      <n-button size="small" type="primary" @click="openCreate">新建站点</n-button>
+      <n-button size="small" type="primary" @click="openCreate">{{ $t('sites.newSite') }}</n-button>
     </template>
 
     <n-table :bordered="false" :single-line="false" size="small">
       <thead>
         <tr>
           <th>ID</th>
-          <th>名称</th>
-          <th>描述</th>
-          <th style="width: 90px">启用</th>
-          <th style="width: 260px">操作</th>
+          <th>{{ $t('common.name') }}</th>
+          <th>{{ $t('sites.desc') }}</th>
+          <th style="width: 90px">{{ $t('common.enabled') }}</th>
+          <th style="width: 260px">{{ $t('common.actions') }}</th>
         </tr>
       </thead>
       <tbody>
@@ -119,20 +121,20 @@ function goConsole(site: Site) {
           <td><n-switch size="small" :value="s.enabled" @update:value="toggle(s)" /></td>
           <td>
             <n-space :size="4">
-              <n-button size="tiny" @click="openResources(s)">资源</n-button>
-              <n-button size="tiny" @click="goConsole(s)">进入</n-button>
-              <n-button size="tiny" @click="openEdit(s)">编辑</n-button>
+              <n-button size="tiny" @click="openResources(s)">{{ $t('sites.resourcesBtn') }}</n-button>
+              <n-button size="tiny" @click="goConsole(s)">{{ $t('sites.enterBtn') }}</n-button>
+              <n-button size="tiny" @click="openEdit(s)">{{ $t('common.edit') }}</n-button>
               <n-popconfirm @positive-click="remove(s)">
                 <template #trigger>
-                  <n-button size="tiny" type="error" ghost>删除</n-button>
+                  <n-button size="tiny" type="error" ghost>{{ $t('common.delete') }}</n-button>
                 </template>
-                删除站点 {{ s.name }} 及其全部资源配置？
+                {{ $t('sites.deleteConfirm', { name: s.name }) }}
               </n-popconfirm>
             </n-space>
           </td>
         </tr>
         <tr v-if="!sites.length">
-          <td colspan="5" style="text-align: center; color: #999">暂无站点，点击右上角新建</td>
+          <td colspan="5" style="text-align: center; color: #999">{{ $t('sites.empty') }}</td>
         </tr>
       </tbody>
     </n-table>
@@ -141,24 +143,24 @@ function goConsole(site: Site) {
   <n-modal
     v-model:show="showModal"
     preset="card"
-    :title="editing ? `编辑站点 · ${editing.name}` : '新建站点'"
+    :title="editing ? $t('sites.editTitle', { name: editing.name }) : $t('sites.newSite')"
     style="width: 480px"
   >
     <n-form label-placement="left" label-width="70">
-      <n-form-item label="名称">
-        <n-input v-model:value="form.name" placeholder="如：深圳测试站" />
+      <n-form-item :label="$t('common.name')">
+        <n-input v-model:value="form.name" :placeholder="$t('sites.namePh')" />
       </n-form-item>
-      <n-form-item label="描述">
+      <n-form-item :label="$t('sites.desc')">
         <n-input v-model:value="form.description" type="textarea" :rows="2" />
       </n-form-item>
-      <n-form-item label="启用">
+      <n-form-item :label="$t('common.enabled')">
         <n-switch v-model:value="form.enabled" />
       </n-form-item>
     </n-form>
     <template #footer>
       <n-space justify="end">
-        <n-button @click="showModal = false">取消</n-button>
-        <n-button type="primary" @click="save">保存</n-button>
+        <n-button @click="showModal = false">{{ $t('common.cancel') }}</n-button>
+        <n-button type="primary" @click="save">{{ $t('common.save') }}</n-button>
       </n-space>
     </template>
   </n-modal>

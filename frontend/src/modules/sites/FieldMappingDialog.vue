@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { NButton, NDrawer, NDrawerContent, NInput, NModal, NRadio, NSelect, NSpace, NSpin, NTable, useMessage } from 'naive-ui'
 import { ROBOT_FIELDS } from '../robot/fields'
 
@@ -19,6 +20,7 @@ const emit = defineEmits<{ (e: 'update:show', v: boolean): void; (e: 'saved'): v
 const BIZ_FIELDS = ROBOT_FIELDS
 
 const message = useMessage()
+const { t } = useI18n()
 const loading = ref(false)
 const saving = ref(false)
 const jsonFields = ref<string[]>([])
@@ -65,7 +67,7 @@ function preview(key: string): string {
   if (!sample.value) return '-'
   const tpl = templates.value[key]?.trim()
   const b = bindings.value[key]
-  if (!tpl && !b) return '未配置'
+  if (!tpl && !b) return t('fieldmap.unconfigured')
   let v: unknown
   if (tpl) {
     v = tpl.replace(/\{(\w+)\}/g, (_, f) => String(sample.value?.[f] ?? ''))
@@ -127,13 +129,13 @@ async function openClone() {
 function applyClone() {
   const src = cloneList.value.find((x) => `${x.site_id}/${x.robot_id}` === cloneSelected.value)
   if (!src) {
-    message.warning('请先选择要克隆的映射来源')
+    message.warning(t('fieldmap.pickSource'))
     return
   }
   applyMapping(src.field_map, src.value_map)
   robotKey.value = `${robotKey.value}#clone`  // 强制重建控件，确保覆盖/清空立即生效
   cloneShow.value = false
-  message.success(`已克隆 ${src.site_name} / ${src.robot_name} 的映射配置（保存后生效）`)
+  message.success(t('fieldmap.cloned', { site: src.site_name, robot: src.robot_name }))
 }
 
 /** 映射配置 -> 表单回显（fetchSample 与克隆共用） */
@@ -178,7 +180,7 @@ async function save() {
       field_map: Object.keys(clean).length ? clean : null,
       value_map: Object.keys(vClean).length ? vClean : null,
     })
-    message.success('字段映射已保存')
+    message.success(t('fieldmap.mappingSaved'))
     emit('update:show', false)
     emit('saved')
   } catch (e) {
@@ -190,19 +192,17 @@ async function save() {
 <template>
   <n-drawer :show="props.show" :width="920" placement="right"
     @update:show="emit('update:show', $event)">
-    <n-drawer-content :title="`字段映射 · ${props.robot?.name ?? ''}`" closable>
+    <n-drawer-content :title="$t('fieldmap.title', { name: props.robot?.name ?? '' })" closable>
       <n-spin :show="loading">
         <p style="margin-bottom: 12px; color: #666; font-size: 13px">
-          绑定字段 = 直接取该 JSON 字段的值；模板 = 按模板拼接，用 <code>{x}</code> 引用 JSON 字段（如 <code>({x},{y})</code> 合成坐标）；
-          值映射 = 把取到的值翻译成展示文本（每行一条 <code>1=CREATE</code>，也可逗号分隔），未命中显示原值。
-          <b>绑定与模板都填时模板优先</b>；都留空则该字段不展示。
+          {{ $t('fieldmap.intro') }}
         </p>
         <div class="field-groups">
           <div v-for="f in BIZ_FIELDS" :key="f.key" class="field-group">
-            <div class="field-title">{{ f.label }}</div>
+            <div class="field-title">{{ $t(`robot.fields.${f.key}`) }}</div>
             <div class="field-controls">
               <div class="f-item">
-                <div class="f-label">绑定 JSON 字段</div>
+                <div class="f-label">{{ $t('fieldmap.bindLabel') }}</div>
                 <!-- key 绑定 robotKey：切换实例时销毁重建，杜绝上一个 Robot 的内容/高度残留 -->
                 <n-select
                   :key="`b-${robotKey}-${f.key}`"
@@ -211,31 +211,31 @@ async function save() {
                   clearable
                   filterable
                   :options="jsonFields.map((jf) => ({ label: jf, value: jf }))"
-                  placeholder="请选择"
+                  :placeholder="$t('fieldmap.selectPh')"
                   style="width: 100%"
                 />
               </div>
               <div class="f-item">
-                <div class="f-label">模板（优先）</div>
+                <div class="f-label">{{ $t('fieldmap.tplLabel') }}</div>
                 <n-input
                   :key="`t-${robotKey}-${f.key}`"
                   v-model:value="templates[f.key]"
                   size="small"
-                  placeholder="如 ({x},{y})"
+                  :placeholder="$t('fieldmap.tplPh')"
                 />
               </div>
               <div class="f-item">
-                <div class="f-label">值映射（如 1=CREATE）</div>
+                <div class="f-label">{{ $t('fieldmap.vmLabel') }}</div>
                 <n-input
                   :key="`v-${robotKey}-${f.key}`"
                   v-model:value="valueMaps[f.key]"
                   type="textarea"
                   :rows="1"
-                  placeholder="如 1=CREATE（可拖拽右下角扩大）"
+                  :placeholder="$t('fieldmap.vmPh')"
                 />
               </div>
               <div class="f-item">
-                <div class="f-label">当前值预览</div>
+                <div class="f-label">{{ $t('fieldmap.previewLabel') }}</div>
                 <div class="preview mono">{{ preview(f.key) }}</div>
               </div>
             </div>
@@ -244,24 +244,24 @@ async function save() {
       </n-spin>
       <template #footer>
         <div style="display: flex; align-items: center; gap: 10px; width: 100%">
-          <n-button style="background: #f08c00; color: #fff" @click="openClone">克隆</n-button>
+          <n-button style="background: #f08c00; color: #fff" @click="openClone">{{ $t('fieldmap.clone') }}</n-button>
           <div style="flex: 1" />
-          <n-button @click="emit('update:show', false)">取消</n-button>
-          <n-button type="primary" :loading="saving" @click="save">保存映射</n-button>
+          <n-button @click="emit('update:show', false)">{{ $t('common.cancel') }}</n-button>
+          <n-button type="primary" :loading="saving" @click="save">{{ $t('fieldmap.saveMapping') }}</n-button>
         </div>
       </template>
     </n-drawer-content>
   </n-drawer>
 
   <!-- 克隆来源选择：列出全部站点的 Robot 映射配置 -->
-  <n-modal v-model:show="cloneShow" preset="card" title="克隆映射配置" style="width: 520px">
+  <n-modal v-model:show="cloneShow" preset="card" :title="$t('fieldmap.cloneTitle')" style="width: 520px">
     <p style="margin-bottom: 10px; color: #666; font-size: 13px">
-      选择一个来源实例，其绑定/模板/值映射会回显到当前表单（保存后生效）。
+      {{ $t('fieldmap.cloneIntro') }}
     </p>
     <n-spin :show="cloneLoading">
       <n-table :single-line="false" size="small" class="clone-table">
         <thead>
-          <tr><th style="width: 50px">选择</th><th style="width: 40%">站点</th><th>Robot 名称</th></tr>
+          <tr><th style="width: 50px">{{ $t('fieldmap.pickCol') }}</th><th style="width: 40%">{{ $t('fieldmap.siteCol') }}</th><th>{{ $t('fieldmap.robotCol') }}</th></tr>
         </thead>
         <tbody>
           <tr v-for="x in cloneList" :key="x.site_id + '/' + x.robot_id"
@@ -273,15 +273,15 @@ async function save() {
             <td>{{ x.robot_name }}</td>
           </tr>
           <tr v-if="!cloneList.length && !cloneLoading">
-            <td colspan="2" style="text-align: center; color: #999">暂无可克隆的映射配置</td>
+            <td colspan="2" style="text-align: center; color: #999">{{ $t('fieldmap.noClone') }}</td>
           </tr>
         </tbody>
       </n-table>
     </n-spin>
     <template #footer>
       <n-space justify="end" :size="8">
-        <n-button size="small" @click="cloneShow = false">取消</n-button>
-        <n-button size="small" type="primary" :disabled="!cloneSelected" @click="applyClone">确认克隆</n-button>
+        <n-button size="small" @click="cloneShow = false">{{ $t('common.cancel') }}</n-button>
+        <n-button size="small" type="primary" :disabled="!cloneSelected" @click="applyClone">{{ $t('fieldmap.confirmClone') }}</n-button>
       </n-space>
     </template>
   </n-modal>

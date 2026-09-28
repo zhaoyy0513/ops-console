@@ -191,19 +191,31 @@ const topQueuesOption = computed(() => {
   }
 })
 
+const FREE_COLOR = '#c1c8d0'
+
+function pieTooltipFormatter(p: { name: string; value: number; percent: number }): string {
+  return `${p.name}<br/>${fmtBytes(p.value)}（${p.percent}%）`
+}
+
 const addrMemPie = computed(() => {
   const used = overview.value?.address_memory_usage
   const max = overview.value?.global_max_size
   if (!used || !max) return null
   return {
-    tooltip: { trigger: 'item' },
+    title: {
+      text: `${addrMemPct.value ?? '?'}%`,
+      left: 'center',
+      top: 'middle',
+      textStyle: { fontSize: 22, fontWeight: 700, color: pctColor(addrMemPct.value) },
+    },
+    tooltip: { trigger: 'item', formatter: pieTooltipFormatter },
     series: [{
       type: 'pie',
       radius: ['55%', '80%'],
       label: { show: false },
       data: [
         { name: 'Address Memory', value: used, itemStyle: { color: '#0b63ce' } },
-        { name: 'Free', value: Math.max(0, max - used), itemStyle: { color: '#e5e6eb' } },
+        { name: 'Free', value: Math.max(0, max - used), itemStyle: { color: FREE_COLOR } },
       ],
     }],
   }
@@ -220,14 +232,20 @@ const heapPieOption = computed(() => {
   const used = j?.heap_used ?? 0
   const max = j?.heap_max ?? 1
   return {
-    tooltip: { trigger: 'item' },
+    title: {
+      text: `${heapPct.value ?? '?'}%`,
+      left: 'center',
+      top: 'middle',
+      textStyle: { fontSize: 22, fontWeight: 700, color: pctColor(heapPct.value) },
+    },
+    tooltip: { trigger: 'item', formatter: pieTooltipFormatter },
     series: [{
       type: 'pie',
       radius: ['55%', '80%'],
       label: { show: false },
       data: [
         { name: 'Used', value: used, itemStyle: { color: '#d46b08' } },
-        { name: 'Free', value: Math.max(0, max - used), itemStyle: { color: '#e5e6eb' } },
+        { name: 'Free', value: Math.max(0, max - used), itemStyle: { color: FREE_COLOR } },
       ],
     }],
   }
@@ -299,14 +317,15 @@ const worstQueueStatus = computed(() => {
   <n-space vertical :size="12">
     <n-card size="small">
       <n-space align="center" :size="12" :wrap="false">
-        <span>Broker</span>
+        <span>{{ $t('mq.broker') }}</span>
         <n-select v-model:value="instanceId" size="small" style="width: 220px"
-          placeholder="选择 Artemis" :options="instances" />
-        <n-button size="small" @click="load">刷新</n-button>
+          :placeholder="$t('mq.instance')" :options="instances" />
+        <n-button size="small" :title="$t('mq.refreshTitle')" @click="load">
+          {{ $t('mq.refresh') }}{{ $t('mq.refreshNote') }}
+        </n-button>
         <tab-help topic="mq" />
-        <!-- 状态标签带语义前缀，不再莫名其妙 -->
-        <span v-if="overview" class="badge-line">Broker <status-badge :status="overview.status" /></span>
-        <span v-if="queues.length" class="badge-line">队列最差状态 <status-badge :status="worstQueueStatus" /></span>
+        <span v-if="overview" class="badge-line">{{ $t('mq.brokerStatus') }} <status-badge :status="overview.status" /></span>
+        <span v-if="queues.length" class="badge-line">{{ $t('mq.worstQueueCol') }} <status-badge :status="worstQueueStatus" /></span>
       </n-space>
     </n-card>
 
@@ -321,70 +340,61 @@ const worstQueueStatus = computed(() => {
 
     <template v-else-if="overview">
       <div class="row">
-        <!-- Heap：生产 MQ 内存问题核心指标，突出显示 + 阈值着色 -->
-        <n-card size="small" class="grow-2" title="JVM Heap（约 5s 采样）">
-          <div class="heap-row">
-            <div class="heap-big" :style="{ color: pctColor(heapPct) }">
-              {{ heapPct ?? '?' }}<span class="unit">%</span>
-            </div>
-            <div class="heap-sub">
-              <div>{{ fmtBytes(overview.jvm.heap_used) }} / {{ fmtBytes(overview.jvm.heap_max) }}</div>
-              <div>NonHeap {{ fmtBytes(overview.jvm.non_heap_used) }} · 线程 {{ overview.jvm.threads ?? '-' }}</div>
-            </div>
+        <n-card size="small" class="grow-1" :title="$t('mq.addrMemTitle')">
+          <base-chart v-if="addrMemPie" :option="addrMemPie" height="220px" />
+          <div v-else style="color: #999; font-size: 12px; padding: 40px 0; text-align: center">
+            {{ $t('mq.noGlobalMax') }}
+          </div>
+          <div style="text-align: center; color: #666; font-size: 13px; margin-top: 4px">
+            {{ $t('mq.addrMemLine', { used: fmtBytes(overview?.address_memory_usage), max: fmtBytes(overview?.global_max_size) }) }}
+            <b v-if="addrMemPct != null">（{{ addrMemPct }}%）</b>
           </div>
         </n-card>
-        <n-card size="small" class="grow-1" title="Broker">
+        <n-card size="small" class="grow-1" :title="$t('mq.heapDistTitle')">
+          <base-chart :option="heapPieOption" height="220px" />
+          <div style="text-align: center; color: #666; font-size: 13px; margin-top: 4px">
+            {{ $t('mq.heapLine', { used: fmtBytes(overview?.jvm?.heap_used), max: fmtBytes(overview?.jvm?.heap_max) }) }}
+            <b v-if="heapPct != null">（{{ heapPct }}%）</b>
+          </div>
+        </n-card>
+        <n-card size="small" class="grow-1" :title="$t('mq.broker')">
           <div class="kv">
-            <span>版本 <b>{{ overview.version ?? '-' }}</b></span>
-            <span>运行 <b>{{ overview.uptime ?? '-' }}</b></span>
-            <span>连接 <b>{{ overview.connections ?? '-' }}</b></span>
-            <span v-if="overview.sessions != null">会话 <b>{{ overview.sessions }}</b></span>
-            <span>消费者 <b>{{ overview.consumers ?? '-' }}</b></span>
-            <span>地址 <b>{{ overview.addresses ?? '-' }}</b></span>
+            <span>{{ $t('mq.versionCol') }} <b>{{ overview.version ?? '-' }}</b></span>
+            <span>{{ $t('mq.uptimeCol') }} <b>{{ overview.uptime ?? '-' }}</b></span>
+            <span>{{ $t('mq.connectionsCol') }} <b>{{ overview.connections ?? '-' }}</b></span>
+            <span v-if="overview.sessions != null">{{ $t('mq.sessionsCol') }} <b>{{ overview.sessions }}</b></span>
+            <span>{{ $t('mq.consumersCol') }} <b>{{ overview.consumers ?? '-' }}</b></span>
+            <span>{{ $t('mq.addressesCol') }} <b>{{ overview.addresses ?? '-' }}</b></span>
+            <span>{{ $t('mq.nonHeap') }} <b>{{ fmtBytes(overview.jvm.non_heap_used) }}</b></span>
+            <span>{{ $t('mq.threads') }} <b>{{ overview.jvm.threads ?? '-' }}</b></span>
           </div>
         </n-card>
       </div>
 
       <div class="row">
-        <n-card size="small" class="grow-1" title="Heap 趋势（约 5s 采样）">
+        <n-card size="small" class="grow-1" :title="$t('mq.heapTrend')">
           <base-chart v-if="heapSeries.length" :option="heapOption" height="300px" />
           <div v-else style="color: #999; font-size: 12px; padding: 40px 0; text-align: center">
             采样收集中，几秒后出现趋势线
           </div>
         </n-card>
-        <n-card size="small" class="grow-1" title="队列堆积 Top 10">
+        <n-card size="small" class="grow-1" :title="$t('mq.topQueues')">
           <base-chart v-if="queues.length" :option="topQueuesOption" height="300px" />
           <div v-else style="color: #999; font-size: 12px; padding: 40px 0; text-align: center">无队列数据</div>
         </n-card>
       </div>
 
-      <div class="row">
-        <n-card size="small" class="grow-1" title="Address 内存（global-max-size 占比）">
-          <base-chart v-if="addrMemPie" :option="addrMemPie" height="220px" />
-          <div v-else style="color: #999; font-size: 12px; padding: 40px 0; text-align: center">
-            该 Broker 未报告 global-max-size
-          </div>
-          <div style="text-align: center; color: #666; font-size: 13px; margin-top: 4px">
-            地址内存 {{ fmtBytes(overview?.address_memory_usage) }} / {{ fmtBytes(overview?.global_max_size) }}
-            <b v-if="addrMemPct != null">（{{ addrMemPct }}%）</b>
-          </div>
-        </n-card>
-        <n-card size="small" class="grow-1" title="JVM Heap 分布">
-          <base-chart :option="heapPieOption" height="220px" />
-        </n-card>
-      </div>
-
-      <n-card size="small" title="Topics / Queues">
+      <n-card size="small" :title="`${$t('mq.queues')} (15s)`">
         <template #header-extra>
           <n-input v-model:value="queueFilter" size="small" style="width: 240px"
-            placeholder="模糊搜索队列名或 Address" />
+            :placeholder="$t('mq.search')" />
         </template>
         <div v-if="queuesError" class="pane-error">Queues 读取失败：{{ queuesError }}（每 15s 自动重试）</div>
         <n-table :single-line="false" size="small">
           <thead>
             <tr>
-              <th>Topic / Queue</th><th>所属 Address</th><th>状态</th><th>消息数</th><th>消费者</th>
-              <th>累计新增</th><th>操作</th>
+              <th>{{ $t('mq.queueCol') }}</th><th>{{ $t('mq.addressCol') }}</th><th>{{ $t('mq.statusCol') }}</th><th>{{ $t('mq.messagesCol') }}</th><th>{{ $t('mq.consumersCol') }}</th>
+              <th>{{ $t('mq.added') }}</th><th>{{ $t('common.actions') }}</th>
             </tr>
           </thead>
           <tbody>
@@ -406,12 +416,12 @@ const worstQueueStatus = computed(() => {
               <td>{{ q.messages_added ?? '-' }}</td>
               <td>
                 <n-space :size="4" :wrap="false">
-                  <n-button v-if="q._mbean" size="small" style="min-width: 64px" @click="viewMessages(q)">查看</n-button>
+                  <n-button v-if="q._mbean" size="small" style="min-width: 64px" @click="viewMessages(q)">{{ $t('mq.view') }}</n-button>
                   <!-- 清空积压：10 秒倒计时确认（破坏性操作，记录操作日志） -->
                   <countdown-confirm
                     v-if="q._mbean && (q.message_count ?? 0) > 0"
-                    label="清空"
-                    confirm-text="确认清空"
+                    :label="$t('mq.purge')"
+                    :confirm-text="$t('mq.purge')"
                     :target="q.name"
                     :seconds="10"
                     width="64px"
@@ -437,18 +447,16 @@ const worstQueueStatus = computed(() => {
     <n-modal v-model:show="messagesShow" preset="card"
       :title="`Messages · ${messagesQueue}`" style="width: 720px">
       <n-spin :show="messagesLoading">
-        <div class="msg-note">
-          当前 Artemis 版本（2.19）的管理接口不提供消息正文，以下为消息元数据与业务属性。
-        </div>
+        <div class="msg-note">{{ $t("mq.msgNote") }}</div>
         <div v-if="!messages.length && !messagesLoading" style="text-align: center; color: #999; padding: 24px 0">
-          队列为空，没有可预览的消息
+          {{ $t("mq.queueEmpty") }}
         </div>
         <div v-for="(m, i) in messages" :key="m.message_id ?? i" class="msg-block">
           <div class="msg-head">
             <span class="mono">#{{ i + 1 }}</span>
             <span class="mono" :title="String(m.message_id ?? '')">id: {{ m.message_id ?? '-' }}</span>
-            <span class="mono">优先级 {{ m.priority ?? '-' }}</span>
-            <span class="mono">{{ m.durable ? '持久化' : '非持久化' }}</span>
+            <span class="mono">{{ $t("mq.priorityCol") }} {{ m.priority ?? '-' }}</span>
+            <span class="mono">{{ m.durable ? $t("mq.durable") : $t("mq.nonDurable") }}</span>
             <span v-if="m.timestamp" class="mono">{{ new Date(m.timestamp).toLocaleString() }}</span>
           </div>
           <div v-if="Object.keys(m.properties ?? {}).length" class="msg-props">
@@ -457,7 +465,7 @@ const worstQueueStatus = computed(() => {
               <span class="mono">{{ v }}</span>
             </div>
           </div>
-          <div v-else class="msg-props" style="color: #999">（无业务属性）</div>
+          <div v-else class="msg-props" style="color: #999">{{ $t("mq.noProps") }}</div>
         </div>
       </n-spin>
     </n-modal>

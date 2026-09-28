@@ -72,21 +72,23 @@ function onSiteSelect(id: string) {
       <n-select
         class="site-select"
         size="small"
-        placeholder="选择站点"
+        :placeholder="$t('layout.selectSite')"
         :value="siteStore.currentSiteId || null"
         :options="siteStore.options"
         @update:value="onSiteSelect"
       />
       <div style="flex: 1" />
-      <n-button size="small" quaternary @click="router.push('/audit')">{{ $t('layout.opsLog') }}</n-button>
-      <n-button size="small" quaternary @click="router.push('/sites')">{{ $t('layout.sites') }}</n-button>
-      <n-button size="small" quaternary @click="toggleLocale">
-        {{ locale === 'zh' ? 'EN' : '中文' }}
-      </n-button>
+      <div class="header-actions">
+        <n-button size="small" quaternary @click="router.push('/audit')">{{ $t('layout.opsLog') }}</n-button>
+        <n-button size="small" quaternary @click="router.push('/sites')">{{ $t('layout.sites') }}</n-button>
+        <n-button size="small" quaternary @click="toggleLocale">
+          {{ locale === 'zh' ? 'EN' : '中文' }}
+        </n-button>
+      </div>
     </header>
     <div class="app-body">
       <aside class="app-sider">
-        <div v-if="!siteStore.currentSiteId" class="sider-hint">请先在右上角选择站点</div>
+        <div v-if="!siteStore.currentSiteId" class="sider-hint">{{ $t('layout.siderHint') }}</div>
         <n-menu :value="activeKey" :options="menuOptions" @update:value="onMenuSelect" />
       </aside>
       <main class="app-main">
@@ -102,5 +104,19 @@ function onSiteSelect(id: string) {
   color: #999;
   font-size: 12px;
   border-bottom: 1px solid #f0f1f3;
+}
+/* 顶栏操作条：三个按钮收进一个浅边框圆角容器，按钮本身去背景，悬停高亮 */
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid #e5e6eb;
+  border-radius: 6px;
+  padding: 2px 4px;
+}
+.header-actions :deep(.n-button) {
+  --n-color: transparent;
+  --n-color-hover: #f2f3f5;
+  --n-color-pressed: #e5e6eb;
 }
 </style>

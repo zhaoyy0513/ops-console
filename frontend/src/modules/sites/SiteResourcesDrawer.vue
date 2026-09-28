@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import {
   NButton,
   NDrawer,
@@ -30,7 +31,7 @@ const TYPES: Array<{ key: ResourceType; label: string }> = [
   { key: 'robots', label: 'Robot' },
 ]
 
-/** 各 tab 表格的列定义（编辑表单字段定义在 ResourceEditModal 内） */
+/** 各 tab 表格的列定义（编辑表单字段定义在 ResourceEditModal 内）；列头文案在 i18n fields.<key> */
 const COLUMN_DEFS: Record<ResourceType, Array<{ key: string; label: string }>> = {
   servers: [
     { key: 'host', label: 'Host' },
@@ -56,6 +57,7 @@ const COLUMN_DEFS: Record<ResourceType, Array<{ key: string; label: string }>> =
 }
 
 const message = useMessage()
+const { t } = useI18n()
 const activeType = ref<ResourceType>('servers')
 const items = ref<ResourceConfig[]>([])
 
@@ -146,7 +148,7 @@ function onSaved() {
 
 async function remove(item: ResourceConfig) {
   await sitesApi.removeResource(siteId.value, activeType.value, item.id)
-  message.success('已删除')
+  message.success(t('sites.deleted'))
   await load()
 }
 
@@ -162,18 +164,18 @@ const hasMapping = computed(() => activeType.value === 'robots')
 
 <template>
   <n-drawer :show="props.show" :width="720" @update:show="emit('update:show', $event)">
-    <n-drawer-content :title="`资源配置 · ${props.site?.name ?? ''}`" closable>
+    <n-drawer-content :title="$t('sites.resourcesTitle', { name: props.site?.name ?? '' })" closable>
       <n-tabs v-model:value="activeType" type="line" size="small">
         <n-tab-pane v-for="t in TYPES" :key="t.key" :name="t.key" :tab="t.label">
           <n-space justify="end" style="margin-bottom: 8px">
-            <n-button size="small" type="primary" @click="openCreate">新增</n-button>
+            <n-button size="small" type="primary" @click="openCreate">{{ $t('common.add') }}</n-button>
           </n-space>
           <n-table :bordered="false" :single-line="false" size="small">
             <thead>
               <tr>
-                <th>名称</th>
-                <th v-for="f in columns" :key="f.key">{{ f.label }}</th>
-                <th style="width: 210px">操作</th>
+                <th>{{ $t('common.name') }}</th>
+                <th v-for="f in columns" :key="f.key">{{ $t(`fields.${f.key}`) }}</th>
+                <th style="width: 210px">{{ $t('common.actions') }}</th>
               </tr>
             </thead>
             <tbody>
@@ -184,24 +186,24 @@ const hasMapping = computed(() => activeType.value === 'robots')
                 </td>
                 <td>
                   <n-space :size="4">
-                    <n-button size="tiny" @click="openEdit(item)">编辑</n-button>
+                    <n-button size="tiny" @click="openEdit(item)">{{ $t('common.edit') }}</n-button>
                     <n-button
                       v-if="hasMapping && item.id"
                       size="tiny"
                       @click="((mappingRobot = item), (mappingShow = true))"
-                    >字段映射</n-button>
+                    >{{ $t('sites.mappingBtn') }}</n-button>
                     <n-popconfirm @positive-click="remove(item)">
                       <template #trigger>
-                        <n-button size="tiny" type="error" ghost>删除</n-button>
+                        <n-button size="tiny" type="error" ghost>{{ $t('common.delete') }}</n-button>
                       </template>
-                      删除 {{ item.name }}？
+                      {{ $t('sites.deleteResourceConfirm', { name: item.name }) }}
                     </n-popconfirm>
                   </n-space>
                 </td>
               </tr>
               <tr v-if="!items.length">
                 <td :colspan="columns.length + 2" style="text-align: center; color: #999">
-                  暂无配置
+                  {{ $t('sites.emptyResources') }}
                 </td>
               </tr>
             </tbody>

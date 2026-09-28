@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import {
   NButton,
   NForm,
@@ -48,6 +49,7 @@ const TYPES: Record<string, string> = {
   robots: 'Robot',
 }
 
+/** 字段 label 文案在 i18n `fields.<key>`；ph 为各自占位 key（fieldmap/ph 见 sites 命名空间） */
 const FIELD_DEFS: Record<
   string,
   Array<{ key: string; label: string; kind?: 'number' | 'host-input' | 'host-select' | 'name-select'; ph?: string; required?: boolean }>
@@ -55,25 +57,25 @@ const FIELD_DEFS: Record<
   servers: [
     { key: 'host', label: 'Host', kind: 'host-input', required: true },
     { key: 'port', label: 'Port', kind: 'number' },
-    { key: 'username', label: '用户名', required: true },
-    { key: 'password', label: '密码', required: true },
+    { key: 'username', label: 'Username', required: true },
+    { key: 'password', label: 'Password', required: true },
   ],
   redis: [
-    { key: 'name', label: '名称', kind: 'name-select', required: true },
+    { key: 'name', label: 'Name', kind: 'name-select', required: true },
     { key: 'host', label: 'Host', kind: 'host-select', required: true },
     { key: 'port', label: 'Port', kind: 'number' },
-    { key: 'username', label: '用户名' },
-    { key: 'password', label: '密码' },
+    { key: 'username', label: 'Username' },
+    { key: 'password', label: 'Password' },
   ],
   mq: [
-    { key: 'name', label: '名称', kind: 'name-select', required: true },
+    { key: 'name', label: 'Name', kind: 'name-select', required: true },
     { key: 'host', label: 'Host', kind: 'host-select', required: true },
-    { key: 'port', label: 'Port', kind: 'number', ph: 'Jolokia HTTP 端口，默认 8161' },
-    { key: 'username', label: '用户名' },
-    { key: 'password', label: '密码' },
+    { key: 'port', label: 'Port', kind: 'number', ph: 'mqPortPh' },
+    { key: 'username', label: 'Username' },
+    { key: 'password', label: 'Password' },
   ],
   robots: [
-    { key: 'name', label: '名称', kind: 'name-select', required: true },
+    { key: 'name', label: 'Name', kind: 'name-select', required: true },
     { key: 'base_url', label: 'Base URL', required: true },
   ],
 }
@@ -86,6 +88,7 @@ const CREATE_DEFAULTS: Record<string, Record<string, unknown>> = {
 }
 
 const message = useMessage()
+const { t } = useI18n()
 const form = ref<Record<string, any>>({})
 const saving = ref(false)
 
@@ -114,12 +117,12 @@ async function save() {
   const target = props.target
   if (!target) return
   if (!String(form.value.name ?? '').trim()) {
-    message.warning('名称必填')
+    message.warning(t('common.nameRequired'))
     return
   }
   for (const f of fields.value) {
     if (f.required && !String(form.value[f.key] ?? '').trim()) {
-      message.warning(`${f.label} 必填`)
+      message.warning(t('sites.fieldRequired', { label: t(`fields.${f.key}`) }))
       return
     }
   }
@@ -133,7 +136,7 @@ async function save() {
     } else {
       await sitesApi.createResource(target.siteId, target.type, data)
     }
-    message.success('已保存')
+    message.success(t('sites.saved'))
     emit('update:show', false)
     emit('saved')
   } catch (e) {
@@ -148,30 +151,30 @@ async function save() {
   <n-modal
     :show="props.show"
     preset="card"
-    :title="isEdit ? `编辑 ${typeLabel} 配置` : `新增 ${typeLabel} 配置`"
+    :title="isEdit ? $t('sites.editResource', { type: typeLabel }) : $t('sites.newResource', { type: typeLabel })"
     style="width: 520px"
     @update:show="emit('update:show', $event)"
   >
     <n-form label-placement="left" label-width="90">
-      <n-form-item v-if="props.target?.type === 'servers'" label="名称" required>
-        <n-input v-model:value="form.name" placeholder="如：server-01" />
+      <n-form-item v-if="props.target?.type === 'servers'" :label="$t('common.name')" required>
+        <n-input v-model:value="form.name" :placeholder="$t('sites.newName')" />
       </n-form-item>
-      <n-form-item v-if="props.target?.type === 'servers'" label="启用">
+      <n-form-item v-if="props.target?.type === 'servers'" :label="$t('common.enabled')">
         <n-switch v-model:value="form.enabled" :default-value="true" />
       </n-form-item>
       <template v-for="(f, fi) in fields" :key="f.key">
-        <n-form-item v-if="fi === 1 && props.target?.type !== 'servers'" label="启用">
+        <n-form-item v-if="fi === 1 && props.target?.type !== 'servers'" :label="$t('common.enabled')">
           <n-switch v-model:value="form.enabled" :default-value="true" />
         </n-form-item>
         <n-form-item
-          :label="f.label"
+          :label="$t(`fields.${f.key}`)"
           :required="f.required"
         >
         <n-input-number
           v-if="f.kind === 'number'"
           v-model:value="form[f.key]"
           style="width: 100%"
-          :placeholder="f.ph"
+          :placeholder="f.ph ? $t(`sites.${f.ph}`) : undefined"
         />
         <n-select
           v-else-if="f.kind === 'name-select'"
@@ -180,10 +183,10 @@ async function save() {
           tag
           default-first-option
           :options="props.target?.nameOptions ?? []"
-          placeholder="选择已有 Server 的名称或直接输入"
+          :placeholder="$t('sites.nameSelectPh')"
         />
         <n-input v-else-if="f.kind === 'host-input'" v-model:value="form[f.key]"
-          placeholder="IP 或主机名" />
+          :placeholder="$t('sites.hostInputPh')" />
         <n-select
           v-else-if="f.kind === 'host-select'"
           v-model:value="form[f.key]"
@@ -191,7 +194,7 @@ async function save() {
           tag
           default-first-option
           :options="props.target?.hostOptions ?? []"
-          :placeholder="(props.target?.hostOptions ?? []).length ? '选择已有 Server 的 Host 或直接输入' : '输入地址'"
+          :placeholder="(props.target?.hostOptions ?? []).length ? $t('sites.hostSelectPh') : $t('sites.hostInputAddr')"
         />
         <n-input v-else v-model:value="form[f.key]" />
         </n-form-item>
@@ -200,14 +203,14 @@ async function save() {
         <div class="form-test">
           <resource-test-button :type="TEST_TYPE[props.target?.type ?? 'servers'] ?? 'server'" :config="form" />
           <span v-if="props.target?.type === 'mq'" class="hint">
-            平台经 Jolokia HTTP(8161) 读取管理数据
+            {{ $t('sites.jolokiaHint') }}
           </span>
         </div>
       </n-form-item>
       <n-form-item label=" ">
         <div class="form-actions">
-          <n-button @click="emit('update:show', false)">取消</n-button>
-          <n-button type="primary" :loading="saving" @click="save">保存</n-button>
+          <n-button @click="emit('update:show', false)">{{ $t('common.cancel') }}</n-button>
+          <n-button type="primary" :loading="saving" @click="save">{{ $t('common.save') }}</n-button>
         </div>
       </n-form-item>
     </n-form>

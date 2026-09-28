@@ -93,9 +93,10 @@ class ArtemisProvider:
                 )
             return body.get("value")
 
-    async def empty_queue(self, mbean: str) -> None:
-        """清空队列积压消息（Artemis emptyQueue 管理操作，用户明确要求的功能）。"""
-        await self.exec_operation(mbean, "emptyQueue")
+    async def empty_queue(self, mbean: str) -> Any:
+        """清空队列积压消息。Artemis 2.19 QueueControl 没有 emptyQueue 操作，
+        用 removeMessages(null)（filter=None 匹配全部），返回删除条数。"""
+        return await self.exec_operation(mbean, "removeMessages", [None])
 
     async def browse_queue(self, mbean: str, limit: int = 20) -> list[dict[str, Any]]:
         """浏览队列消息（Artemis 2.19 用 listMessages(filter)——没有 browse/getMessage）。

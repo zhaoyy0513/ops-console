@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import {
   NButton,
   NCard,
@@ -17,6 +18,7 @@ import { sshApi, type SshScript } from './api'
 
 const siteStore = useSiteStore()
 const message = useMessage()
+const { t } = useI18n()
 
 const scripts = ref<SshScript[]>([])
 const loading = ref(false)
@@ -58,6 +60,46 @@ async function load() {
   }
 }
 
+/** 编辑弹窗内的测试：先保存（新增会落库），再打开共用 console 执行 */
+const testing = ref(false)
+async function testScript() {
+  if (!siteStore.currentSiteId) return
+  testing.value = true
+  try {
+    let id = editingId.value
+    if (!id) {
+      const created = await sshApi.create(siteStore.currentSiteId, {
+        ...form.value, server_id: form.value.server_id ?? '',
+      })
+      id = created.id
+      editingId.value = id
+      message.success(t('ssh.saved'))
+      await load()
+    } else {
+      await sshApi.update(siteStore.currentSiteId, id, {
+        ...form.value, server_id: form.value.server_id ?? '',
+      })
+      await load()
+    }
+    // 用表单当前内容覆盖执行目标（与保存一致），打开共用 console 并执行
+    const script: SshScript = {
+      id,
+      name: form.value.name,
+      server_id: form.value.server_id ?? '',
+      content: form.value.content,
+      enabled: true,
+    }
+    editShow.value = false
+    runTarget.value = script
+    runShow.value = true
+    await confirmRun()
+  } catch (e) {
+    message.error((e as Error).message)
+  } finally {
+    testing.value = false
+  }
+}
+
 onMounted(() => {
   loadServers()
   load()
@@ -87,11 +129,11 @@ function openEdit(item: SshScript) {
 async function save() {
   if (!siteStore.currentSiteId) return
   if (!form.value.name.trim()) {
-    message.warning('名称必填')
+    message.warning(t('ssh.nameRequired'))
     return
   }
   if (!form.value.server_id) {
-    message.warning('必须绑定一个 Server')
+    message.warning(t('ssh.serverRequired'))
     return
   }
   try {
@@ -100,7 +142,7 @@ async function save() {
     } else {
       await sshApi.create(siteStore.currentSiteId, { ...form.value, server_id: form.value.server_id ?? '' })
     }
-    message.success('已保存')
+    message.success(t('ssh.saved'))
     editShow.value = false
     await load()
   } catch (e) {
@@ -111,7 +153,7 @@ async function save() {
 async function remove(item: SshScript) {
   if (!siteStore.currentSiteId) return
   await sshApi.remove(siteStore.currentSiteId, item.id)
-  message.success('已删除')
+  message.success(t('ssh.deleted'))
   await load()
 }
 
@@ -138,9 +180,9 @@ async function confirmRun() {
     const r = await sshApi.run(siteStore.currentSiteId, item.id)
     runOutput.value = (r.stdout || '') + (r.stderr ? `\n[stderr]\n${r.stderr}` : '')
     runTimedOut.value = r.timed_out
-    if (r.timed_out) message.warning('执行超时（60s 上限），输出为超时前收集的部分')
+    if (r.timed_out) message.warning(t('ssh.timeoutWarn'))
   } catch (e) {
-    runOutput.value = `执行失败：${(e as Error).message}`
+    runOutput.value = t('ssh.runFailed', { msg: (e as Error).message })
   } finally {
     running.value = false
   }
@@ -151,23 +193,21 @@ async function confirmRun() {
   <n-space vertical :size="12">
     <n-card size="small">
       <n-space align="center" :size="12" :wrap="false">
-        <span>SSH 脚本</span>
-        <n-button size="small" :loading="loading" @click="load">刷新</n-button>
-        <span style="color: #999; font-size: 12px">
-          脚本绑定 Server 后可在其上执行（bash -s 子进程，60s 超时，记录操作日志）
-        </span>
+        <span>{{ $t('ssh.title') }}</span>
+        <n-button size="small" :loading="loading" @click="load">{{ $t('common.refresh') }}</n-button>
+        <span style="color: #999; font-size: 12px">{{ $t('ssh.hint') }}</span>
       </n-space>
     </n-card>
 
-    <n-card size="small" title="Scripts">
+    <n-card size="small" :title="$t('ssh.scripts')">
       <template #header-extra>
-        <n-button size="small" type="primary" @click="openCreate">新增脚本</n-button>
+        <n-button size="small" type="primary" @click="openCreate">{{ $t('ssh.newScript') }}</n-button>
       </template>
       <n-spin :show="loading">
         <n-table :single-line="false" size="small">
           <thead>
             <tr>
-              <th>名称</th><th>绑定的 Server</th><th>脚本内容</th><th style="width: 150px">操作</th>
+              <th>{{ $t('ssh.colName') }}</th><th>{{ $t('ssh.colServer') }}</th><th>{{ $t('ssh.colContent') }}</th><th style="width: 150px">{{ $t('common.actions') }}</th>
             </tr>
           </thead>
           <tbody>
@@ -176,16 +216,16 @@ async function confirmRun() {
               <td>{{ serverName(item.server_id) }}</td>
               <td class="mono content-cell" :title="item.content">{{ item.content }}</td>
               <td>
-                <n-space :size="4">
-                  <n-button size="tiny" type="primary" ghost @click="askRun(item)">执行</n-button>
-                  <n-button size="tiny" @click="openEdit(item)">编辑</n-button>
-                  <countdown-confirm label="删除" :target="item.name" :seconds="5" @confirm="remove(item)" />
+                <n-space :size="4" :wrap="false">
+                  <n-button size="tiny" type="primary" ghost @click="askRun(item)">{{ $t('ssh.run') }}</n-button>
+                  <n-button size="tiny" @click="openEdit(item)">{{ $t('common.edit') }}</n-button>
+                  <countdown-confirm :label="$t('common.delete')" :target="item.name" :seconds="5" @confirm="remove(item)" />
                 </n-space>
               </td>
             </tr>
             <tr v-if="!scripts.length && !loading">
               <td colspan="4" style="text-align: center; color: #999">
-                暂无脚本，点击右上角「新增脚本」（执行目标从本站点的 Server 中选择）
+                {{ $t('ssh.empty') }}
               </td>
             </tr>
           </tbody>
@@ -195,57 +235,58 @@ async function confirmRun() {
 
     <!-- 编辑/新增脚本 -->
     <n-modal v-model:show="editShow" preset="card"
-      :title="editingId ? '编辑脚本' : '新增脚本'" style="width: 640px">
-      <n-form label-placement="left" label-width="90">
-        <n-form-item label="名称" required>
-          <n-input v-model:value="form.name" placeholder="如：disk-check" />
+      :title="editingId ? $t('ssh.editTitle') : $t('ssh.createTitle')" style="width: 640px">
+      <n-form label-placement="top">
+        <n-form-item :label="$t('ssh.formName')" required>
+          <n-input v-model:value="form.name" :placeholder="$t('ssh.namePh')" />
         </n-form-item>
-        <n-form-item label="绑定 Server" required>
+        <n-form-item :label="$t('ssh.bindServer')" required>
           <n-select
             v-model:value="form.server_id"
             filterable
             :options="servers"
-            placeholder="选择执行目标 Server"
+            :placeholder="$t('ssh.serverPh')"
           />
         </n-form-item>
-        <n-form-item label="脚本内容" required>
+        <n-form-item :label="$t('ssh.formContent')" required>
           <n-input
             v-model:value="form.content"
             type="textarea"
             :rows="10"
             :input-props="{ spellcheck: false }"
-            placeholder="bash 脚本内容（将通过 bash -s 在目标 Server 上执行）"
+            :placeholder="$t('ssh.contentPh')"
             class="mono"
           />
         </n-form-item>
       </n-form>
       <template #footer>
         <n-space justify="end" :size="8">
-          <n-button @click="editShow = false">取消</n-button>
-          <n-button type="primary" @click="save">保存</n-button>
+          <n-button :loading="testing" @click="testScript">{{ $t('ssh.test') }}</n-button>
+          <n-button @click="editShow = false">{{ $t('common.cancel') }}</n-button>
+          <n-button type="primary" @click="save">{{ $t('common.save') }}</n-button>
         </n-space>
       </template>
     </n-modal>
 
     <!-- 执行确认 + 黑色 console -->
     <n-modal v-model:show="runShow" preset="card"
-      :title="`执行脚本 · ${runTarget?.name ?? ''}`" style="width: 760px">
+      :title="$t('ssh.runTitle', { name: runTarget?.name ?? '' })" style="width: 760px">
       <p style="margin-bottom: 10px; color: #666; font-size: 13px">
-        将在 <b>{{ runTarget ? serverName(runTarget.server_id) : '' }}</b> 上执行该脚本，输出显示在下方 console。
+        {{ $t('ssh.runDesc', { server: runTarget ? serverName(runTarget.server_id) : '' }) }}
       </p>
       <div class="console mono">
         <template v-if="runOutput">{{ runOutput }}</template>
         <span v-else-if="running" class="console-running">running...</span>
-        <span v-else style="color: #6b7280">点击「确认执行」开始</span>
+        <span v-else style="color: #6b7280">{{ $t('ssh.clickToRun') }}</span>
       </div>
       <div v-if="runTimedOut" style="color: #d03050; font-size: 12px; margin-top: 8px">
-        执行超时（60s 上限），以上为超时前收集的输出
+        {{ $t('ssh.timeoutNote') }}
       </div>
       <template #footer>
         <n-space justify="end" :size="8">
-          <n-button @click="runShow = false">关闭</n-button>
+          <n-button @click="runShow = false">{{ $t('common.close') }}</n-button>
           <n-button type="error" :loading="running" :disabled="running" @click="confirmRun">
-            确认执行
+            {{ $t('ssh.confirmRun') }}
           </n-button>
         </n-space>
       </template>

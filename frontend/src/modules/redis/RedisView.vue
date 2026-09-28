@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, h, onMounted, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import {
   NButton,
   NCard,
@@ -32,6 +33,7 @@ import {
 
 const siteStore = useSiteStore()
 const message = useMessage()
+const { t } = useI18n()
 
 // ---------- 实例 / DB / 搜索 ----------
 const instances = ref<Array<{ label: string; value: string }>>([])
@@ -233,12 +235,12 @@ function locateJsonError(text: string): string {
       if (n.type.isError && pos === null) pos = n.from
     },
   })
-  if (pos === null) return 'JSON 语法错误'
+  if (pos === null) return t('redis.jsonSyntax')
   const before = text.slice(0, pos)
   const line = before.split('\n').length
   const col = pos - before.lastIndexOf('\n')
   const near = text.slice(Math.max(0, pos - 50), Math.min(text.length, pos + 50)).trim()
-  return `第 ${line} 行第 ${col} 列附近有语法错误：…${near}…`
+  return t('redis.jsonErrorAt', { line, col, near })
 }
 
 const jsonInvalid = computed(() => {
@@ -297,7 +299,7 @@ function switchFormat(v: string) {
       editText.value = JSON.stringify(JSON.parse(editText.value), null, 2)
       format.value = 'json'
     } else {
-      message.warning('当前内容不是合法 JSON，无法使用 Json 视图')
+      message.warning(t('redis.notJson'))
     }
   } else {
     format.value = 'text'
@@ -318,7 +320,7 @@ async function saveValue() {
   let value: unknown = editText.value
   if (d.type !== 'string') {
     if (!isJson(editText.value)) {
-      message.error(`JSON 格式错误：${jsonInvalid.value ?? '请检查后再保存'}`)
+      message.error(t('redis.jsonInvalidSave', { reason: jsonInvalid.value ?? t('redis.jsonCheck') }))
       return
     }
     value = JSON.parse(editText.value)
@@ -328,7 +330,7 @@ async function saveValue() {
     await operate(siteStore.currentSiteId, instanceId.value, {
       op: 'set', db: db.value, key: d.key, type: d.type, value,
     })
-    message.success('已保存')
+    message.success(t('redis.saved'))
     confirmShow.value = false
     await selectKey({ key: d.key, type: d.type })
     loadInfo()
@@ -345,7 +347,7 @@ async function deleteKey() {
   await operate(siteStore.currentSiteId, instanceId.value, {
     op: 'delete', db: db.value, key: d.key,
   })
-  message.success(`已删除 ${d.key}`)
+  message.success(t('redis.deleted', { key: d.key }))
   clearDetail()
   search(true)
   loadInfo()
@@ -357,7 +359,7 @@ async function applyTtl() {
   await operate(siteStore.currentSiteId, instanceId.value, {
     op: 'expire', db: db.value, key: d.key, ttl: editTtl.value ?? -1,
   })
-  message.success(editTtl.value ? `TTL 已设为 ${editTtl.value}s` : 'TTL 已清除')
+  message.success(editTtl.value ? t('redis.ttlSet', { n: editTtl.value }) : t('redis.ttlCleared'))
   detail.value = { ...d, ttl: editTtl.value ?? -1 }
 }
 
@@ -374,30 +376,28 @@ function fmtBytes(n: number | null | undefined): string {
 }
 
 function fmtTtl(ttl: number): string {
-  if (ttl === -1) return '永久'
+  if (ttl === -1) return t('redis.forever')
   if (ttl === -2) return '-'
   return `${ttl}s`
 }
 
-// ---------- info 指标（带中文解释） ----------
+// ---------- info 指标（带解释 tooltip，文案随语言切换） ----------
 const INFO_METRICS = computed(() => {
   const i = info.value
   if (!i) return []
+  const infoT = (k: string) => t(`redis.info.${k}.label`)
+  const infoTip = (k: string) => t(`redis.info.${k}.tip`)
   return [
-    { label: '版本', value: i.version ?? '?', tip: 'Redis 服务端版本' },
-    { label: '内存', value: fmtBytes(i.memory_used), tip: '当前数据占用的内存（含缓冲）' },
-    { label: '内存峰值', value: fmtBytes(i.memory_peak), tip: '历史最高内存，用于容量规划参考' },
-    { label: '碎片率', value: String(i.memory_fragmentation ?? '?'),
-      tip: '物理内存/逻辑内存之比：>1.5 碎片偏高（可考虑重启回收）；<1 表示内存不足已动用 swap，需警惕' },
-    { label: '客户端', value: String(i.connected_clients),
-      tip: '当前连接数（含本平台）；持续增长可能意味着连接泄漏' },
-    { label: '命中率', value: i.hit_rate != null ? `${i.hit_rate}%` : '?',
-      tip: '读请求直接命中的比例；长期偏低说明业务查询的 key 大多不存在，或缓存设计/容量有问题' },
-    { label: `Keys(DB${db.value})`, value: String(i.db_size), tip: '当前所选 DB 的 key 总数' },
-    { label: '过期删除', value: String(i.expired_keys), tip: '启动以来到期自动删除的 key 累计数' },
-    { label: '内存淘汰', value: String(i.evicted_keys),
-      tip: '内存满后按策略挤出的 key 数；>0 说明曾发生内存不足，被淘汰的 key 丢了' },
-    { label: '累计命令', value: String(i.total_commands_processed), tip: '启动以来处理的命令总数' },
+    { label: infoT('version'), value: i.version ?? '?', tip: infoTip('version') },
+    { label: infoT('memory'), value: fmtBytes(i.memory_used), tip: infoTip('memory') },
+    { label: infoT('memoryPeak'), value: fmtBytes(i.memory_peak), tip: infoTip('memoryPeak') },
+    { label: infoT('frag'), value: String(i.memory_fragmentation ?? '?'), tip: infoTip('frag') },
+    { label: infoT('clients'), value: String(i.connected_clients), tip: infoTip('clients') },
+    { label: infoT('hitRate'), value: i.hit_rate != null ? `${i.hit_rate}%` : '?', tip: infoTip('hitRate') },
+    { label: t('redis.info.keys.label', { db: db.value }), value: String(i.db_size), tip: infoTip('keys') },
+    { label: infoT('expired'), value: String(i.expired_keys), tip: infoTip('expired') },
+    { label: infoT('evicted'), value: String(i.evicted_keys), tip: infoTip('evicted') },
+    { label: infoT('commands'), value: String(i.total_commands_processed), tip: infoTip('commands') },
   ]
 })
 </script>
@@ -406,15 +406,15 @@ const INFO_METRICS = computed(() => {
   <n-space vertical :size="12">
     <n-card size="small">
       <n-space align="center" :size="12" :wrap="false">
-        <span>实例</span>
+        <span>{{ $t('redis.instance') }}</span>
         <n-select v-model:value="instanceId" size="small" style="width: 200px"
-          placeholder="选择 Redis" :options="instances" />
-        <span>DB</span>
+          :placeholder="$t('redis.selectRedis')" :options="instances" />
+        <span>{{ $t('redis.db') }}</span>
         <n-select v-model:value="db" size="small" style="width: 160px" :options="DB_OPTIONS"
           :render-label="renderDbLabel" @update:value="refreshDb" />
         <n-input v-model:value="pattern" size="small" style="width: 240px"
-          placeholder="模糊搜索，忽略大小写" @keyup.enter="refreshDb" />
-        <n-button size="small" :loading="loading" @click="refreshDb">刷新</n-button>
+          :placeholder="$t('redis.search')" @keyup.enter="refreshDb" />
+        <n-button size="small" :loading="loading" :title="$t('redis.manualRefreshTip')" @click="refreshDb">{{ $t('common.refresh') }}</n-button>
         <tab-help topic="redis" />
       </n-space>
     </n-card>
@@ -435,9 +435,9 @@ const INFO_METRICS = computed(() => {
 
     <!-- 左树右值（RedisDesktop 格局） -->
     <div class="split">
-      <n-card size="small" class="left-pane" title="Keys">
+      <n-card size="small" class="left-pane" :title="$t('redis.keys')">
         <template #header-extra>
-          <span style="color: #999; font-size: 12px">{{ keys.length }} 条</span>
+          <span style="color: #999; font-size: 12px">{{ $t('redis.keysCount', { n: keys.length }) }}</span>
         </template>
         <n-spin :show="loading">
           <div class="tree-scroll">
@@ -453,15 +453,15 @@ const INFO_METRICS = computed(() => {
               :render-label="renderLabel"
               @update:selected-keys="onTreeSelect"
             />
-            <div v-else style="text-align: center; color: #999; padding: 24px 0">无匹配 Key</div>
+            <div v-else style="text-align: center; color: #999; padding: 24px 0">{{ $t('redis.noMatch') }}</div>
           </div>
         </n-spin>
         <div v-if="cursor !== 0" style="text-align: center; margin-top: 8px">
-          <n-button size="small" :loading="loading" @click="search(false)">Load More</n-button>
+          <n-button size="small" :loading="loading" @click="search(false)">{{ $t('redis.loadMore') }}</n-button>
         </div>
       </n-card>
 
-      <n-card size="small" class="right-pane" title="Value">
+      <n-card size="small" class="right-pane" :title="$t('redis.value')">
         <n-spin :show="detailLoading">
           <template v-if="detail">
             <!-- 头部：彩色类型徽标 + key + TTL/内存徽章 + 刷新 -->
@@ -472,10 +472,10 @@ const INFO_METRICS = computed(() => {
               <span class="detail-key mono">{{ detail.key }}</span>
               <n-tag size="small" :bordered="false" round>TTL {{ fmtTtl(detail.ttl) }}</n-tag>
               <n-tag size="small" :bordered="false" round>
-                内存 {{ detail.memory_usage != null ? fmtBytes(detail.memory_usage) : '?' }}
+                {{ $t('redis.mem') }} {{ detail.memory_usage != null ? fmtBytes(detail.memory_usage) : '?' }}
               </n-tag>
               <div style="flex: 1" />
-              <n-button size="small" @click="refreshValue">刷新</n-button>
+              <n-button size="small" @click="refreshValue">{{ $t('common.refresh') }}</n-button>
             </div>
 
             <!-- Text / Json：CodeMirror 高亮 + 实时校验，两种视图都可直接编辑 -->
@@ -484,7 +484,7 @@ const INFO_METRICS = computed(() => {
                 <n-radio-button value="text">Text</n-radio-button>
                 <n-radio-button value="json">Json</n-radio-button>
               </n-radio-group>
-              <span v-if="jsonInvalid" class="json-error">JSON 错误：{{ jsonInvalid }}</span>
+              <span v-if="jsonInvalid" class="json-error">{{ $t('redis.jsonError') }}{{ jsonInvalid }}</span>
               <div style="flex: 1" />
             </div>
 
@@ -494,31 +494,31 @@ const INFO_METRICS = computed(() => {
 
             <!-- TTL / 删除 / 保存（按钮规格统一：small 实心） -->
             <div class="detail-actions">
-              <span>TTL(秒)</span>
+              <span>{{ $t('redis.ttlSec') }}</span>
               <n-input-number v-model:value="editTtl" size="small" :min="1" style="width: 130px"
-                placeholder="留空=清除" />
-              <n-button size="small" @click="applyTtl">应用 TTL</n-button>
+                :placeholder="$t('redis.ttlPh')" />
+              <n-button size="small" @click="applyTtl">{{ $t('redis.applyTtl') }}</n-button>
               <div style="flex: 1" />
-              <countdown-confirm label="Delete" :target="detail.key" :seconds="5" @confirm="deleteKey" />
-              <n-button size="small" type="primary" :loading="saving" @click="confirmShow = true">Save</n-button>
+              <countdown-confirm :label="$t('common.delete')" :target="detail.key" :seconds="5" @confirm="deleteKey" />
+              <n-button size="small" type="primary" :loading="saving" @click="confirmShow = true">{{ $t('common.save') }}</n-button>
             </div>
           </template>
           <div v-else style="text-align: center; color: #999; padding: 60px 0">
-            点击左侧 Key 查看详情
+            {{ $t('redis.clickHint') }}
           </div>
         </n-spin>
       </n-card>
     </div>
 
     <!-- 保存确认对话框（PRD §11.4） -->
-    <n-modal v-model:show="confirmShow" preset="card" title="确认保存" style="width: 520px">
-      <p>写入 Key：<b class="mono">{{ detail?.key }}</b></p>
-      <p>变更摘要：</p>
+    <n-modal v-model:show="confirmShow" preset="card" :title="$t('redis.confirmSave')" style="width: 520px">
+      <p>{{ $t('redis.writeKey') }} <b class="mono">{{ detail?.key }}</b></p>
+      <p>{{ $t('redis.changeSummary') }}</p>
       <pre class="summary mono">{{ changeSummary }}</pre>
       <template #footer>
         <div style="display: flex; justify-content: end; gap: 8px">
-          <n-button size="small" @click="confirmShow = false">取消</n-button>
-          <n-button size="small" type="primary" :loading="saving" @click="saveValue">确认写入</n-button>
+          <n-button size="small" @click="confirmShow = false">{{ $t('common.cancel') }}</n-button>
+          <n-button size="small" type="primary" :loading="saving" @click="saveValue">{{ $t('redis.confirmWrite') }}</n-button>
         </div>
       </template>
     </n-modal>
