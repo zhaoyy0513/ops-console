@@ -6,6 +6,10 @@ export interface SshScript {
   server_id: string
   content: string
   enabled: boolean
+  /** 非空 = 定时脚本（标准 5 段 cronie 格式） */
+  cron?: string | null
+  /** 定时开关（仅定时脚本有意义） */
+  sched_enabled?: boolean
   server_name?: string
 }
 

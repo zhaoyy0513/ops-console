@@ -1,8 +1,13 @@
-"""SSH 脚本模块：绑定 Server 的脚本管理与受控执行（站点级）。
+"""SSH 脚本模块：绑定 Server 的脚本管理、手动执行与 cron 定时调度（站点级）。
 
 脚本存储：ops:site:{site_id}:ssh_scripts Hash（id -> JSON）。
-执行：asyncssh 连接脚本绑定的 Server，脚本内容经 stdin 交给远端
-`bash -s` 子进程，收集 stdout/stderr 后返回（同步等待，60s 上限）。
+扩展字段：cron（非空=定时脚本，标准 5 段 cronie 格式）、sched_enabled
+（定时开关）。手动脚本（cron 为空）无启用语义。
+
+调度取舍（设计决策）：用平台内 APScheduler 而非系统 crontab——
+①不修改系统 crontab 无残留；②脚本删除/禁用即自动停；
+③执行结果与 oplog 天然归平台；④后端启动时从配置自动恢复调度。
+缺点：后端宕机期间定时任务暂停（平台为诊断工具定位，可接受）。
 """
 
 import json
@@ -25,15 +30,11 @@ def _key(site_id: str) -> str:
     return SCRIPTS_KEY.format(site_id=site_id)
 
 
-def _parse(raw: str) -> dict[str, Any]:
-    return json.loads(raw)
-
-
 async def list_scripts(site_id: str) -> list[dict[str, Any]]:
     await _require_site(site_id)
     raw = await get_platform_redis().hvals(_key(site_id))
     items = [json.loads(x) for x in raw]
-    return sorted(items, key=lambda s: s["name"])
+    return sorted(items, key=lambda s: (not s.get("cron"), s["name"]))
 
 
 async def get_script(site_id: str, script_id: str) -> dict[str, Any] | None:
@@ -48,7 +49,8 @@ async def create_script(site_id: str, data: dict[str, Any]) -> dict[str, Any]:
     script_id = data.get("id") or uuid.uuid4().hex[:8]
     if await r.hexists(_key(site_id), script_id):
         raise ValueError(f"script already exists: {script_id}")
-    data = {**data, "id": script_id}
+    # 新建的定时脚本强制不启用（保存不执行，表格 switch 打开才开始）
+    data = {**data, "id": script_id, "sched_enabled": False}
     await r.hset(_key(site_id), script_id, json.dumps(data, ensure_ascii=False))
     return data
 
@@ -75,10 +77,10 @@ async def _require_site(site_id: str) -> None:
         raise NotFound(f"site not found: {site_id}")
 
 
-async def run_script(site_id: str, script_id: str) -> dict[str, Any]:
+async def run_script(site_id: str, script_id: str, *, triggered: str = "manual") -> dict[str, Any]:
     """在绑定的 Server 上以远端 bash -s 子进程执行脚本，收集完整输出。
 
-    超时 60s；执行与结果记录操作日志（脚本名 + 目标 server）。
+    超时 60s；执行与结果记录操作日志（手动与定时触发均记录）。
     """
     script = await get_script(site_id, script_id)
     if not script:
@@ -117,15 +119,17 @@ async def run_script(site_id: str, script_id: str) -> dict[str, Any]:
         timed_out = True
     except (OSError, asyncssh.Error) as e:
         await oplog.record(site_id, f"ssh_scripts/{script_id}", "SSH_SCRIPT_RUN",
-                           target=script["name"], params={"server": server_cfg["host"]},
+                           target=script["name"],
+                           params={"server": server_cfg["host"], "triggered": triggered},
                            result="FAILED", error=str(e)[:200])
         raise NotFound(f"SSH 执行失败：{e}") from None
 
     await oplog.record(site_id, f"ssh_scripts/{script_id}", "SSH_SCRIPT_RUN",
                        target=script["name"],
-                       params={"server": server_cfg["host"], "timed_out": timed_out})
+                       params={"server": server_cfg["host"], "triggered": triggered,
+                               "timed_out": timed_out})
     return {
-        "stdout": stdout[-50_000:],  # 防超大输出撑爆前端
+        "stdout": stdout[-50_000:],
         "stderr": stderr[-10_000:],
         "timed_out": timed_out,
         "latency_ms": int((time.perf_counter() - started) * 1000),

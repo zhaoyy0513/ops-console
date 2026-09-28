@@ -2,16 +2,19 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from backend.app.modules.sites.service import NotFound
+from backend.app.modules.ssh import scheduling
 from backend.app.modules.ssh import service
 
 router = APIRouter(tags=["ssh-scripts"])
 
 
 class ScriptIn(BaseModel):
+    id: str | None = None  # 可自定义 id（不传自动生成）
     name: str
     server_id: str
     content: str
     enabled: bool = True
+    cron: str | None = None  # 非空 = 定时脚本（标准 5 段 cronie 格式）
 
 
 class ScriptUpdate(BaseModel):
@@ -19,6 +22,12 @@ class ScriptUpdate(BaseModel):
     server_id: str | None = None
     content: str | None = None
     enabled: bool | None = None
+    cron: str | None = None
+    sched_enabled: bool | None = None  # 定时开关（仅定时脚本有意义）
+
+
+class CronIn(BaseModel):
+    cron: str
 
 
 @router.get("/sites/{site_id}/ssh_scripts")
@@ -31,12 +40,15 @@ async def list_scripts(site_id: str) -> list[dict]:
 
 @router.post("/sites/{site_id}/ssh_scripts", status_code=201)
 async def create_script(site_id: str, data: ScriptIn) -> dict:
+    _validate_cron_field(data.cron)
     try:
-        return await service.create_script(site_id, data.model_dump())
+        item = await service.create_script(site_id, data.model_dump())
     except NotFound as e:
         raise HTTPException(status_code=404, detail=str(e)) from None
     except ValueError as e:
         raise HTTPException(status_code=409, detail=str(e)) from None
+    scheduling.sync_one(site_id, item)  # 新建强制 sched_enabled=False，sync 为 no-op
+    return item
 
 
 @router.put("/sites/{site_id}/ssh_scripts/{script_id}")
@@ -48,6 +60,8 @@ async def update_script(site_id: str, script_id: str, data: ScriptUpdate) -> dic
         raise HTTPException(status_code=404, detail=str(e)) from None
     if item is None:
         raise HTTPException(status_code=404, detail=f"script not found: {script_id}")
+    _validate_cron_field(item.get("cron"))
+    scheduling.sync_one(site_id, item)  # cron/开关变更后同步定时 job
     return item
 
 
@@ -57,16 +71,46 @@ async def delete_script(site_id: str, script_id: str) -> None:
         deleted = await service.delete_script(site_id, script_id)
     except NotFound as e:
         raise HTTPException(status_code=404, detail=str(e)) from None
+    scheduling.unschedule(site_id, script_id)
     if not deleted:
         raise HTTPException(status_code=404, detail=f"script not found: {script_id}")
 
 
 @router.post("/sites/{site_id}/ssh_scripts/{script_id}/run")
 async def run_script(site_id: str, script_id: str) -> dict:
-    """在绑定的 Server 上执行脚本（远端 bash -s 子进程，60s 上限，记录 oplog）。"""
+    """在绑定的 Server 上执行脚本（手动触发；60s 上限，记录 oplog）。"""
     try:
-        return await service.run_script(site_id, script_id)
+        return await service.run_script(site_id, script_id, triggered="manual")
     except NotFound as e:
         raise HTTPException(status_code=404, detail=str(e)) from None
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from None
+
+
+@router.post("/ssh/validate-cron")
+async def validate_cron(data: CronIn) -> dict:
+    """校验 cron 表达式并返回未来 3 次执行时间（标准 5 段 cronie 格式）。"""
+    from datetime import datetime, timezone
+
+    from croniter import croniter
+
+    try:
+        it = croniter(data.cron, datetime.now(timezone.utc))
+        next_times = [it.get_next(datetime) for _ in range(3)]
+    except (ValueError, KeyError) as e:
+        raise HTTPException(status_code=400, detail=f"无效 cron 表达式：{e}") from None
+    return {
+        "valid": True,
+        "next_runs": [t.isoformat(timespec="seconds") for t in next_times],
+    }
+
+
+def _validate_cron_field(cron: str | None) -> None:
+    if not cron:
+        return
+    from croniter import croniter
+
+    try:
+        croniter(cron)
+    except (ValueError, KeyError) as e:
+        raise HTTPException(status_code=400, detail=f"无效 cron 表达式：{e}") from None

@@ -66,3 +66,25 @@ async def test_script_crud_and_run(client):
     # 删除
     assert (await client.delete(f"/api/sites/sz/ssh_scripts/{sid}")).status_code == 204
     assert (await client.get("/api/sites/sz/ssh_scripts")).json() == []
+
+
+async def test_validate_cron_and_schedule_fields(client, fake_platform_redis, monkeypatch):
+    """cron 校验（未来 3 次）+ 定时字段随脚本存储。"""
+    r = await client.post("/api/ssh/validate-cron", json={"cron": "0 2 * * *"})
+    assert r.status_code == 200
+    assert len(r.json()["next_runs"]) == 3
+
+    r = await client.post("/api/ssh/validate-cron", json={"cron": "bad cron"})
+    assert r.status_code == 400
+
+    # 定时脚本落库：cron + sched_enabled 默认 False（新建不自动执行）
+    r = await client.post("/api/sites/sz/ssh_scripts", json={
+        "id": "cron-job", "name": "cron-job", "server_id": "srv1",
+        "content": "echo hi", "cron": "*/5 * * * *"})
+    assert r.status_code == 201
+    assert r.json()["sched_enabled"] is False
+
+    # 打开开关 → 调度注册
+    r = await client.put("/api/sites/sz/ssh_scripts/cron-job",
+                         json={"sched_enabled": True})
+    assert r.json()["sched_enabled"] is True

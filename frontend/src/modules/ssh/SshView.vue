@@ -13,6 +13,7 @@ import {
   useMessage,
 } from 'naive-ui'
 import { useSiteStore } from '../../stores/site'
+import api from '../../api'
 import { sshApi, type SshScript } from './api'
 
 const siteStore = useSiteStore()
@@ -25,11 +26,56 @@ const loading = ref(false)
 // 编辑弹窗状态
 const editShow = ref(false)
 const editingId = ref<string | null>(null)
-const form = ref<{ name: string; server_id: string | null; content: string }>({
+const form = ref<{
+  name: string
+  server_id: string | null
+  content: string
+  cron: string
+  sched_enabled: boolean
+}>({
   name: '',
   server_id: null,
   content: '',
+  cron: '',
+  sched_enabled: false,
 })
+
+/** 是否定时脚本：由 cron 输入框是否有内容决定 */
+const isCron = computed({
+  get: () => !!form.value.cron.trim(),
+  set: (v: boolean) => {
+    if (!v) form.value.cron = ''
+  },
+})
+
+const cronTesting = ref(false)
+const cronNextRuns = ref<string[]>([])
+const cronInvalid = ref(false)
+
+async function testCron() {
+  cronNextRuns.value = []
+  if (!form.value.cron.trim()) return
+  cronTesting.value = true
+  try {
+    const r = await api.post('/ssh/validate-cron', { cron: form.value.cron })
+    cronNextRuns.value = (r as any).next_runs
+    cronInvalid.value = false
+  } catch (e) {
+    cronNextRuns.value = []
+    cronInvalid.value = true
+  } finally {
+    cronTesting.value = false
+  }
+}
+
+async function toggleSched(item: SshScript, v: boolean) {
+  try {
+    const upd = await sshApi.update(siteStore.currentSiteId, item.id, { sched_enabled: v })
+    item.sched_enabled = (upd as any).sched_enabled
+  } catch (e) {
+    message.error((e as Error).message)
+  }
+}
 
 // Server 候选（绑定执行目标 + 名称联动候选）
 const servers = ref<Array<{ label: string; value: string }>>([])
@@ -119,13 +165,19 @@ const serverName = computed(
 
 function openCreate() {
   editingId.value = null
-  form.value = { name: '', server_id: servers.value[0]?.value ?? null, content: '' }
+  form.value = { name: '', server_id: servers.value[0]?.value ?? null, content: '', cron: '', sched_enabled: false }
   editShow.value = true
 }
 
 function openEdit(item: SshScript) {
   editingId.value = item.id
-  form.value = { name: item.name, server_id: item.server_id, content: item.content }
+  form.value = {
+    name: item.name,
+    server_id: item.server_id,
+    content: item.content,
+    cron: item.cron ?? '',
+    sched_enabled: !!item.sched_enabled,
+  }
   editShow.value = true
 }
 
@@ -182,6 +234,8 @@ function backToEdit() {
       name: runTarget.value.name,
       server_id: runTarget.value.server_id,
       content: runTarget.value.content,
+      cron: runTarget.value.cron ?? '',
+      sched_enabled: !!runTarget.value.sched_enabled,
     }
     editShow.value = true
   }
@@ -223,13 +277,23 @@ async function confirmRun() {
         <n-table :single-line="false" size="small">
           <thead>
             <tr>
-              <th>{{ $t('ssh.colName') }}</th><th>{{ $t('ssh.colServer') }}</th><th>{{ $t('ssh.colContent') }}</th><th style="width: 150px">{{ $t('common.actions') }}</th>
+              <th>{{ $t('ssh.colName') }}</th><th>{{ $t('ssh.colServer') }}</th><th style="width: 110px">{{ $t('ssh.colCron') }}</th><th style="width: 90px">{{ $t('ssh.colSched') }}</th><th>{{ $t('ssh.colContent') }}</th><th style="width: 150px">{{ $t('common.actions') }}</th>
             </tr>
           </thead>
           <tbody>
             <tr v-for="item in scripts" :key="item.id">
               <td style="font-weight: 600">{{ item.name }}</td>
               <td>{{ serverName(item.server_id) }}</td>
+              <td class="mono">{{ item.cron || '-' }}</td>
+              <td>
+                <n-switch
+                  v-if="item.cron"
+                  size="small"
+                  :value="item.sched_enabled"
+                  @update:value="(v: boolean) => toggleSched(item, v)"
+                />
+                <span v-else style="color: #999">-</span>
+              </td>
               <td class="mono content-cell" :title="item.content">{{ item.content }}</td>
               <td>
                 <n-space :size="4" :wrap="false">
@@ -260,6 +324,28 @@ async function confirmRun() {
       <n-form label-placement="top">
         <n-form-item :label="$t('ssh.formName')" required>
           <n-input v-model:value="form.name" :placeholder="$t('ssh.namePh')" />
+        </n-form-item>
+        <n-form-item :label="$t('ssh.isCron')">
+          <n-switch v-model:value="isCron" />
+        </n-form-item>
+        <n-form-item v-if="isCron" :label="$t('ssh.cronLabel')" :feedback="cronInvalid ? $t('ssh.cronInvalid') : undefined" :validation-status="cronInvalid ? 'error' : undefined">
+          <n-space vertical fill style="width: 100%">
+            <n-space align="center" :size="8">
+              <n-input
+                v-model:value="form.cron"
+                size="small"
+                :placeholder="$t('ssh.cronPh')"
+                class="mono"
+                style="flex: 1"
+                @blur="testCron"
+              />
+              <n-button size="small" :loading="cronTesting" @click="testCron">{{ $t('ssh.cronTest') }}</n-button>
+            </n-space>
+            <div v-if="cronNextRuns.length" style="font-size: 12px; color: #18a058">
+              {{ $t('ssh.cronNext') }}
+              <div v-for="(t, i) in cronNextRuns" :key="i" class="cron-run">{{ t }}</div>
+            </div>
+          </n-space>
         </n-form-item>
         <n-form-item :label="$t('ssh.bindServer')" required>
           <n-select
