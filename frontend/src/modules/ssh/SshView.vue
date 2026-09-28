@@ -441,5 +441,8 @@ async function confirmRun() {
 /* 操作列三按钮统一规格 */
 .act {
   min-width: 44px;
-}
+}  table {
+    width: 100%;
+    table-layout: fixed;
+  }
 </style>
