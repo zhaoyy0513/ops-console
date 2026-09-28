@@ -227,7 +227,7 @@ function pctColor(pct: number | null | undefined): string {
               <th>{{ $t('server.type') }}</th>
               <th>{{ $t('server.value') }}</th>
               <th>{{ $t('server.threshold') }}</th>
-              <th>{{ $t('server.detail') }}</th>
+              <th>{{ $t('server.detail') }}
             </tr>
           </thead>
           <tbody>
@@ -236,7 +236,7 @@ function pctColor(pct: number | null | undefined): string {
               <td>{{ issue.type }}</td>
               <td>{{ issue.value }}</td>
               <td>{{ issue.threshold }}</td>
-              <td>{{ issue.message }}</td>
+              <td>{{ $t(`server.issue_${issue.type}`, { value: issue.value, threshold: issue.threshold, mount: issue.mount ?? '-' }) }}</td>
             </tr>
           </tbody>
         </n-table>

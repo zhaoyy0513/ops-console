@@ -29,19 +29,23 @@ def merge_thresholds(resource: dict | None = None, site: dict | None = None) -> 
 
 
 def _issue(issues: list, warning: int, critical: int, value: float,
-           itype: str, message_critical: str, message_warning: str) -> None:
+           itype: str, message_critical: str, message_warning: str,
+           extra: dict | None = None) -> None:
     severity = "CRITICAL" if value >= critical else "WARNING" if value >= warning else None
     if severity:
         # 消息模板中的 {value} 在此格式化（模板在调用处传入，调用处拿不到 value）
         msg = (message_critical if severity == "CRITICAL" else message_warning).replace(
             "{value}", str(value))
-        issues.append({
+        issue = {
             "type": itype,
             "severity": severity,
             "value": value,
             "threshold": critical if severity == "CRITICAL" else warning,
             "message": msg,
-        })
+        }
+        if extra:
+            issue.update(extra)
+        issues.append(issue)
 
 
 def diagnose(metrics: dict[str, Any], thresholds: dict[str, int] | None = None) -> dict[str, Any]:
@@ -70,7 +74,8 @@ def diagnose(metrics: dict[str, Any], thresholds: dict[str, int] | None = None) 
         _issue(issues, t["disk_warning"], t["disk_critical"],
                pct, "DISK_HIGH",
                f"磁盘 {mount} 使用率 {{value}}%，已严重过高",
-               f"磁盘 {mount} 使用率 {{value}}%，偏高")
+               f"磁盘 {mount} 使用率 {{value}}%，偏高",
+               extra={"mount": mount})
 
     # Load 不用固定阈值：load1 超过核数说明有任务在排队（PRD §8.6）
     cores = cpu.get("cores")
