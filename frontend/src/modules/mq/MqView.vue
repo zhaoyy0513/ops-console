@@ -320,9 +320,7 @@ const worstQueueStatus = computed(() => {
         <span>{{ $t('mq.broker') }}</span>
         <n-select v-model:value="instanceId" size="small" style="width: 220px"
           :placeholder="$t('mq.instance')" :options="instances" />
-        <n-button size="small" :title="$t('mq.refreshTitle')" @click="load">
-          {{ $t('mq.refresh') }}{{ $t('mq.refreshNote') }}
-        </n-button>
+        <n-button size="small" @click="load">{{ $t("common.refresh") }}</n-button>
         <tab-help topic="mq" />
         <span v-if="overview" class="badge-line">{{ $t('mq.brokerStatus') }} <status-badge :status="overview.status" /></span>
         <span v-if="queues.length" class="badge-line">{{ $t('mq.worstQueueCol') }} <status-badge :status="worstQueueStatus" /></span>

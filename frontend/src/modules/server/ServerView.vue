@@ -298,7 +298,7 @@ function pctColor(pct: number | null | undefined): string {
             </tr>
           </thead>
           <tbody>
-            <tr v-for="p in processes.slice(0, 5)" :key="p.pid">
+            <tr v-for="p in processes.slice(0, 10)" :key="p.pid">
               <td>{{ p.pid }}</td>
               <td :style="{ color: pctColor(p.cpu_percent) }">{{ p.cpu_percent }}</td>
               <td>{{ p.mem_percent }}</td>

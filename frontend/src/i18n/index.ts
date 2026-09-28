@@ -265,7 +265,8 @@ const messages = {
     },
     ssh: {
       title: 'SSH 脚本',
-      hint: '脚本绑定 Server 后可在其上执行（bash -s 子进程，60s 超时，记录操作日志）',
+      hint: '脚本绑定 Server 后可在其上执行（bash -s 子进程，60s 超时）',
+      hintShort: '脚本绑定 Server 后可在其上执行',
       scripts: 'Scripts',
       newScript: '新增脚本',
       colName: '名称',
@@ -655,7 +656,8 @@ const messages = {
     },
     ssh: {
       title: 'SSH Scripts',
-      hint: 'Scripts run on their bound Server (bash -s subprocess, 60s timeout, audit-logged)',
+      hint: 'Scripts run on their bound Server (bash -s subprocess, 60s timeout)',
+      hintShort: 'Scripts run on their bound Server',
       scripts: 'Scripts',
       newScript: 'New Script',
       colName: 'Name',

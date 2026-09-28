@@ -195,7 +195,7 @@ async function confirmRun() {
       <n-space align="center" :size="12" :wrap="false">
         <span>{{ $t('ssh.title') }}</span>
         <n-button size="small" :loading="loading" @click="load">{{ $t('common.refresh') }}</n-button>
-        <span style="color: #999; font-size: 12px">{{ $t('ssh.hint') }}</span>
+        <span style="color: #999; font-size: 12px">{{ $t('ssh.hintShort') }}</span>
       </n-space>
     </n-card>
 
@@ -270,7 +270,7 @@ async function confirmRun() {
 
     <!-- 执行确认 + 黑色 console -->
     <n-modal v-model:show="runShow" preset="card"
-      :title="$t('ssh.runTitle', { name: runTarget?.name ?? '' })" style="width: 760px">
+      :title="$t('ssh.runTitle', { name: runTarget?.name ?? '' })" style="width: 920px; max-width: 94vw">
       <p style="margin-bottom: 10px; color: #666; font-size: 13px">
         {{ $t('ssh.runDesc', { server: runTarget ? serverName(runTarget.server_id) : '' }) }}
       </p>
@@ -312,11 +312,11 @@ async function confirmRun() {
   padding: 12px;
   font-size: 12px;
   line-height: 1.6;
-  min-height: 260px;
-  max-height: 420px;
+  min-height: 320px;
+  max-height: 520px;
   overflow: auto;
-  white-space: pre-wrap;
-  word-break: break-all;
+  white-space: pre;
+  overflow-x: auto;
 }
 .console-running {
   color: #f0a020;
