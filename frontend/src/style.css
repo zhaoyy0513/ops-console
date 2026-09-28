@@ -55,10 +55,16 @@ body {
   flex: none;
   background: #fff;
   border-right: 1px solid #e5e6eb;
+  display: flex;
+  flex-direction: column;
 }
 
 .app-main {
   flex: 1;
   padding: 16px;
   overflow: auto;
+  /* 超宽屏不无限拉伸（约 80% 视觉宽度），窄窗口仍占满 */
+  max-width: 1600px;
+  margin: 0 auto;
+  width: 100%;
 }

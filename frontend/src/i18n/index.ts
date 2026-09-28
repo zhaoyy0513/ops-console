@@ -312,6 +312,9 @@ const messages = {
       testSaveNote: '测试会先保存脚本（新增将落库）',
       testNote: '测试会先保存脚本内容，再打开执行窗口验证',
       backToEdit: '返回编辑',
+      deleteConfirm: '确认删除脚本「{name}」？此操作不可恢复',
+      unsaved: '（未保存）',
+      contentRequired: '脚本内容不能为空',
     },
     overview: {
       checkNow: '立即检查',
@@ -719,6 +722,9 @@ const messages = {
       testSaveNote: 'Testing saves the script first (new scripts are persisted)',
       testNote: 'Testing saves the script first, then opens the run console to verify it',
       backToEdit: 'Back to edit',
+      deleteConfirm: 'Delete script "{name}"? This cannot be undone.',
+      unsaved: '(unsaved)',
+      contentRequired: 'Script content is required',
     },
     overview: {
       checkNow: 'Check now',

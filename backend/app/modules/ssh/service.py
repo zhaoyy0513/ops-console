@@ -77,22 +77,10 @@ async def _require_site(site_id: str) -> None:
         raise NotFound(f"site not found: {site_id}")
 
 
-async def run_script(site_id: str, script_id: str, *, triggered: str = "manual") -> dict[str, Any]:
-    """在绑定的 Server 上以远端 bash -s 子进程执行脚本，收集完整输出。
-
-    超时 60s；执行与结果记录操作日志（手动与定时触发均记录）。
-    """
-    script = await get_script(site_id, script_id)
-    if not script:
-        raise NotFound(f"script not found: {script_id}")
-    server_cfg = await get_resource_raw(site_id, "servers", script.get("server_id") or "")
-    if not server_cfg:
-        raise NotFound(f"绑定的 Server 配置不存在: {script.get('server_id')}")
-
-    content = str(script.get("content") or "")
-    if not content.strip():
-        raise ValueError("脚本内容为空")
-
+async def _execute(server_cfg: dict[str, Any], content: str, *,
+                     site_id: str, log_resource: str, log_target: str,
+                     triggered: str) -> dict[str, Any]:
+    """在指定 Server 上执行脚本内容（共享执行体：按 id 执行与 adhoc 测试共用）。"""
     import asyncio
     import time
 
@@ -118,14 +106,14 @@ async def run_script(site_id: str, script_id: str, *, triggered: str = "manual")
     except (asyncio.TimeoutError, TimeoutError):
         timed_out = True
     except (OSError, asyncssh.Error) as e:
-        await oplog.record(site_id, f"ssh_scripts/{script_id}", "SSH_SCRIPT_RUN",
-                           target=script["name"],
+        await oplog.record(site_id, log_resource, "SSH_SCRIPT_RUN",
+                           target=log_target,
                            params={"server": server_cfg["host"], "triggered": triggered},
                            result="FAILED", error=str(e)[:200])
         raise NotFound(f"SSH 执行失败：{e}") from None
 
-    await oplog.record(site_id, f"ssh_scripts/{script_id}", "SSH_SCRIPT_RUN",
-                       target=script["name"],
+    await oplog.record(site_id, log_resource, "SSH_SCRIPT_RUN",
+                       target=log_target,
                        params={"server": server_cfg["host"], "triggered": triggered,
                                "timed_out": timed_out})
     return {
@@ -134,3 +122,31 @@ async def run_script(site_id: str, script_id: str, *, triggered: str = "manual")
         "timed_out": timed_out,
         "latency_ms": int((time.perf_counter() - started) * 1000),
     }
+
+
+async def run_script(site_id: str, script_id: str, *, triggered: str = "manual") -> dict[str, Any]:
+    """按脚本 id 执行（手动/定时共用；记录 oplog）。"""
+    script = await get_script(site_id, script_id)
+    if not script:
+        raise NotFound(f"script not found: {script_id}")
+    server_cfg = await get_resource_raw(site_id, "servers", script.get("server_id") or "")
+    if not server_cfg:
+        raise NotFound(f"绑定的 Server 配置不存在: {script.get('server_id')}")
+    content = str(script.get("content") or "")
+    if not content.strip():
+        raise ValueError("脚本内容为空")
+    return await _execute(server_cfg, content, site_id=site_id,
+                          log_resource=f"ssh_scripts/{script_id}",
+                          log_target=script["name"], triggered=triggered)
+
+
+async def run_adhoc(site_id: str, server_id: str, content: str) -> dict[str, Any]:
+    """编辑弹窗内的“测试”：直接执行表单内容，不创建、不保存脚本。"""
+    server_cfg = await get_resource_raw(site_id, "servers", server_id)
+    if not server_cfg:
+        raise NotFound(f"绑定的 Server 配置不存在: {server_id}")
+    if not (content or "").strip():
+        raise ValueError("脚本内容为空")
+    return await _execute(server_cfg, content, site_id=site_id,
+                          log_resource="ssh_adhoc", log_target="(test)",
+                          triggered="test")

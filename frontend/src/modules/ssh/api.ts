@@ -25,4 +25,8 @@ export const sshApi = {
     api.post<{ stdout: string; stderr: string; timed_out: boolean; latency_ms: number }>(
       `/sites/${siteId}/ssh_scripts/${id}/run`,
     ),
+  /** 编辑弹窗测试：直接执行表单内容（不落库） */
+  runAdhoc: (siteId: string, serverId: string, content: string) =>
+    api.post<{ stdout: string; stderr: string; timed_out: boolean; latency_ms: number }>(
+      `/sites/${siteId}/ssh_scripts/run-adhoc`, { server_id: serverId, content }),
 }

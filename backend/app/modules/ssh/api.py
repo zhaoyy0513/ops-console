@@ -30,6 +30,11 @@ class CronIn(BaseModel):
     cron: str
 
 
+class RunAdhocIn(BaseModel):
+    server_id: str
+    content: str
+
+
 @router.get("/sites/{site_id}/ssh_scripts")
 async def list_scripts(site_id: str) -> list[dict]:
     try:
@@ -81,6 +86,17 @@ async def run_script(site_id: str, script_id: str) -> dict:
     """在绑定的 Server 上执行脚本（手动触发；60s 上限，记录 oplog）。"""
     try:
         return await service.run_script(site_id, script_id, triggered="manual")
+    except NotFound as e:
+        raise HTTPException(status_code=404, detail=str(e)) from None
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from None
+
+
+@router.post("/sites/{site_id}/ssh_scripts/run-adhoc")
+async def run_adhoc(site_id: str, data: RunAdhocIn) -> dict:
+    """编辑弹窗测试：直接执行表单内容（不落库，oplog 记 ssh_adhoc）。"""
+    try:
+        return await service.run_adhoc(site_id, data.server_id, data.content)
     except NotFound as e:
         raise HTTPException(status_code=404, detail=str(e)) from None
     except ValueError as e:

@@ -69,7 +69,6 @@ function onSiteSelect(id: string) {
   <div class="app-shell">
     <header class="app-header">
       <span class="brand">Ops Console</span>
-      <span class="build-stamp">b0928-1750</span>
       <n-select
         class="site-select"
         size="small"
@@ -91,6 +90,9 @@ function onSiteSelect(id: string) {
       <aside class="app-sider">
         <div v-if="!siteStore.currentSiteId" class="sider-hint">{{ $t('layout.siderHint') }}</div>
         <n-menu :value="activeKey" :options="menuOptions" @update:value="onMenuSelect" />
+        <div class="sider-footer">
+          <span class="build-stamp">b0928-1750</span>
+        </div>
       </aside>
       <main class="app-main">
         <router-view />
@@ -100,11 +102,15 @@ function onSiteSelect(id: string) {
 </template>
 
 <style scoped>
+.sider-footer {
+  margin-top: auto;
+  padding: 8px 16px;
+  border-top: 1px solid #f0f1f3;
+}
 .build-stamp {
   font-size: 10px;
   color: #b0b3b8;
   font-family: ui-monospace, monospace;
-  margin-left: 6px;
 }
 .sider-hint {
   padding: 12px 16px;

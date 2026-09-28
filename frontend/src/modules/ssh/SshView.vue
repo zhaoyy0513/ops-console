@@ -109,46 +109,41 @@ async function load() {
   }
 }
 
-/** 编辑弹窗内的测试：先保存（新增会落库），再打开共用 console 执行 */
+/** 编辑弹窗内的测试：直接执行表单内容（run-adhoc），不创建、不保存脚本 */
 const testing = ref(false)
 async function testScript() {
   if (!siteStore.currentSiteId) return
+  if (!form.value.server_id) {
+    message.warning(t('ssh.serverRequired'))
+    return
+  }
+  if (!form.value.content.trim()) {
+    message.warning(t('ssh.contentRequired'))
+    return
+  }
   testing.value = true
+  runOutput.value = ''
+  runTimedOut.value = false
+  // 展示目标：临时对象（仅用于 console 标题与描述），编辑弹窗保持打开
+  runTarget.value = {
+    id: '',
+    name: form.value.name.trim() || t('ssh.unsaved'),
+    server_id: form.value.server_id,
+    content: form.value.content,
+    enabled: true,
+  }
+  runShow.value = true
+  running.value = true
   try {
-    if (!form.value.name.trim()) {
-      // 未填名称时自动生成（避免落库无名脚本）
-      form.value.name = `script-${new Date().toLocaleString('sv-SE').replace(/[-: ]/g, '')}`
-    }
-    let id = editingId.value
-    if (!id) {
-      const created = await sshApi.create(siteStore.currentSiteId, {
-        ...form.value, server_id: form.value.server_id ?? '',
-      })
-      id = created.id
-      editingId.value = id
-      message.success(t('ssh.saved'))
-      await load()
-    } else {
-      await sshApi.update(siteStore.currentSiteId, id, {
-        ...form.value, server_id: form.value.server_id ?? '',
-      })
-      await load()
-    }
-    // 用表单当前内容覆盖执行目标（与保存一致），打开共用 console 并执行
-    const script: SshScript = {
-      id,
-      name: form.value.name,
-      server_id: form.value.server_id ?? '',
-      content: form.value.content,
-      enabled: true,
-    }
-    editShow.value = false
-    runTarget.value = script
-    runShow.value = true
-    await confirmRun()
+    const r = await sshApi.runAdhoc(
+      siteStore.currentSiteId, form.value.server_id, form.value.content)
+    runOutput.value = (r.stdout || '') + (r.stderr ? `\n[stderr]\n${r.stderr}` : '')
+    runTimedOut.value = r.timed_out
+    if (r.timed_out) message.warning(t('ssh.timeoutWarn'))
   } catch (e) {
-    message.error((e as Error).message)
+    runOutput.value = t('ssh.runFailed', { msg: (e as Error).message })
   } finally {
+    running.value = false
     testing.value = false
   }
 }
@@ -232,7 +227,8 @@ function askRun(item: SshScript) {
 
 function backToEdit() {
   runShow.value = false
-  if (runTarget.value) {
+  // 测试流（id 为空）：编辑弹窗仍开着，无需回填；表格执行流才回填表单
+  if (runTarget.value?.id) {
     editingId.value = runTarget.value.id
     form.value = {
       name: runTarget.value.name,
@@ -307,7 +303,7 @@ async function confirmRun() {
                     <template #trigger>
                       <n-button class="act" size="tiny" type="error" ghost>{{ $t('common.delete') }}</n-button>
                     </template>
-                    {{ item.name }}
+                    {{ $t('ssh.deleteConfirm', { name: item.name }) }}
                   </n-popconfirm>
                 </n-space>
               </td>
@@ -413,12 +409,13 @@ async function confirmRun() {
   font-family: ui-monospace, Consolas, monospace;
 }
 .content-cell {
-  display: block;
-  max-width: 320px;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   font-size: 12px;
+  line-height: 1.4;
+  word-break: break-all;
 }
 .console {
   background: #0d1117;

@@ -88,3 +88,37 @@ async def test_validate_cron_and_schedule_fields(client, fake_platform_redis, mo
     r = await client.put("/api/sites/sz/ssh_scripts/cron-job",
                          json={"sched_enabled": True})
     assert r.json()["sched_enabled"] is True
+
+
+async def test_run_adhoc_no_persist(client, fake_platform_redis, monkeypatch):
+    """编辑弹窗测试：直接执行表单内容，不创建脚本记录。"""
+    import asyncssh
+    from backend.app.modules.ssh import service as svc
+
+    class R:
+        stdout = "adhoc-ok\n"
+        stderr = ""
+
+    class C:
+        async def run(self, cmd, input=None, env=None):
+            assert input == "echo hi"
+            return R()
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+    monkeypatch.setattr(asyncssh, "connect", lambda *a, **k: C())
+    async def fake_raw(sid, t, rid):
+        return {"host": "1.1.1.1", "port": 22, "username": "u", "password": "p"}
+
+    monkeypatch.setattr(svc, "get_resource_raw", fake_raw)
+
+    r = await client.post("/api/sites/sz/ssh_scripts/run-adhoc",
+                          json={"server_id": "srv1", "content": "echo hi"})
+    assert r.status_code == 200
+    assert "adhoc-ok" in r.json()["stdout"]
+    # 未落库：脚本列表不新增
+    assert (await client.get("/api/sites/sz/ssh_scripts")).json() == []
