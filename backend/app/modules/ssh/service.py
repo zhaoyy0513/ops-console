@@ -151,38 +151,3 @@ async def run_adhoc(site_id: str, server_id: str, content: str) -> dict[str, Any
                           log_resource="ssh_adhoc", log_target="(test)",
                           triggered="test")
 
-
-# 服务器时区缓存：{server_id: (tzinfo, label)}；进程内缓存足够（服务器时区几乎不变）
-# ponytail: 无过期，服务器时区变更需重启后端
-_TZ_CACHE: dict[str, tuple] = {}
-
-
-async def get_server_tz(site_id: str | None, server_id: str | None):
-    """目标服务器的时区：SSH 执行 date +%z 解析为 UTC 偏移。失败回退 UTC。"""
-    from datetime import timedelta, timezone
-
-    if not site_id or not server_id:
-        return timezone.utc, "UTC"
-    if server_id in _TZ_CACHE:
-        return _TZ_CACHE[server_id]
-    try:
-        server_cfg = await get_resource_raw(site_id, "servers", server_id)
-        if not server_cfg:
-            raise NotFound("server not found")
-        async with asyncssh.connect(
-            server_cfg["host"], port=int(server_cfg.get("port") or 22),
-            username=server_cfg.get("username") or None,
-            password=server_cfg.get("password") or None,
-            known_hosts=None, connect_timeout=3,
-        ) as conn:
-            res = await conn.run("date +%z", check=False)
-            off = (res.stdout or "").strip()  # 如 +0800 / -0530
-        sign = -1 if off.startswith("-") else 1
-        digits = off.lstrip("+-")
-        hours, minutes = int(digits[:2] or 0), int(digits[2:4] or 0)
-        tz = timezone(sign * timedelta(hours=hours, minutes=minutes))
-        label = f"UTC{'+' if sign > 0 else '-'}{hours:02d}:{minutes:02d}"
-    except Exception:  # noqa: BLE001 - 任何失败回退 UTC
-        tz, label = timezone.utc, "UTC"
-    _TZ_CACHE[server_id] = (tz, label)
-    return tz, label

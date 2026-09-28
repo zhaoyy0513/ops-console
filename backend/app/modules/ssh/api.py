@@ -28,8 +28,6 @@ class ScriptUpdate(BaseModel):
 
 class CronIn(BaseModel):
     cron: str
-    site_id: str | None = None  # 提供 site_id+server_id 时按目标服务器时区换算
-    server_id: str | None = None
 
 
 class RunAdhocIn(BaseModel):
@@ -118,11 +116,10 @@ async def validate_cron(data: CronIn) -> dict:
     except (ValueError, KeyError) as e:
         raise HTTPException(status_code=400, detail=f"无效 cron 表达式：{e}") from None
 
-    tz, tz_label = await service.get_server_tz(data.site_id, data.server_id)
     return {
         "valid": True,
-        "tz_label": tz_label,
-        "next_runs": [t.astimezone(tz).strftime("%Y-%m-%d %H:%M:%S") for t in next_times],
+        "tz_label": "UTC",
+        "next_runs": [t.strftime("%Y-%m-%d %H:%M:%S") for t in next_times],
     }
 
 

@@ -69,11 +69,7 @@ async function testCron() {
   }
   cronTesting.value = true
   try {
-    const r = await api.post('/ssh/validate-cron', {
-      cron: form.value.cron,
-      site_id: siteStore.currentSiteId,
-      server_id: form.value.server_id,
-    })
+    const r = await api.post('/ssh/validate-cron', { cron: form.value.cron })
     cronNextRuns.value = (r as any).next_runs
     cronTzLabel.value = (r as any).tz_label ?? ''
     cronInvalid.value = false
@@ -175,14 +171,22 @@ const serverName = computed(
   () => (id: string) => servers.value.find((s) => s.value === id)?.label ?? id,
 )
 
+function resetCronFeedback() {
+  cronNextRuns.value = []
+  cronTzLabel.value = ''
+  cronInvalid.value = false
+}
+
 function openCreate() {
   editingId.value = null
+  resetCronFeedback()
   form.value = { name: '', server_id: servers.value[0]?.value ?? null, content: '', cron: '', sched_enabled: false }
   editShow.value = true
 }
 
 function openEdit(item: SshScript) {
   editingId.value = item.id
+  resetCronFeedback()
   form.value = {
     name: item.name,
     server_id: item.server_id,
@@ -358,8 +362,8 @@ async function confirmRun() {
               />
               <n-button size="small" :loading="cronTesting" @click="testCron">{{ $t('ssh.cronTest') }}</n-button>
             </div>
-            <!-- 固定高度反馈区：错误/结果切换不改变布局（弹窗不再晃动） -->
-            <div class="cron-feedback" :class="{ invalid: cronInvalid }">
+            <!-- 有结果才渲染（不测试不留空白）；打开弹窗时已重置 -->
+            <div v-if="cronInvalid || cronNextRuns.length" class="cron-feedback" :class="{ invalid: cronInvalid }">
               <template v-if="cronInvalid">{{ $t('ssh.cronInvalid') }}</template>
               <template v-else-if="cronNextRuns.length">
                 {{ $t('ssh.cronNext') }}<template v-if="cronTzLabel">（{{ cronTzLabel }}）</template>
@@ -406,10 +410,13 @@ async function confirmRun() {
         : { width: '920px', maxWidth: '94vw' }"
     >
       <template #header-extra>
-        <n-button size="tiny" quaternary :title="runFullscreen ? $t('ssh.restore') : $t('ssh.fullscreen')"
-          @click="runFullscreen = !runFullscreen">
-          <n-icon :component="runFullscreen ? ContractOutline : ExpandOutline" />
-        </n-button>
+        <span
+          class="fullscreen-btn"
+          :title="runFullscreen ? $t('ssh.restore') : $t('ssh.fullscreen')"
+          @click="runFullscreen = !runFullscreen"
+        >
+          <n-icon size="18" :component="runFullscreen ? ContractOutline : ExpandOutline" />
+        </span>
       </template>
       <p class="run-desc">
         {{ $t('ssh.runDesc', { server: runTarget ? serverName(runTarget.server_id) : '' }) }}
@@ -477,7 +484,6 @@ async function confirmRun() {
   gap: 8px;
 }
 .cron-feedback {
-  min-height: 64px;
   margin-top: 6px;
   font-size: 12px;
   color: #18a058;
@@ -488,6 +494,21 @@ async function confirmRun() {
 }
 .cron-run {
   font-family: ui-monospace, monospace;
+}
+.fullscreen-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  margin-right: 2px;
+  border-radius: 3px;
+  color: #666;
+  cursor: pointer;
+}
+.fullscreen-btn:hover {
+  color: #1f2329;
+  background: #f2f3f5;
 }
 .run-desc {
   margin-bottom: 8px;
