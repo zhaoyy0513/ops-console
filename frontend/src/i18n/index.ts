@@ -316,6 +316,7 @@ const messages = {
       unsaved: '（未保存）',
       contentRequired: '脚本内容不能为空',
       fullscreen: '全屏',
+      executing: '● 执行中 · 输出实时收集（长时间运行的命令会持续刷新；关闭窗口将终止进程）',
       restore: '还原',
     },
     overview: {
@@ -728,6 +729,7 @@ const messages = {
       unsaved: '(unsaved)',
       contentRequired: 'Script content is required',
       fullscreen: 'Fullscreen',
+      executing: '● Running · collecting output live (long-running commands keep streaming; closing this window kills the process)',
       restore: 'Restore',
     },
     overview: {

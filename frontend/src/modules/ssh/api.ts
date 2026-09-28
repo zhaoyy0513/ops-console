@@ -30,4 +30,56 @@ export const sshApi = {
     api.post<{ stdout: string; stderr: string; timed_out: boolean; latency_ms: number }>(
       `/sites/${siteId}/ssh_scripts/run-adhoc`, { server_id: serverId, content },
       { timeout: 90_000 }),
+
+  /** 流式执行（SSE）：onChunk(kind,data) 实时回调；返回 abort 用于关闭窗口时终止远端进程 */
+  runStream: (siteId: string, id: string, onChunk: (kind: string, data: string) => void) =>
+    streamFetch(`/sites/${siteId}/ssh_scripts/${id}/run-stream`, undefined, onChunk),
+  runAdhocStream: (
+    siteId: string, serverId: string, content: string,
+    onChunk: (kind: string, data: string) => void,
+  ) =>
+    streamFetch(`/sites/${siteId}/ssh_scripts/run-adhoc-stream`,
+      { server_id: serverId, content }, onChunk),
+}
+
+function streamFetch(
+  path: string, body: unknown | undefined, onChunk: (kind: string, data: string) => void,
+): () => void {
+  const ctrl = new AbortController()
+  const abort = () => ctrl.abort()
+  ;(async () => {
+    try {
+      const resp = await fetch('/api' + path, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: body === undefined ? undefined : JSON.stringify(body),
+        signal: ctrl.signal,
+      })
+      if (!resp.ok || !resp.body) {
+        onChunk('error', `HTTP ${resp.status}`)
+        return
+      }
+      const reader = resp.body.getReader()
+      const dec = new TextDecoder()
+      let buf = ''
+      for (;;) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buf += dec.decode(value, { stream: true })
+        const parts = buf.split('\n\n')
+        buf = parts.pop() ?? ''
+        for (const part of parts) {
+          const line = part.trim()
+          if (!line.startsWith('data: ')) continue
+          try {
+            const ev = JSON.parse(line.slice(6))
+            onChunk(ev.kind, ev.data)
+          } catch { /* 半包忽略，下轮补齐 */ }
+        }
+      }
+    } catch (e) {
+      if ((e as Error).name !== 'AbortError') onChunk('error', (e as Error).message)
+    }
+  })()
+  return abort
 }

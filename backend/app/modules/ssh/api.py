@@ -1,4 +1,7 @@
+import json
+
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from backend.app.modules.sites.service import NotFound
@@ -101,6 +104,42 @@ async def run_adhoc(site_id: str, data: RunAdhocIn) -> dict:
         raise HTTPException(status_code=404, detail=str(e)) from None
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from None
+
+
+def _sse(kind: str, data: str) -> str:
+    return f"data: {json.dumps({'kind': kind, 'data': data}, ensure_ascii=False)}\n\n"
+
+
+@router.post("/sites/{site_id}/ssh_scripts/{script_id}/run-stream")
+async def run_script_stream(site_id: str, script_id: str) -> StreamingResponse:
+    """流式执行（SSE）：输出实时推送；客户端断开即 kill 远端进程。"""
+    async def gen():
+        try:
+            async for kind, data in service.stream_script(site_id, script_id):
+                yield _sse(kind, data)
+        except NotFound as e:
+            yield _sse("error", str(e))
+        except ValueError as e:
+            yield _sse("error", str(e))
+
+    return StreamingResponse(gen(), media_type="text/event-stream",
+                            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+@router.post("/sites/{site_id}/ssh_scripts/run-adhoc-stream")
+async def run_adhoc_stream(site_id: str, data: RunAdhocIn) -> StreamingResponse:
+    """编辑弹窗测试（流式）：直接执行表单内容，不落库；断开即杀进程。"""
+    async def gen():
+        try:
+            async for kind, chunk in service.stream_adhoc(site_id, data.server_id, data.content):
+                yield _sse(kind, chunk)
+        except NotFound as e:
+            yield _sse("error", str(e))
+        except ValueError as e:
+            yield _sse("error", str(e))
+
+    return StreamingResponse(gen(), media_type="text/event-stream",
+                            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
 @router.post("/ssh/validate-cron")

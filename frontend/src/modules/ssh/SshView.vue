@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
   NButton,
@@ -131,8 +131,6 @@ async function testScript() {
     return
   }
   testing.value = true
-  runOutput.value = ''
-  runTimedOut.value = false
   // 展示目标：临时对象（仅用于 console 标题与描述），编辑弹窗保持打开
   runTarget.value = {
     id: '',
@@ -142,19 +140,8 @@ async function testScript() {
     enabled: true,
   }
   runShow.value = true
-  running.value = true
-  try {
-    const r = await sshApi.runAdhoc(
-      siteStore.currentSiteId, form.value.server_id, form.value.content)
-    runOutput.value = (r.stdout || '') + (r.stderr ? `\n[stderr]\n${r.stderr}` : '')
-    runTimedOut.value = r.timed_out
-    if (r.timed_out) message.warning(t('ssh.timeoutWarn'))
-  } catch (e) {
-    runOutput.value = t('ssh.runFailed', { msg: (e as Error).message })
-  } finally {
-    running.value = false
-    testing.value = false
-  }
+  confirmRun() // 流式：输出实时进入 console
+  testing.value = false
 }
 
 onMounted(() => {
@@ -239,6 +226,16 @@ const runTarget = ref<SshScript | null>(null)
 const running = ref(false)
 const runOutput = ref('')
 const runTimedOut = ref(false)
+let runAbort: (() => void) | null = null
+
+function stopRun() {
+  runAbort?.() // 断开 SSE -> 后端 finally kill 远端进程，绝不遗留
+  runAbort = null
+  running.value = false
+}
+
+watch(runShow, (v) => { if (!v) stopRun() })
+onBeforeUnmount(stopRun)
 
 function askRun(item: SshScript) {
   runTarget.value = item
@@ -263,24 +260,35 @@ function backToEdit() {
   }
 }
 
-async function confirmRun() {
+/** 流式执行（测试流 id 为空时跑表单内容；表格流按 id）。输出实时追加。 */
+function confirmRun() {
   const item = runTarget.value
   if (!item || !siteStore.currentSiteId) return
-  running.value = true
+  stopRun()
   runOutput.value = ''
-  try {
-    // 测试流（id 为空）：重跑表单当前内容；表格执行流：按 id 执行
-    const r = item.id
-      ? await sshApi.run(siteStore.currentSiteId, item.id)
-      : await sshApi.runAdhoc(siteStore.currentSiteId, form.value.server_id ?? '', form.value.content)
-    runOutput.value = (r.stdout || '') + (r.stderr ? `\n[stderr]\n${r.stderr}` : '')
-    runTimedOut.value = r.timed_out
-    if (r.timed_out) message.warning(t('ssh.timeoutWarn'))
-  } catch (e) {
-    runOutput.value = t('ssh.runFailed', { msg: (e as Error).message })
-  } finally {
-    running.value = false
+  runTimedOut.value = false
+  running.value = true
+  let err = ''
+  const onChunk = (kind: string, data: string) => {
+    if (kind === 'stdout') runOutput.value += data
+    else if (kind === 'stderr') err += (err ? '\n' : '') + data
+    else if (kind === 'meta') {
+      try {
+        const m = JSON.parse(data)
+        runTimedOut.value = !!m.timed_out
+        if (m.timed_out) message.warning(t('ssh.timeoutWarn'))
+      } catch { /* 忽略 */ }
+      running.value = false
+      if (err) runOutput.value += `\n[stderr]\n${err}`
+    } else if (kind === 'error') {
+      runOutput.value += t('ssh.runFailed', { msg: data })
+      running.value = false
+    }
   }
+  runAbort = item.id
+    ? sshApi.runStream(siteStore.currentSiteId, item.id, onChunk)
+    : sshApi.runAdhocStream(
+        siteStore.currentSiteId, form.value.server_id ?? '', form.value.content, onChunk)
 }
 </script>
 
@@ -425,9 +433,10 @@ async function confirmRun() {
       <p class="run-desc">
         {{ $t('ssh.runDesc', { server: runTarget ? serverName(runTarget.server_id) : '' }) }}
       </p>
+      <div v-if="running" class="console-live">{{ $t('ssh.executing') }}</div>
       <div class="console mono" :class="{ 'console-max': runFullscreen }">
         <template v-if="runOutput">{{ runOutput }}</template>
-        <span v-else-if="running" class="console-running">running...</span>
+        <span v-else-if="running" class="console-running">…</span>
         <span v-else style="color: #6b7280">{{ $t('ssh.clickToRun') }}</span>
       </div>
       <div v-if="runTimedOut" class="timeout-note">
@@ -513,6 +522,11 @@ async function confirmRun() {
 .fullscreen-btn:hover {
   color: #1f2329;
   background: #f2f3f5;
+}
+.console-live {
+  color: #f0a020;
+  font-size: 12px;
+  margin-bottom: 4px;
 }
 .run-desc {
   margin-bottom: 8px;
