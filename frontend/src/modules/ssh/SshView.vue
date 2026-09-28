@@ -12,7 +12,6 @@ import {
   NTable,
   useMessage,
 } from 'naive-ui'
-import CountdownConfirm from '../../components/CountdownConfirm.vue'
 import { useSiteStore } from '../../stores/site'
 import { sshApi, type SshScript } from './api'
 
