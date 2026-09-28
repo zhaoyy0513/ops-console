@@ -53,6 +53,9 @@ body {
   align-items: flex-start; /* 侧栏 sticky 需要子项不拉伸 */
 }
 
+.build-stamp {
+  color: #6b7280;
+}
 .app-sider {
   position: sticky;
   top: 48px; /* header 高度 */

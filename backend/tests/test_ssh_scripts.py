@@ -14,10 +14,36 @@ async def client(fake_platform_redis, monkeypatch):
         stdout = "hello from bash\n"
         stderr = ""
 
+    class _Stdin:
+        def __init__(self):
+            self.data = []
+
+        def write(self, s):
+            self.data.append(s)
+
+        def write_eof(self):
+            pass
+
+    class FakeProc:
+        def __init__(self):
+            self.stdin = _Stdin()
+
+        async def communicate(self):
+            return FakeResult.stdout, FakeResult.stderr
+
+        def kill(self):
+            pass
+
+        def close(self):
+            pass
+
     class FakeConn:
         async def run(self, cmd, input=None, env=None):
             assert input is not None  # 脚本经 stdin 传给 bash -s
             return FakeResult()
+
+        async def create_process(self, cmd, env=None):
+            return FakeProc()
 
         async def __aenter__(self):
             return self
@@ -99,10 +125,35 @@ async def test_run_adhoc_no_persist(client, fake_platform_redis, monkeypatch):
         stdout = "adhoc-ok\n"
         stderr = ""
 
+    class P:
+        class _Stdin:
+            def write(self, s):
+                pass
+
+            def write_eof(self):
+                pass
+
+        stdin = None
+
+        def __init__(self):
+            self.stdin = P._Stdin()
+
+        async def communicate(self):
+            return R.stdout, R.stderr
+
+        def kill(self):
+            pass
+
+        def close(self):
+            pass
+
     class C:
         async def run(self, cmd, input=None, env=None):
             assert input == "echo hi"
             return R()
+
+        async def create_process(self, cmd, env=None):
+            return P()
 
         async def __aenter__(self):
             return self

@@ -80,7 +80,11 @@ async def _require_site(site_id: str) -> None:
 async def _execute(server_cfg: dict[str, Any], content: str, *,
                      site_id: str, log_resource: str, log_target: str,
                      triggered: str) -> dict[str, Any]:
-    """在指定 Server 上执行脚本内容（共享执行体：按 id 执行与 adhoc 测试共用）。"""
+    """在指定 Server 上执行脚本内容（共享执行体：按 id 执行与 adhoc 测试共用）。
+
+    实时刷新型命令（top/docker stats）永不退出，会跑满超时——超时后
+    kill 进程但保留已产出输出返回（而非只报失败）。对退出型命令无影响。
+    """
     import asyncio
     import time
 
@@ -88,6 +92,7 @@ async def _execute(server_cfg: dict[str, Any], content: str, *,
     timed_out = False
     stdout = ""
     stderr = ""
+    proc = None
     try:
         async with asyncssh.connect(
             server_cfg["host"],
@@ -97,20 +102,37 @@ async def _execute(server_cfg: dict[str, Any], content: str, *,
             known_hosts=None,
             connect_timeout=settings.ssh_connect_timeout,
         ) as conn:
-            result = await asyncio.wait_for(
-                conn.run("bash -s", input=content, env={"TERM": "xterm"}),
-                settings.ssh_command_timeout * 6,
-            )
-            stdout = result.stdout or ""
-            stderr = result.stderr or ""
-    except (asyncio.TimeoutError, TimeoutError):
-        timed_out = True
+            proc = await conn.create_process("bash -s", env={"TERM": "xterm"})
+            proc.stdin.write(content)
+            proc.stdin.write_eof()
+            try:
+                stdout, stderr = await asyncio.wait_for(
+                    proc.communicate(), settings.ssh_command_timeout * 6)
+                stdout, stderr = stdout or "", stderr or ""
+            except (asyncio.TimeoutError, TimeoutError):
+                timed_out = True
+                # 超时：kill 进程，尽力回收已产出输出（top 类命令此时已有画面）
+                try:
+                    proc.kill()
+                except (ProcessLookupError, asyncssh.Error):
+                    pass
+                try:
+                    stdout, stderr = await asyncio.wait_for(proc.communicate(), 2)
+                    stdout, stderr = stdout or "", stderr or ""
+                except Exception:  # noqa: BLE001 - 回收失败不影响超时路径
+                    pass
     except (OSError, asyncssh.Error) as e:
         await oplog.record(site_id, log_resource, "SSH_SCRIPT_RUN",
                            target=log_target,
                            params={"server": server_cfg["host"], "triggered": triggered},
                            result="FAILED", error=str(e)[:200])
         raise NotFound(f"SSH 执行失败：{e}") from None
+    finally:
+        if proc is not None:
+            try:
+                proc.close()  # 兜底清理（幂等）
+            except Exception:  # noqa: BLE001
+                pass
 
     await oplog.record(site_id, log_resource, "SSH_SCRIPT_RUN",
                        target=log_target,

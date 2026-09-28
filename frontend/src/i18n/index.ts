@@ -284,7 +284,7 @@ const messages = {
       bindServer: '绑定 Server',
       serverPh: '选择执行目标 Server',
       formContent: '脚本内容',
-      contentPh: 'bash 脚本内容（将通过 bash -s 在目标 Server 上执行）',
+      contentPh: 'bash 脚本内容（一次性变体：top -bn1、docker stats --no-stream；实时刷新型命令无终端不可用）',
       nameRequired: '名称必填',
       serverRequired: '必须绑定一个 Server',
       saved: '已保存',

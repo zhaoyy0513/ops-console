@@ -19,9 +19,9 @@ instance.interceptors.response.use(
 
 /** 拦截器已解包 resp.data，这里按真实返回类型收敛签名。 */
 const api = instance as unknown as {
-  get<T = unknown>(url: string): Promise<T>
-  post<T = unknown>(url: string, data?: unknown): Promise<T>
-  put<T = unknown>(url: string, data?: unknown): Promise<T>
+  get<T = unknown>(url: string, config?: { timeout?: number }): Promise<T>
+  post<T = unknown>(url: string, data?: unknown, config?: { timeout?: number }): Promise<T>
+  put<T = unknown>(url: string, data?: unknown, config?: { timeout?: number }): Promise<T>
   delete<T = unknown>(url: string): Promise<T>
 }
 

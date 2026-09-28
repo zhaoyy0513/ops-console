@@ -23,10 +23,11 @@ export const sshApi = {
     api.delete<void>(`/sites/${siteId}/ssh_scripts/${id}`),
   run: (siteId: string, id: string) =>
     api.post<{ stdout: string; stderr: string; timed_out: boolean; latency_ms: number }>(
-      `/sites/${siteId}/ssh_scripts/${id}/run`,
+      `/sites/${siteId}/ssh_scripts/${id}/run`, undefined, { timeout: 90_000 },
     ),
   /** 编辑弹窗测试：直接执行表单内容（不落库） */
   runAdhoc: (siteId: string, serverId: string, content: string) =>
     api.post<{ stdout: string; stderr: string; timed_out: boolean; latency_ms: number }>(
-      `/sites/${siteId}/ssh_scripts/run-adhoc`, { server_id: serverId, content }),
+      `/sites/${siteId}/ssh_scripts/run-adhoc`, { server_id: serverId, content },
+      { timeout: 90_000 }),
 }
