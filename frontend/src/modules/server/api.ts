@@ -15,6 +15,8 @@ export interface Issue {
   value: number
   threshold: number
   message: string
+  /** 仅 DISK_HIGH：挂载点 */
+  mount?: string
 }
 
 export interface ServerMetrics {
