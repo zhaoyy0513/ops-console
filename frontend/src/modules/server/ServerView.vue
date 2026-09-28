@@ -227,7 +227,7 @@ function pctColor(pct: number | null | undefined): string {
               <th>{{ $t('server.type') }}</th>
               <th>{{ $t('server.value') }}</th>
               <th>{{ $t('server.threshold') }}</th>
-              <th>{{ $t('server.detail') }}
+              <th>{{ $t('server.detail') }}</th>
             </tr>
           </thead>
           <tbody>
