@@ -48,7 +48,8 @@ const form = ref<{
 const isCron = computed({
   get: () => !!form.value.cron.trim(),
   set: (v: boolean) => {
-    if (!v) form.value.cron = ''
+    // 打开时必须填入默认值——getter 由 cron 是否非空决定，置空字符串会让开关弹回
+    form.value.cron = v ? '0 2 * * *' : ''
   },
 })
 
@@ -211,8 +212,9 @@ async function remove(item: SshScript) {
   await load()
 }
 
-// ---------- 执行（确认 + 黑色 console） ----------
+// ---------- 执行（确认 + 黑色 console，可全屏） ----------
 const runShow = ref(false)
+const runFullscreen = ref(false)
 const runTarget = ref<SshScript | null>(null)
 const running = ref(false)
 const runOutput = ref('')
@@ -247,7 +249,10 @@ async function confirmRun() {
   running.value = true
   runOutput.value = ''
   try {
-    const r = await sshApi.run(siteStore.currentSiteId, item.id)
+    // 测试流（id 为空）：重跑表单当前内容；表格执行流：按 id 执行
+    const r = item.id
+      ? await sshApi.run(siteStore.currentSiteId, item.id)
+      : await sshApi.runAdhoc(siteStore.currentSiteId, form.value.server_id ?? '', form.value.content)
     runOutput.value = (r.stdout || '') + (r.stderr ? `\n[stderr]\n${r.stderr}` : '')
     runTimedOut.value = r.timed_out
     if (r.timed_out) message.warning(t('ssh.timeoutWarn'))
@@ -277,7 +282,7 @@ async function confirmRun() {
         <n-table :single-line="false" size="small">
           <thead>
             <tr>
-              <th>{{ $t('ssh.colName') }}</th><th>{{ $t('ssh.colServer') }}</th><th style="width: 110px">{{ $t('ssh.colCron') }}</th><th style="width: 90px">{{ $t('ssh.colSched') }}</th><th>{{ $t('ssh.colContent') }}</th><th style="width: 150px">{{ $t('common.actions') }}</th>
+              <th>{{ $t('ssh.colName') }}</th><th style="width: 22%">{{ $t('ssh.colServer') }}</th><th style="width: 100px">{{ $t('ssh.colCron') }}</th><th style="width: 70px">{{ $t('ssh.colSched') }}</th><th>{{ $t('ssh.colContent') }}</th><th style="width: 210px">{{ $t('common.actions') }}</th>
             </tr>
           </thead>
           <tbody>
@@ -375,18 +380,29 @@ async function confirmRun() {
       </template>
     </n-modal>
 
-    <!-- 执行确认 + 黑色 console -->
-    <n-modal v-model:show="runShow" preset="card"
-      :title="$t('ssh.runTitle', { name: runTarget?.name ?? '' })" style="width: 920px; max-width: 94vw">
-      <p style="margin-bottom: 10px; color: #666; font-size: 13px">
+    <!-- 执行确认 + 黑色 console（可全屏；header-extra 的全屏按钮位于关闭按钮左侧） -->
+    <n-modal
+      v-model:show="runShow"
+      preset="card"
+      :title="$t('ssh.runTitle', { name: runTarget?.name ?? '' })"
+      :style="runFullscreen
+        ? { width: '96vw', maxWidth: '96vw', height: '92vh', display: 'flex', flexDirection: 'column' }
+        : { width: '920px', maxWidth: '94vw' }"
+    >
+      <template #header-extra>
+        <n-button size="tiny" quaternary @click="runFullscreen = !runFullscreen">
+          {{ runFullscreen ? $t('ssh.restore') : $t('ssh.fullscreen') }}
+        </n-button>
+      </template>
+      <p class="run-desc">
         {{ $t('ssh.runDesc', { server: runTarget ? serverName(runTarget.server_id) : '' }) }}
       </p>
-      <div class="console mono">
+      <div class="console mono" :class="{ 'console-max': runFullscreen }">
         <template v-if="runOutput">{{ runOutput }}</template>
         <span v-else-if="running" class="console-running">running...</span>
         <span v-else style="color: #6b7280">{{ $t('ssh.clickToRun') }}</span>
       </div>
-      <div v-if="runTimedOut" style="color: #d03050; font-size: 12px; margin-top: 8px">
+      <div v-if="runTimedOut" class="timeout-note">
         {{ $t('ssh.timeoutNote') }}
       </div>
       <template #footer>
@@ -421,14 +437,29 @@ async function confirmRun() {
   background: #0d1117;
   color: #d1d5db;
   border-radius: 6px;
-  padding: 12px;
+  padding: 10px 12px;
   font-size: 12px;
-  line-height: 1.6;
-  min-height: 320px;
-  max-height: 520px;
+  line-height: 1.35;
+  min-height: 220px;
+  max-height: 480px;
   overflow: auto;
   white-space: pre;
   overflow-x: auto;
+}
+.console-max {
+  max-height: none;
+  height: calc(92vh - 230px);
+  min-height: 300px;
+}
+.run-desc {
+  margin-bottom: 8px;
+  color: #666;
+  font-size: 13px;
+}
+.timeout-note {
+  color: #d03050;
+  font-size: 12px;
+  margin-top: 8px;
 }
 .console-running {
   color: #f0a020;
@@ -451,5 +482,22 @@ async function confirmRun() {
 }
 :deep(td) {
   overflow: hidden;
+}
+</style>
+
+<style>
+/* 全屏时卡片内容纵向撑满（modal teleport 到 body，scoped 够不着） */
+.n-modal.n-card[style*="92vh"] {
+  display: flex;
+  flex-direction: column;
+}
+.n-modal.n-card[style*="92vh"] .n-card__content {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.n-modal.n-card[style*="92vh"] .console-max {
+  flex: 1;
 }
 </style>

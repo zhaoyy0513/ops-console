@@ -315,6 +315,8 @@ const messages = {
       deleteConfirm: '确认删除脚本「{name}」？此操作不可恢复',
       unsaved: '（未保存）',
       contentRequired: '脚本内容不能为空',
+      fullscreen: '全屏',
+      restore: '还原',
     },
     overview: {
       checkNow: '立即检查',
@@ -725,6 +727,8 @@ const messages = {
       deleteConfirm: 'Delete script "{name}"? This cannot be undone.',
       unsaved: '(unsaved)',
       contentRequired: 'Script content is required',
+      fullscreen: 'Fullscreen',
+      restore: 'Restore',
     },
     overview: {
       checkNow: 'Check now',
