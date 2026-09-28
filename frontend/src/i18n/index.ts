@@ -296,6 +296,7 @@ const messages = {
       test: '测试',
       testing: '测试中…',
       testNote: '测试会先保存脚本内容，再打开执行窗口验证',
+      backToEdit: '返回编辑',
     },
     overview: {
       checkNow: '立即检查',
@@ -687,6 +688,7 @@ const messages = {
       test: 'Test',
       testing: 'Testing…',
       testNote: 'Testing saves the script first, then opens the run console to verify it',
+      backToEdit: 'Back to edit',
     },
     overview: {
       checkNow: 'Check now',

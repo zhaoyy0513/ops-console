@@ -108,7 +108,8 @@ async def run_script(site_id: str, script_id: str) -> dict[str, Any]:
             connect_timeout=settings.ssh_connect_timeout,
         ) as conn:
             result = await asyncio.wait_for(
-                conn.run("bash -s", input=content), settings.ssh_command_timeout * 6
+                conn.run("bash -s", input=content, env={"TERM": "xterm"}),
+                settings.ssh_command_timeout * 6,
             )
             stdout = result.stdout or ""
             stderr = result.stderr or ""

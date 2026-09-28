@@ -15,7 +15,7 @@ async def client(fake_platform_redis, monkeypatch):
         stderr = ""
 
     class FakeConn:
-        async def run(self, cmd, input=None):
+        async def run(self, cmd, input=None, env=None):
             assert input is not None  # 脚本经 stdin 传给 bash -s
             return FakeResult()
 

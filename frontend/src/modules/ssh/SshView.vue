@@ -66,6 +66,10 @@ async function testScript() {
   if (!siteStore.currentSiteId) return
   testing.value = true
   try {
+    if (!form.value.name.trim()) {
+      // 未填名称时自动生成（避免落库无名脚本）
+      form.value.name = `script-${new Date().toLocaleString('sv-SE').replace(/[-: ]/g, '')}`
+    }
     let id = editingId.value
     if (!id) {
       const created = await sshApi.create(siteStore.currentSiteId, {
@@ -171,6 +175,19 @@ function askRun(item: SshScript) {
   runShow.value = true
 }
 
+function backToEdit() {
+  runShow.value = false
+  if (runTarget.value) {
+    editingId.value = runTarget.value.id
+    form.value = {
+      name: runTarget.value.name,
+      server_id: runTarget.value.server_id,
+      content: runTarget.value.content,
+    }
+    editShow.value = true
+  }
+}
+
 async function confirmRun() {
   const item = runTarget.value
   if (!item || !siteStore.currentSiteId) return
@@ -217,9 +234,14 @@ async function confirmRun() {
               <td class="mono content-cell" :title="item.content">{{ item.content }}</td>
               <td>
                 <n-space :size="4" :wrap="false">
-                  <n-button size="tiny" type="primary" ghost @click="askRun(item)">{{ $t('ssh.run') }}</n-button>
-                  <n-button size="tiny" @click="openEdit(item)">{{ $t('common.edit') }}</n-button>
-                  <countdown-confirm :label="$t('common.delete')" :target="item.name" :seconds="5" @confirm="remove(item)" />
+                  <n-button class="act" size="tiny" type="primary" ghost @click="askRun(item)">{{ $t('ssh.run') }}</n-button>
+                  <n-button class="act" size="tiny" @click="openEdit(item)">{{ $t('common.edit') }}</n-button>
+                  <n-popconfirm @positive-click="remove(item)">
+                    <template #trigger>
+                      <n-button class="act" size="tiny" type="error" ghost>{{ $t('common.delete') }}</n-button>
+                    </template>
+                    {{ item.name }}
+                  </n-popconfirm>
                 </n-space>
               </td>
             </tr>
@@ -283,11 +305,14 @@ async function confirmRun() {
         {{ $t('ssh.timeoutNote') }}
       </div>
       <template #footer>
-        <n-space justify="end" :size="8">
-          <n-button @click="runShow = false">{{ $t('common.close') }}</n-button>
-          <n-button type="error" :loading="running" :disabled="running" @click="confirmRun">
-            {{ $t('ssh.confirmRun') }}
-          </n-button>
+        <n-space justify="space-between" :size="8">
+          <n-button :disabled="running" @click="backToEdit">{{ $t('ssh.backToEdit') }}</n-button>
+          <n-space :size="8">
+            <n-button @click="runShow = false">{{ $t('common.close') }}</n-button>
+            <n-button type="error" :loading="running" :disabled="running" @click="confirmRun">
+              {{ $t('ssh.confirmRun') }}
+            </n-button>
+          </n-space>
         </n-space>
       </template>
     </n-modal>
@@ -324,5 +349,11 @@ async function confirmRun() {
 }
 @keyframes blink {
   50% { opacity: 0.4; }
+}
+</style>
+<style scoped>
+/* 操作列三按钮统一规格 */
+.act {
+  min-width: 44px;
 }
 </style>
