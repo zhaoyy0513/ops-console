@@ -32,7 +32,8 @@ withDefaults(
       <n-icon v-if="icon" :component="icon" :size="14" class="mc-icon" />
       <span class="mc-title">{{ title }}</span>
     </div>
-    <div class="mc-value" :style="color ? { color } : undefined">
+    <!-- 无 value 且 slot 承载内容（如 donut/网络双行）时不渲染数值行，避免出现孤立的 "?" -->
+    <div v-if="value != null || !$slots.default" class="mc-value" :style="color ? { color } : undefined">
       <CountUp v-if="value != null" :value="value" :decimals="decimals" :prefix="prefix" :suffix="suffix" />
       <span v-else>?</span>
     </div>

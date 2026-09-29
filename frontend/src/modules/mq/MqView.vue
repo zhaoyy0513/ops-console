@@ -26,7 +26,7 @@ const heapSeries = ref<Array<{ ts: number; v: number }>>([])
 const loadError = ref('')
 const queuesError = ref('')
 
-/** 轮询分层：overview/heap 轻量 3s；queues 响应大，15s + 手动刷新 */
+/** 轮询：overview/heap/queues 均随 3s tick 刷新（queues 有后端 5s 缓存兜底） */
 async function loadLight(toastOnFail = false) {
   const siteId = siteStore.currentSiteId
   if (!siteId || !instanceId.value) return
@@ -85,16 +85,15 @@ async function load() {
 }
 onMounted(loadInstances)
 
-// 轮询分层：overview/heap 轻量 3s；queues 响应大 15s 一次（页面在场才轮询）
+// 轮询：页面在场时每 3s 全量刷新（queues 由后端 CACHE_TTL 缓存保护 broker）
 let pollTimer: number | null = null
-let heavyTick = 0
 
 function startPolling() {
   if (pollTimer != null) return
   pollTimer = window.setInterval(() => {
     if (!instanceId.value || document.hidden) return
     loadLight()
-    if (++heavyTick % 5 === 0) loadHeavy(true)
+    loadHeavy(true)
   }, 3000)
 }
 
@@ -299,6 +298,7 @@ function addedColor(added: number | null): string {
           :placeholder="$t('mq.instance')" :options="instances" />
         <n-button size="small" @click="load">{{ $t("common.refresh") }}</n-button>
         <tab-help topic="mq" />
+        <span class="poll-note">{{ $t('mq.refreshNote') }}</span>
         <span v-if="overview" class="badge-line">{{ $t('mq.brokerStatus') }} <status-badge :status="overview.status" /></span>
         <span v-if="queues.length" class="badge-line">{{ $t('mq.worstQueueCol') }} <status-badge :status="worstQueueStatus" /></span>
       </n-space>
@@ -336,7 +336,7 @@ function addedColor(added: number | null): string {
           <div class="mc-grid">
             <metric-card :title="$t('mq.connectionsCol')" :value="overview.connections" />
             <!-- Artemis 2.19 不上报 SessionCount（恒 null 只能显示 ?），
-                 换队列数：与下方队列表同源同值（15s 轮询） -->
+                 换队列数：与下方队列表同源同值（3s 轮询） -->
             <metric-card :title="$t('mq.queuesCount')" :value="queues.length" />
             <metric-card :title="$t('mq.consumersCol')" :value="overview.consumers" />
             <metric-card :title="$t('mq.addressesCol')" :value="overview.addresses" />
@@ -363,12 +363,12 @@ function addedColor(added: number | null): string {
         </n-card>
       </div>
 
-      <n-card size="small" :title="`${$t('mq.queues')} (15s)`">
+      <n-card size="small" :title="$t('mq.queues')">
         <template #header-extra>
           <n-input v-model:value="queueFilter" size="small" style="width: 240px"
             :placeholder="$t('mq.search')" />
         </template>
-        <div v-if="queuesError" class="pane-error">Queues 读取失败：{{ queuesError }}（每 15s 自动重试）</div>
+        <div v-if="queuesError" class="pane-error">Queues 读取失败：{{ queuesError }}（每 3s 自动重试）</div>
         <n-table :single-line="false" size="small">
           <thead>
             <tr>
@@ -449,6 +449,11 @@ function addedColor(added: number | null): string {
   color: #666;
   font-size: 13px;
   white-space: nowrap;
+}
+/* 工具栏刷新频率说明（与 Server 页同款） */
+.poll-note {
+  color: var(--ops-text-3);
+  font-size: 12px;
 }
 .tip {
   cursor: help;

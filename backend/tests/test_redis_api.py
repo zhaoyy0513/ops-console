@@ -183,9 +183,11 @@ async def test_key_detail_all_types(client, target_redis):
     body = (await client.get("/api/sites/sz/redis/r1/key", params={"key": "rank"})).json()
     assert body["value"] == [[1.5, "m1"], [2.5, "m2"]]
 
-    # 不存在的 key 404
+    # 不存在的 key：返回 type=none 载荷（200）——前端轮询的存在性判定信号
     r = await client.get("/api/sites/sz/redis/r1/key", params={"key": "nope"})
-    assert r.status_code == 404
+    assert r.status_code == 200
+    body = r.json()
+    assert body["type"] == "none" and body["ttl"] == -2 and body["value"] is None
 
 
 # ---------- T18: 操作 + 危险命令拒绝 + oplog ----------

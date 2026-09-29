@@ -25,7 +25,8 @@ export interface KeyItem {
 
 export interface KeyDetail {
   key: string
-  type: 'string' | 'hash' | 'list' | 'set' | 'zset'
+  /** 'none' = key 已不存在（后端返回该载荷而非 404，供轮询做存在性判定） */
+  type: 'string' | 'hash' | 'list' | 'set' | 'zset' | 'none'
   ttl: number // 秒；-1 无过期；-2 不存在
   memory_usage: number | null
   value: unknown

@@ -47,11 +47,12 @@ export const helpContent: Record<HelpLang, Record<string, HelpSection>> = {
       lines: [
         '经 Jolokia HTTP(8161) 读取 ActiveMQ Artemis 管理数据：Broker 概览、JVM 内存、地址内存与队列明细；平台只读，不做任何写入。',
         'JVM Heap = MQ 进程的 Java 堆内存（约 5s 采样），按 80%/90% 阈值着色；生产“MQ 内存占满”即此值逼近上限，趋势图同样来自采样。',
+        '地址内存是 Artemis 为消息分配的堆外内存上限 global-max-size 的占用情况，逼近上限会触发消息阻塞。',
         '「Topics / Queues」中：Address 是目的地（相当于 topic 名），Queue 是实际存放消息的队列；表格列为队列名、所属 Address、诊断状态（悬停看具体问题）、消息数、消费者与累计新增。',
         '积压判定阈值：消息数 >5000 警告（数字加粗）、>20000 严重；「无消费者」= 队列有消息但没有任何消费者，消息会一直堆积。',
         '「查看」弹出消息浏览窗，只读预览队列前 20 条消息，不会消费它们。',
         '「清空」会删除队列内全部积压消息，不可恢复：需 10 秒倒计时确认，并记录操作日志；仅在消息数 > 0 时出现。',
-        '队列读取失败时每 15 秒自动重试；外部 MQ 异常不影响平台其他功能。',
+        '队列读取失败时每 3 秒自动重试；外部 MQ 异常不影响平台其他功能。',
       ],
     },
 
@@ -116,11 +117,12 @@ export const helpContent: Record<HelpLang, Record<string, HelpSection>> = {
       lines: [
         'Reads ActiveMQ Artemis management data over Jolokia HTTP(8161): broker overview, JVM memory, address memory and queue details; the platform is read-only.',
         'JVM Heap is the MQ process Java heap (~5s sampling), coloured at 80%/90%; production "MQ out of memory" means this value approaching the max. The trend uses the same samples.',
+        'Address memory shows usage of global-max-size, the off-heap cap Artemis allocates for storing messages; approaching the cap triggers message blocking.',
         'In Topics / Queues: an Address is the destination (topic name); a Queue actually stores messages. Columns: queue name, owning address, diagnosis (hover for issues), message count, consumers and total added.',
         'Backlog thresholds: message count >5000 warning (bold), >20000 critical. "No consumer" = messages exist but nothing consumes them, so they pile up indefinitely.',
         '"View" opens a read-only browser showing the first 20 messages in the queue — it does not consume them.',
         '"Purge" deletes ALL backlog in the queue and is irreversible: 10-second countdown confirmation, audit logged; only shown when the queue has messages.',
-        'Queue reads retry automatically every 15s on failure; an unreachable MQ never affects other platform features.',
+        'Queue reads retry automatically every 3s on failure; an unreachable MQ never affects other platform features.',
       ],
     },
 

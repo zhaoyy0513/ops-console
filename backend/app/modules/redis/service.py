@@ -140,8 +140,10 @@ async def get_key(site_id: str, redis_id: str, *, db: int = 0, key: str) -> dict
             async with provider._client(db) as c:
                 ktype = await c.type(key)
                 if ktype == "none":
-                    # 明确语义：key 已不存在（删除/过期），而非 HTTP 404 资源缺失
-                    raise NotFound("Key 不存在（可能已被删除或已过期）")
+                    # key 已不存在（删除/过期）返回 type=none 载荷而非 404：前端 30s 轮询
+                    # 用它做存在性判定——axios 拦截器把一切错误拍平成 Error(message)，
+                    # 404 与网络瞬断在客户端无法区分（曾导致"key 不存在"误报清空详情）
+                    return {"key": key, "type": "none", "ttl": -2, "memory_usage": None, "value": None}
                 ttl = await c.ttl(key)
                 try:
                     memory = await c.memory_usage(key)

@@ -162,44 +162,44 @@ const memPct = computed(() => {
   return m?.total && m?.used != null ? Math.round((m.used / m.total) * 1000) / 10 : null
 })
 
-// 紧凑刻度（Artemis 风格）：常规 mm:ss（秒保持可见）；跨小时后的首个"渲染刻度"保留 HH: 前缀兜底。
-// prevHour 只在渲染刻度上推进（i % (step+1) === 0，与 ECharts interval 语义一致），
-// 保证小时切换一定落在某个可见标签上。手动补零：不受浏览器 locale 影响（en-US 会带 AM/PM）
-function axisLabels(points: SamplePoint[], step: number): string[] {
+// 紧凑刻度（Artemis 风格）：常规 mm:ss（秒保持可见）；跨小时后的首个刻度保留 HH:mm:ss 兜底。
+// interval:0 → 每个样本都是渲染刻度，prevHour 逐点推进，小时切换一定落在可见标签上。
+// 手动补零：不受浏览器 locale 影响（en-US 会带 AM/PM）
+function axisLabels(points: SamplePoint[]): string[] {
   const p = (n: number) => String(n).padStart(2, '0')
   let prevHour = -1
-  return points.map((pt, i) => {
+  return points.map((pt) => {
     const d = new Date(pt.ts * 1000)
     const hms = `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
-    if (i % (step + 1) !== 0) return hms // 未渲染的刻度，内容无所谓
     const full = d.getHours() !== prevHour
     prevHour = d.getHours()
     return full ? hms : hms.slice(3) // mm:ss
   })
 }
 
+// 趋势只展示最近 40 个样本（3s 采样 ≈ 2 分钟窗口）：采集仍拉全量，展示侧截断
+const TREND_WINDOW = 40
+
 const trendOption = computed(() => {
-  // 固定步长取整秒标签（~8 个）：避免 ECharts 自动间隔导致标签"跳动"
-  const step = Math.max(0, Math.ceil(cpuSeries.value.length / 8) - 1)
-  const labels = axisLabels(cpuSeries.value, step)
-  const memPoints = memSeries.value.map((p) => p.v)
+  const cpu = cpuSeries.value.slice(-TREND_WINDOW)
+  const mem = memSeries.value.slice(-TREND_WINDOW)
   return {
     grid: { left: 44, right: 16, top: 36, bottom: 26 },
     legend: { data: [t('server.cpuCol'), t('server.memCol')], top: 0 },
     tooltip: { trigger: 'axis' },
     xAxis: {
       type: 'category',
-      data: labels,
+      data: axisLabels(cpu),
       axisLabel: {
-        interval: step,
+        interval: 0, // 每个样本一个刻度（连续 3s 间隔标签），hideOverlap 兜底防挤
         fontSize: 10,
         hideOverlap: true,
       },
     },
     yAxis: { type: 'value', max: 100, axisLabel: { formatter: '{value}%' } },
     series: [
-      { name: t('server.cpuCol'), type: 'line', smooth: true, showSymbol: false, areaStyle: { opacity: 0.12 }, data: cpuSeries.value.map((p) => p.v) },
-      { name: t('server.memCol'), type: 'line', smooth: true, showSymbol: false, areaStyle: { opacity: 0.12 }, data: memPoints },
+      { name: t('server.cpuCol'), type: 'line', smooth: true, showSymbol: false, areaStyle: { opacity: 0.12 }, data: cpu.map((p) => p.v) },
+      { name: t('server.memCol'), type: 'line', smooth: true, showSymbol: false, areaStyle: { opacity: 0.12 }, data: mem.map((p) => p.v) },
     ],
   }
 })
@@ -319,9 +319,9 @@ const diskColumns = computed<DataTableColumns<DiskRow>>(() => [
         </n-table>
       </n-card>
 
-      <!-- 指标卡统一 5 列网格：等宽等高，一行放下 CPU/内存/网络/磁盘/僵尸 -->
+      <!-- 指标卡统一 MetricCard：5 列网格等宽等高，hover 边框全卡一致；仅僵尸卡可点击（弹窗明细） -->
       <div class="sv-cards">
-        <n-card size="small" :title="$t('server.cpu')">
+        <metric-card :title="$t('server.cpu')">
           <div class="donut-wrap">
             <base-chart :option="cpuDonutOption" height="120px" />
             <div class="donut-center" :style="{ color: pctColor(metrics.cpu.usage) }">
@@ -334,8 +334,8 @@ const diskColumns = computed<DataTableColumns<DiskRow>>(() => [
             {{ $t('server.cores') }} {{ metrics.cpu.cores ?? '?' }} · {{ $t('server.iowait') }} {{ metrics.cpu.iowait ?? '?' }}% ·
             {{ $t('server.load') }} {{ metrics.load.load1 ?? '?' }} / {{ metrics.load.load5 ?? '?' }} / {{ metrics.load.load15 ?? '?' }}
           </div>
-        </n-card>
-        <n-card size="small" :title="$t('server.memory')">
+        </metric-card>
+        <metric-card :title="$t('server.memory')">
           <div class="donut-wrap">
             <base-chart :option="memDonutOption" height="120px" />
             <div class="donut-center" :style="{ color: pctColor(memPct) }">
@@ -351,17 +351,17 @@ const diskColumns = computed<DataTableColumns<DiskRow>>(() => [
           <div class="metric-sub">
             {{ $t('server.avail') }} {{ metrics.memory.available }}MB · {{ $t('server.swap') }} {{ metrics.memory.swap_used ?? 0 }}MB
           </div>
-        </n-card>
-        <n-card size="small" :title="$t('server.network')">
+        </metric-card>
+        <metric-card :title="$t('server.network')">
           <!-- 5 列布局下收窄：RX/TX 两行竖排省宽度 -->
           <div class="net-lines mono">
             <div>{{ fmtBytes(metrics.network.rx) }}<span class="unit">↓</span></div>
             <div>{{ fmtBytes(metrics.network.tx) }}<span class="unit">↑</span></div>
           </div>
           <div class="metric-sub">
-            errors {{ metrics.network.errors }} · dropped {{ metrics.network.dropped }}
+            {{ $t('server.netErrors') }} {{ metrics.network.errors }} · {{ $t('server.netDropped') }} {{ metrics.network.dropped }}
           </div>
-        </n-card>
+        </metric-card>
         <metric-card
           :title="$t('server.disk')"
           :value="topDisk?.use_percent ?? null"
@@ -373,17 +373,17 @@ const diskColumns = computed<DataTableColumns<DiskRow>>(() => [
             {{ topDisk.mount }} · {{ $t('server.used') }} {{ topDisk.used }} / {{ $t('server.total') }} {{ topDisk.size }}
           </template>
         </metric-card>
-        <!-- 僵尸进程：>0 红色告警，0 灰色健康；点击打开明细弹窗 -->
-        <div class="tile-wrap" @click="showZombies = true">
-          <metric-card
-            :title="$t('server.zombies')"
-            :value="zombieCount"
-            :color="zombieCount ? ZOMBIE_RED : undefined"
-            :bar-color="zombieCount ? ZOMBIE_RED : '#9ca0a8'"
-          >
-            {{ zombieCount ? $t('server.zombieList') : $t('server.zombieEmpty') }}
-          </metric-card>
-        </div>
+        <!-- 僵尸进程：>0 红色告警，0 灰色健康；点击卡片本体（非外层包装）打开明细弹窗 -->
+        <metric-card
+          class="tile-click"
+          :title="$t('server.zombies')"
+          :value="zombieCount"
+          :color="zombieCount ? ZOMBIE_RED : undefined"
+          :bar-color="zombieCount ? ZOMBIE_RED : '#9ca0a8'"
+          @click="showZombies = true"
+        >
+          {{ zombieCount ? $t('server.zombieList') : $t('server.zombieEmpty') }}
+        </metric-card>
       </div>
 
       <n-card size="small" :title="$t('server.trend')" style="width: 100%">
@@ -479,15 +479,15 @@ const diskColumns = computed<DataTableColumns<DiskRow>>(() => [
   flex-direction: column;
   gap: 12px;
 }
-/* 指标卡统一网格：5 列等宽等高（grid 默认 stretch），一行放下 CPU/内存/网络/磁盘/僵尸 */
+/* 指标卡统一网格：5 列等宽等高（grid 默认 stretch），卡片即网格项，不再套包装层 */
 .sv-cards {
   display: grid;
   grid-template-columns: repeat(5, 1fr);
   gap: 12px;
   align-items: stretch;
 }
-/* 可点击卡片（Overview tile-wrap 同款） */
-.tile-wrap {
+/* 唯一可点击卡片（僵尸进程）：点击绑定在卡片本体上，点击区域与卡片完全一致 */
+.tile-click {
   cursor: pointer;
 }
 /* donut 中心数字叠加层（echarts 只画环，数字由 HTML 渲染才能接 CountUp） */

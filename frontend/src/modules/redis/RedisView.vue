@@ -81,8 +81,9 @@ async function loadInstances() {
   }
 }
 
-/** silent：30s 轮询用，不闪 loading 骨架/转圈（手动入口仍走 loading） */
-async function search(reset = true, silent = false) {
+/** silent：30s 轮询用，不闪 loading 骨架/转圈（手动入口仍走 loading）；
+ *  count：单页拉取量（轮询传当前已加载数，"加载更多"的成果不因刷新收缩） */
+async function search(reset = true, silent = false, count = 100) {
   if (!siteStore.currentSiteId || !instanceId.value) return
   if (!silent) loading.value = true
   try {
@@ -90,7 +91,7 @@ async function search(reset = true, silent = false) {
       db: db.value,
       pattern: pattern.value.trim(),
       cursor: reset ? 0 : cursor.value,
-      count: 100,
+      count,
     })
     keys.value = reset ? page.keys : [...keys.value, ...page.keys]
     cursor.value = page.cursor
@@ -189,6 +190,22 @@ function toggleDir(node: TreeDir) {
     : [...expandedKeys.value, node.key]
 }
 
+/** 展开全部 / 收起全部：目录键从当前树实时求值（刷新重建后仍有效） */
+function expandAll() {
+  const out: string[] = []
+  const walk = (nodes: TreeNode[]) => {
+    for (const n of nodes) if (n.dir) {
+      out.push(n.key)
+      walk(n.children)
+    }
+  }
+  walk(treeData.value as unknown as TreeNode[])
+  expandedKeys.value = out
+}
+function collapseAll() {
+  expandedKeys.value = []
+}
+
 function renderLabel({ option }: { option: TreeOption }) {
   const node = option as unknown as TreeNode
   if (node.dir) {
@@ -281,21 +298,28 @@ async function selectKey(k: KeyItem) {
   selected.value = k
   detailLoading.value = true
   try {
-    detail.value = await getKey(siteStore.currentSiteId, instanceId.value, db.value, k.key)
-    const raw = toEditText(detail.value)
+    const d = await getKey(siteStore.currentSiteId, instanceId.value, db.value, k.key)
+    if (d.type === 'none') {
+      // key 已被删除/过期：明确提示并清空右侧（不再让用户对着旧值操作），列表同步去掉该 key
+      message.error(t('redis.keyGone', { key: k.key }))
+      clearDetail()
+      search(true)
+      return
+    }
+    detail.value = d
+    const raw = toEditText(d)
     loadedAsJson.value = isJson(raw)
     format.value = loadedAsJson.value ? 'json' : 'text'
     editText.value = format.value === 'json'
       ? JSON.stringify(JSON.parse(raw), null, 2)
       : raw
     originalText.value = editText.value
-    editTtl.value = detail.value.ttl > 0 ? detail.value.ttl : null
+    editTtl.value = d.ttl > 0 ? d.ttl : null
     editTtlLoaded.value = editTtl.value
   } catch (e) {
-    // key 已被删除/过期等：明确提示并清空右侧（不再让用户对着旧值操作）
+    // 连接失败等瞬断：提示并清空（旧值不可再操作）
     message.error((e as Error).message)
     clearDetail()
-    search(true)
   } finally {
     detailLoading.value = false
   }
@@ -487,23 +511,24 @@ function userEditing(): boolean {
 
 async function autoRefresh() {
   if (document.hidden || !siteStore.currentSiteId || !instanceId.value) return
-  await search(true, true)
+  // 单页拉满当前已加载数量：刷新不收缩"加载更多"的列表（树按 key 重建，展开态保留）
+  await search(true, true, Math.max(100, keys.value.length))
   loadInfo()
   const sel = selected.value
-  if (!sel) return
-  // 列表里已没有该 key：删除/过期 —— 清详情并提示
-  if (!keys.value.some((k) => k.key === sel.key)) {
-    message.info(t('redis.keyGone', { key: sel.key }))
-    clearDetail()
-    return
-  }
-  // key 还在：用户未编辑时仅同步只读 TTL/内存徽章（编辑中静默跳过，见 userEditing）
-  if (!userEditing()) {
-    try {
-      detail.value = await getKey(siteStore.currentSiteId, instanceId.value, db.value, sel.key)
-    } catch {
-      // 轮询间隙被删：下一轮列表分支会清理
+  if (!sel || userEditing()) return
+  try {
+    const d = await getKey(siteStore.currentSiteId, instanceId.value, db.value, sel.key)
+    if (d.type === 'none') {
+      // 后端确认 key 已不存在（删除/过期）才清理——SCAN 分页列表不能当存在性依据
+      // （选中 key 在刷新后的首页之外时曾因此误报"已不存在"并清空详情）
+      message.info(t('redis.keyGone', { key: sel.key }))
+      clearDetail()
+      return
     }
+    // key 还在（可能只是不在当前列表页）：保留详情并同步 TTL/内存徽章
+    detail.value = d
+  } catch {
+    // 网络/超时等瞬断：不动详情，下一轮再查
   }
 }
 
@@ -578,6 +603,7 @@ const INFO_METRICS = computed(() => {
           :placeholder="$t('redis.search')" @keyup.enter="refreshDb" />
         <n-button size="small" :loading="loading" :title="$t('redis.manualRefreshTip')" @click="refreshDb">{{ $t('common.refresh') }}</n-button>
         <tab-help topic="redis" />
+        <span class="poll-note">{{ $t('redis.autoRefresh') }}</span>
       </n-space>
     </n-card>
 
@@ -601,6 +627,8 @@ const INFO_METRICS = computed(() => {
         <template #header-extra>
           <n-space align="center" :size="8" :wrap="false">
             <n-button size="small" @click="openAdd">{{ $t('redis.addKey') }}</n-button>
+            <n-button size="tiny" quaternary @click="expandAll">{{ $t('redis.expandAll') }}</n-button>
+            <n-button size="tiny" quaternary @click="collapseAll">{{ $t('redis.collapseAll') }}</n-button>
             <span style="color: #999; font-size: 12px">{{ $t('redis.keysCount', { n: keys.length }) }}</span>
           </n-space>
         </template>
@@ -757,6 +785,11 @@ const INFO_METRICS = computed(() => {
 .tree-scroll {
   max-height: calc(100vh - 320px);
   overflow: auto;
+}
+/* 顶栏自动刷新频率注记（对齐 Server 页 poll-note） */
+.poll-note {
+  color: var(--ops-text-3);
+  font-size: 12px;
 }
 .mono {
   font-family: ui-monospace, Consolas, monospace;
