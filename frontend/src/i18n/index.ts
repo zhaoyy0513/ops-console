@@ -699,7 +699,7 @@ const messages = {
       bindServer: 'Bound Server',
       serverPh: 'Select target server',
       formContent: 'Script content',
-      contentPh: 'bash script (executed via bash -s on the target Server)',
+      contentPh: 'bash script via bash -s (use one-shot variants: top -bn1, docker stats --no-stream; live-refresh commands need a real TTY and will exit immediately)',
       nameRequired: 'Name is required',
       serverRequired: 'A bound Server is required',
       saved: 'Saved',

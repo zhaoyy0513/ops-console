@@ -180,7 +180,9 @@ async def stream_execute(server_cfg: dict[str, Any], content: str, *,
     """流式执行：边产出边 yield (kind, chunk)，kind in {stdout, stderr}。
 
     - 整体预算 settings.ssh_command_timeout * 6 秒，到点 kill 并 yield 终态；
-    - 客户端断开（FastUI 取消生成器）时 finally 中 kill，绝不遗留远端进程；
+    - 客户端断开（FastAPI 取消生成器）时 finally 中 kill，绝不遗留远端进程；
+    - stdout/stderr 两个 reader 并发读入同一队列（串行轮询会让 stderr
+      在 stdout 不退出时永远读不到——如 docker stats 刷新中对 stderr 的告警）；
     - 结束 yield ("meta", json) 携带 timed_out / latency_ms。
     """
     import asyncio
@@ -204,40 +206,42 @@ async def stream_execute(server_cfg: dict[str, Any], content: str, *,
             proc.stdin.write(content)
             proc.stdin.write_eof()
 
-            async def pump(stream, kind):
-                while True:
+            queue: asyncio.Queue = asyncio.Queue()
+
+            async def reader(stream, kind):
+                try:
+                    while True:
+                        chunk = await stream.read(4096)
+                        if not chunk:
+                            return
+                        await queue.put((kind, chunk))
+                finally:
+                    await queue.put((None, None))  # 该流 EOF 的哨兵
+
+            tasks = [
+                asyncio.create_task(reader(proc.stdout, "stdout")),
+                asyncio.create_task(reader(proc.stderr, "stderr")),
+            ]
+            try:
+                deadline = time.monotonic() + timeout
+                eof = 0
+                while eof < 2:
                     remaining = deadline - time.monotonic()
                     if remaining <= 0:
-                        raise TimeoutError
-                    chunk = await asyncio.wait_for(stream.read(4096), remaining)
-                    if not chunk:
-                        return
-                    yield kind, chunk
-
-            deadline = time.monotonic() + timeout
-            pumps = [
-                pump(proc.stdout, "stdout"),
-                pump(proc.stderr, "stderr"),
-            ]
-            while pumps:
-                done, pending = set(), set()
-                # 用 as_completed 语义手工调度：任一泵产出立即转发
-                try:
-                    for gen in pumps:
-                        try:
-                            kind, chunk = await gen.__anext__()
-                            yield kind, chunk
-                            done.add(gen)
-                            break
-                        except StopAsyncIteration:
-                            pumps.remove(gen)
-                            break
-                except TimeoutError:
-                    timed_out = True
-                    break
-                # 一轮只取一个泵的一块后重新排队（简化轮询）
-                if not pumps:
-                    break
+                        timed_out = True
+                        break
+                    try:
+                        kind, chunk = await asyncio.wait_for(queue.get(), remaining)
+                    except (asyncio.TimeoutError, TimeoutError):
+                        timed_out = True
+                        break
+                    if kind is None:
+                        eof += 1
+                    else:
+                        yield kind, chunk
+            finally:
+                for t in tasks:
+                    t.cancel()
     except (OSError, asyncssh.Error) as e:
         await oplog.record(site_id, log_resource, "SSH_SCRIPT_RUN",
                            target=log_target,

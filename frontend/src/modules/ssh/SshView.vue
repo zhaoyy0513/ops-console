@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
   NButton,
@@ -226,7 +226,16 @@ const runTarget = ref<SshScript | null>(null)
 const running = ref(false)
 const runOutput = ref('')
 const runTimedOut = ref(false)
+const consoleEl = ref<HTMLElement | null>(null)
 let runAbort: (() => void) | null = null
+
+/** 追加输出并跟随滚动：贴底时自动滚到最新；用户向上翻阅（离底 >48px）则暂停跟随 */
+function appendOut(s: string) {
+  const el = consoleEl.value
+  const stick = el ? el.scrollHeight - el.scrollTop - el.clientHeight < 48 : true
+  runOutput.value += s
+  if (stick && el) nextTick(() => { el.scrollTop = el.scrollHeight })
+}
 
 function stopRun() {
   runAbort?.() // 断开 SSE -> 后端 finally kill 远端进程，绝不遗留
@@ -260,18 +269,23 @@ function backToEdit() {
   }
 }
 
-/** 流式执行（测试流 id 为空时跑表单内容；表格流按 id）。输出实时追加。 */
+/** 流式执行（测试流 id 为空时跑表单内容；表格流按 id）。输出实时追加，
+ *  连续执行不清屏——以时间戳分隔线区隔上下两次（贴近真实终端）。 */
 function confirmRun() {
   const item = runTarget.value
   if (!item || !siteStore.currentSiteId) return
   stopRun()
-  runOutput.value = ''
   runTimedOut.value = false
   running.value = true
-  let err = ''
+  if (runOutput.value) appendOut(`\n──── ${new Date().toLocaleString()} ────\n`)
+  let sawStderr = false
   const onChunk = (kind: string, data: string) => {
-    if (kind === 'stdout') runOutput.value += data
-    else if (kind === 'stderr') err += (err ? '\n' : '') + data
+    if (kind === 'stdout') appendOut(data)
+    else if (kind === 'stderr') {
+      // stderr 实时上屏（top 等无终端命令秒退时报错立即可见，不再攒到最后）
+      appendOut((sawStderr ? '' : '[stderr] ') + data)
+      sawStderr = true
+    }
     else if (kind === 'meta') {
       try {
         const m = JSON.parse(data)
@@ -279,9 +293,8 @@ function confirmRun() {
         if (m.timed_out) message.warning(t('ssh.timeoutWarn'))
       } catch { /* 忽略 */ }
       running.value = false
-      if (err) runOutput.value += `\n[stderr]\n${err}`
     } else if (kind === 'error') {
-      runOutput.value += t('ssh.runFailed', { msg: data })
+      appendOut(t('ssh.runFailed', { msg: data }))
       running.value = false
     }
   }
@@ -432,7 +445,7 @@ function confirmRun() {
         {{ $t('ssh.runDesc', { server: runTarget ? serverName(runTarget.server_id) : '' }) }}
       </p>
       <div v-if="running" class="console-live">{{ $t('ssh.executing') }}</div>
-      <div class="console mono" :class="{ 'console-max': runFullscreen }">
+      <div ref="consoleEl" class="console mono" :class="{ 'console-max': runFullscreen }">
         <template v-if="runOutput">{{ runOutput }}</template>
         <span v-else-if="running" class="console-running">…</span>
         <span v-else style="color: #6b7280">{{ $t('ssh.clickToRun') }}</span>

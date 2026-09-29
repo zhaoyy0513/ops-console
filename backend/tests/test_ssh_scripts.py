@@ -173,3 +173,67 @@ async def test_run_adhoc_no_persist(client, fake_platform_redis, monkeypatch):
     assert "adhoc-ok" in r.json()["stdout"]
     # 未落库：脚本列表不新增
     assert (await client.get("/api/sites/sz/ssh_scripts")).json() == []
+
+
+async def test_run_stream_sse_stdout_and_stderr(client, monkeypatch):
+    """流式执行（SSE）：stdout/stderr 双流并发到达。
+
+    回归守卫：旧实现的串行泵每轮先 await stdout，stderr 只有在 stdout EOF
+    后才被读到（如 docker stats 持续刷新时 stderr 告警永远不可见）。
+    """
+    import asyncssh
+    from backend.app.modules.ssh import service as svc
+
+    class _Stream:
+        def __init__(self, chunks):
+            self.chunks = list(chunks)
+
+        async def read(self, n):
+            return self.chunks.pop(0) if self.chunks else ""
+
+    class P:
+        class _Stdin:
+            def write(self, s):
+                pass
+
+            def write_eof(self):
+                pass
+
+        def __init__(self):
+            self.stdin = P._Stdin()
+            self.stdout = _Stream(["out-1\n", "out-2\n"])
+            self.stderr = _Stream(["warn-1\n"])
+
+        def kill(self):
+            pass
+
+        def close(self):
+            pass
+
+    class C:
+        async def create_process(self, cmd, env=None):
+            return P()
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+    monkeypatch.setattr(asyncssh, "connect", lambda *a, **k: C())
+
+    async def fake_raw(sid, t, rid):
+        return {"host": "1.1.1.1", "port": 22}
+
+    monkeypatch.setattr(svc, "get_resource_raw", fake_raw)
+
+    r = await client.post("/api/sites/sz/ssh_scripts/run-adhoc-stream",
+                          json={"server_id": "srv1", "content": "echo hi"})
+    assert r.status_code == 200
+    text = r.text
+    assert '"kind": "stdout", "data": "out-1' in text
+    assert '"kind": "stdout", "data": "out-2' in text
+    assert '"kind": "stderr", "data": "warn-1' in text
+    assert '"kind": "meta"' in text
+    # meta 的 payload 是嵌套 JSON，内层引号被转义
+    assert '\\"timed_out\\": false' in text
