@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from .redis import get_platform_redis
 
 OPLOG_KEY = "ops:oplog"
-OPLOG_MAX = 200  # 只保留最近 200 条（原 1000，2026-09 收紧）
+OPLOG_MAX = 320  # 只保留最近 320 条（原 1000 → 200 → 320，操作日志页 16 页 × 16 行）
 
 
 async def record(

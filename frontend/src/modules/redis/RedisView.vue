@@ -5,6 +5,7 @@ import {
   NAlert,
   NButton,
   NCard,
+  NIcon,
   NInput,
   NInputNumber,
   NModal,
@@ -21,6 +22,7 @@ import {
   type TreeOption,
 } from 'naive-ui'
 import { parser as jsonParser } from '@lezer/json'
+import { ContractOutline, ExpandOutline } from '@vicons/ionicons5'
 import CountdownConfirm from '../../components/CountdownConfirm.vue'
 import TabHelp from '../../components/TabHelp.vue'
 import DiffJsonEditor from '../../components/DiffJsonEditor.vue'
@@ -81,7 +83,7 @@ async function loadInstances() {
   }
 }
 
-/** silent：30s 轮询用，不闪 loading 骨架/转圈（手动入口仍走 loading）；
+/** silent：5s 轮询用，不闪 loading 骨架/转圈（手动入口仍走 loading）；
  *  count：单页拉取量（轮询传当前已加载数，"加载更多"的成果不因刷新收缩） */
 async function search(reset = true, silent = false, count = 100) {
   if (!siteStore.currentSiteId || !instanceId.value) return
@@ -490,7 +492,7 @@ async function createKey() {
   }
 }
 
-// ---------- 自动刷新 + TTL 活性（30s 轮询列表/info；选中 key 只同步只读 TTL，不打断编辑） ----------
+// ---------- 自动刷新 + TTL 活性（5s 轮询列表/info，量随已加载数有界；选中 key 只同步只读 TTL，不打断编辑） ----------
 let pollTimer: number | undefined
 let tickTimer: number | undefined
 const nowSec = ref(Math.floor(Date.now() / 1000))
@@ -534,7 +536,7 @@ async function autoRefresh() {
 
 function startTimers() {
   stopTimers()
-  pollTimer = window.setInterval(autoRefresh, 30_000)
+  pollTimer = window.setInterval(autoRefresh, 5_000)
   tickTimer = window.setInterval(() => (nowSec.value = Math.floor(Date.now() / 1000)), 1_000)
 }
 function stopTimers() {
@@ -627,8 +629,13 @@ const INFO_METRICS = computed(() => {
         <template #header-extra>
           <n-space align="center" :size="8" :wrap="false">
             <n-button size="small" @click="openAdd">{{ $t('redis.addKey') }}</n-button>
-            <n-button size="tiny" quaternary @click="expandAll">{{ $t('redis.expandAll') }}</n-button>
-            <n-button size="tiny" quaternary @click="collapseAll">{{ $t('redis.collapseAll') }}</n-button>
+            <!-- 图标按钮 + title 提示：窄面板放不下两条英文长文案（曾挤成一团） -->
+            <n-button size="tiny" quaternary :title="$t('redis.expandAll')" @click="expandAll">
+              <template #icon><n-icon :component="ExpandOutline" /></template>
+            </n-button>
+            <n-button size="tiny" quaternary :title="$t('redis.collapseAll')" @click="collapseAll">
+              <template #icon><n-icon :component="ContractOutline" /></template>
+            </n-button>
             <span style="color: #999; font-size: 12px">{{ $t('redis.keysCount', { n: keys.length }) }}</span>
           </n-space>
         </template>

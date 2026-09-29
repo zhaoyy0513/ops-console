@@ -20,13 +20,15 @@ withDefaults(
     color?: string
     /** 顶边状态色条，默认主色 */
     barColor?: string
+    /** hover 边框高亮改为 opt-in：仅可点击卡片传 true，非交互卡不暗示可点 */
+    hoverable?: boolean
   }>(),
-  { value: null, decimals: 0, prefix: '', suffix: '' },
+  { value: null, decimals: 0, prefix: '', suffix: '', hoverable: false },
 )
 </script>
 
 <template>
-  <div class="metric-card">
+  <div class="metric-card" :class="{ hoverable }">
     <div class="mc-bar" :style="{ background: barColor ?? 'var(--ops-primary)' }" />
     <div class="mc-head">
       <n-icon v-if="icon" :component="icon" :size="14" class="mc-icon" />
@@ -51,7 +53,7 @@ withDefaults(
   overflow: hidden;
   transition: border-color 160ms ease;
 }
-.metric-card:hover {
+.metric-card.hoverable:hover {
   border-color: var(--ops-primary);
 }
 .mc-bar {

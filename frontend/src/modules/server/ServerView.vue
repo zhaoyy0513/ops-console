@@ -319,7 +319,7 @@ const diskColumns = computed<DataTableColumns<DiskRow>>(() => [
         </n-table>
       </n-card>
 
-      <!-- 指标卡统一 MetricCard：5 列网格等宽等高，hover 边框全卡一致；仅僵尸卡可点击（弹窗明细） -->
+      <!-- 指标卡统一 MetricCard：5 列网格等宽等高；仅僵尸卡可点击（弹窗明细），也只有它开 hover 边框 -->
       <div class="sv-cards">
         <metric-card :title="$t('server.cpu')">
           <div class="donut-wrap">
@@ -376,6 +376,7 @@ const diskColumns = computed<DataTableColumns<DiskRow>>(() => [
         <!-- 僵尸进程：>0 红色告警，0 灰色健康；点击卡片本体（非外层包装）打开明细弹窗 -->
         <metric-card
           class="tile-click"
+          hoverable
           :title="$t('server.zombies')"
           :value="zombieCount"
           :color="zombieCount ? ZOMBIE_RED : undefined"
@@ -506,11 +507,13 @@ const diskColumns = computed<DataTableColumns<DiskRow>>(() => [
   font-variant-numeric: tabular-nums;
   pointer-events: none;
 }
-/* 网络卡 RX/TX 竖排两行（5 列布局下省宽度），数值 24px */
+/* 网络卡 RX/TX 竖排两行（5 列布局下省宽度），数值 24px；
+   覆写 mc-extra 的 text-3：数值用 text-1 提高对比度 */
 .net-lines {
   font-size: 24px;
   font-weight: 600;
   line-height: 1.4;
+  color: var(--ops-text-1);
 }
 /* 服务器选择栏的轮询频率注记 */
 .poll-note {
@@ -530,7 +533,7 @@ const diskColumns = computed<DataTableColumns<DiskRow>>(() => [
   font-size: 14px;
   font-weight: 400;
   margin-left: 4px;
-  color: var(--ops-text-3);
+  color: var(--ops-text-2);
 }
 .metric-sub {
   margin-top: 6px;

@@ -94,6 +94,7 @@ function fmtTime(iso: string): string {
           :icon="KIND_META[kind].icon"
           :value="data.summary[kind as keyof typeof data.summary].total"
           :bar-color="tileBar(data.summary[kind as keyof typeof data.summary])"
+          hoverable
         >
           <span class="dist">
             <n-tag type="success" size="tiny" :bordered="false">{{ data.summary[kind as keyof typeof data.summary].healthy }}</n-tag>

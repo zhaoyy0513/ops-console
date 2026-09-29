@@ -7,7 +7,7 @@ import { auditApi, type AuditPage } from './api'
 const { t } = useI18n()
 const data = ref<AuditPage | null>(null)
 const page = ref(1)
-const size = 10
+const size = 16
 const loading = ref(false)
 
 async function load() {
@@ -29,14 +29,15 @@ type Row = NonNullable<AuditPage['items'][number]>
 
 const columns = computed(() => [
   // 时间列固定宽 + 禁止换行：'2026-09-29 16:20:33' 必须单行（换行两行太高）
-  { title: t('audit.colTime'), key: 'time', width: 165, className: 'nowrap', render: (row: Row) => (row.time ?? '').replace('T', ' ').slice(0, 19) },
+  { title: t('audit.colTime'), key: 'time', width: 170, className: 'nowrap', render: (row: Row) => (row.time ?? '').replace('T', ' ').slice(0, 19) },
   { title: t('audit.colSite'), key: 'site', width: 120 },
   { title: t('audit.colResource'), key: 'resource', width: 170, className: 'mono', ellipsis: { tooltip: true } },
-  { title: t('audit.colOperation'), key: 'operation', width: 200 },
+  // 180px：最长常见操作 RESOURCE_CONFIG_DELETED / SERVER_KILL_ZOMBIE 单行放得下
+  { title: t('audit.colOperation'), key: 'operation', width: 180 },
   {
     title: t('audit.colTarget'),
     key: 'target',
-    minWidth: 140,
+    minWidth: 120,
     className: 'mono',
     ellipsis: { tooltip: true },
     render: (row: Row) => row.target ?? '-',
