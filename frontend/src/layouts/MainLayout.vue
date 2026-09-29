@@ -119,7 +119,7 @@ function onSiteSelect(id: string) {
         <div v-if="!siteStore.currentSiteId" class="sider-hint">{{ $t('layout.siderHint') }}</div>
         <n-menu :value="activeKey" :options="menuOptions" @update:value="onMenuSelect" />
         <div class="sider-footer">
-          <span class="build-stamp">b0929-2210</span>
+          <span class="build-stamp">b0929-2220</span>
         </div>
       </aside>
       <main class="app-main">

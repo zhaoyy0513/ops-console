@@ -229,11 +229,17 @@ const runTimedOut = ref(false)
 const consoleEl = ref<HTMLElement | null>(null)
 let runAbort: (() => void) | null = null
 
+/** ANSI 转义剥离：docker stats 等实时刷新命令每秒发 [H（光标归位）重绘整表，
+ * 原样追加会闪现乱码/方块且看似内容晃动。 */
+function stripAnsi(s: string): string {
+  return s.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '').replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, '')
+}
+
 /** 追加输出并跟随滚动：贴底时自动滚到最新；用户向上翻阅（离底 >48px）则暂停跟随 */
 function appendOut(s: string) {
   const el = consoleEl.value
   const stick = el ? el.scrollHeight - el.scrollTop - el.clientHeight < 48 : true
-  runOutput.value += s
+  runOutput.value += stripAnsi(s)
   if (stick && el) nextTick(() => { el.scrollTop = el.scrollHeight })
 }
 
@@ -254,6 +260,7 @@ function askRun(item: SshScript) {
 }
 
 function backToEdit() {
+  stopRun() // 回编辑即终止远端进程（与关闭窗口同语义，不留孤儿）
   runShow.value = false
   // 测试流（id 为空）：编辑弹窗仍开着，无需回填；表格执行流才回填表单
   if (runTarget.value?.id) {
@@ -269,15 +276,15 @@ function backToEdit() {
   }
 }
 
-/** 流式执行（测试流 id 为空时跑表单内容；表格流按 id）。输出实时追加，
- *  连续执行不清屏——以时间戳分隔线区隔上下两次（贴近真实终端）。 */
+/** 流式执行（测试流 id 为空时跑表单内容；表格流按 id）。
+ *  每次执行 console 全新开始（互不影响）；输出实时追加并跟随滚动。 */
 function confirmRun() {
   const item = runTarget.value
   if (!item || !siteStore.currentSiteId) return
   stopRun()
+  runOutput.value = '' // 每次执行独立，不带上一次的内容
   runTimedOut.value = false
   running.value = true
-  if (runOutput.value) appendOut(`\n──── ${new Date().toLocaleString()} ────\n`)
   let sawStderr = false
   const onChunk = (kind: string, data: string) => {
     if (kind === 'stdout') appendOut(data)
@@ -447,7 +454,7 @@ function confirmRun() {
       <div v-if="running" class="console-live">{{ $t('ssh.executing') }}</div>
       <div ref="consoleEl" class="console mono" :class="{ 'console-max': runFullscreen }">
         <template v-if="runOutput">{{ runOutput }}</template>
-        <span v-else-if="running" class="console-running">…</span>
+        <div v-else-if="running" class="console-running">{{ $t('ssh.noOutput') }}</div>
         <span v-else style="color: #6b7280">{{ $t('ssh.clickToRun') }}</span>
       </div>
       <div v-if="runTimedOut" class="timeout-note">
@@ -551,10 +558,7 @@ function confirmRun() {
 }
 .console-running {
   color: #f0a020;
-  animation: blink 1s infinite;
-}
-@keyframes blink {
-  50% { opacity: 0.4; }
+  white-space: pre-wrap;
 }
 </style>
 <style scoped>

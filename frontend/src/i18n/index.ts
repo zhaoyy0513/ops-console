@@ -318,6 +318,7 @@ const messages = {
       contentRequired: '脚本内容不能为空',
       fullscreen: '全屏',
       executing: '● 执行中 · 输出实时收集（长时间运行的命令会持续刷新；关闭窗口将终止进程）',
+      noOutput: '… 暂无输出：命令可能已静默退出，或正在等待终端交互（无终端环境交互式命令不可用，请用一次性变体：top -bn1、docker stats --no-stream）',
       restore: '还原',
     },
     overview: {
@@ -732,6 +733,7 @@ const messages = {
       contentRequired: 'Script content is required',
       fullscreen: 'Fullscreen',
       executing: '● Running · collecting output live (long-running commands keep streaming; closing this window kills the process)',
+      noOutput: '… No output yet: the command may have exited silently or be waiting for a terminal (interactive commands need a real TTY — use one-shot variants: top -bn1, docker stats --no-stream)',
       restore: 'Restore',
     },
     overview: {
