@@ -33,6 +33,8 @@ export interface QueueRow {
   messages_acknowledged: number | null
   backlog_5m_ago: number | null
   growth_5m: number | null
+  /** 5 分钟新增消息数（吞吐，messages_added 增量；broker 重启截断为 0） */
+  added_5m: number | null
   /** 完整 ObjectName（清空积压等管理操作用，由后端校验） */
   _mbean?: string
   diagnosis: { status: string; issues: Array<{ type: string; severity: string; message: string }> }

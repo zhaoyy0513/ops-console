@@ -316,23 +316,44 @@ function switchFormat(v: string) {
   }
 }
 
+/** 保存前校验（两个入口共用）：Json 视图有语法错误一律拦截（string 类型也不例外：
+ *  进了 Json 视图就按 JSON 语义编辑写回）；非 string 类型必须是合法 JSON */
+function validateBeforeSave(): boolean {
+  if (jsonInvalid.value) {
+    message.error(t('redis.jsonInvalidSave', { reason: jsonInvalid.value }))
+    shakeBanner()
+    return false
+  }
+  const d = detail.value
+  if (d && d.type !== 'string' && !isJson(editText.value)) {
+    message.error(t('redis.jsonInvalidSave', { reason: t('redis.jsonCheck') }))
+    return false
+  }
+  return true
+}
+
+/** 保存按钮入口：必须先校验再开确认弹窗（不能反过来在弹窗里报错）——
+ *  message 挂在 App 内的 provider 下（不 teleport），弹窗遮罩 z-index 更高，会把 toast 盖住 */
+function openSaveConfirm() {
+  if (validateBeforeSave()) confirmShow.value = true
+}
+
+// 错误横幅抖动：让"没保存成功"除 toast 外还有就地视觉反馈
+const bannerShake = ref(false)
+let shakeTimer: number | undefined
+function shakeBanner() {
+  bannerShake.value = true
+  clearTimeout(shakeTimer)
+  shakeTimer = window.setTimeout(() => (bannerShake.value = false), 400)
+}
+
 async function saveValue() {
   const d = detail.value
   if (!d || !siteStore.currentSiteId || !instanceId.value) return
-  // Json 视图下有语法错误一律拦截（string 类型也不例外：进了 Json 视图就按 JSON 语义编辑写回）
-  if (jsonInvalid.value) {
-    message.error(t('redis.jsonInvalidSave', { reason: jsonInvalid.value }))
-    return
-  }
-  // 非 string 类型按 JSON 解析后提交结构化对象（后端按类型校验结构）
+  if (!validateBeforeSave()) return
+  // 非 string 类型按 JSON 解析后提交结构化对象（后端按类型校验结构；上面已保证可解析）
   let value: unknown = editText.value
-  if (d.type !== 'string') {
-    if (!isJson(editText.value)) {
-      message.error(t('redis.jsonInvalidSave', { reason: jsonInvalid.value ?? t('redis.jsonCheck') }))
-      return
-    }
-    value = JSON.parse(editText.value)
-  }
+  if (d.type !== 'string') value = JSON.parse(editText.value)
   saving.value = true
   try {
     await operate(siteStore.currentSiteId, instanceId.value, {
@@ -369,6 +390,66 @@ async function applyTtl() {
   })
   message.success(editTtl.value ? t('redis.ttlSet', { n: editTtl.value }) : t('redis.ttlCleared'))
   detail.value = { ...d, ttl: editTtl.value ?? -1 }
+}
+
+// ---------- 新增 Key（左树卡片头入口；set 建 key + 可选 expire 设 TTL） ----------
+const addShow = ref(false)
+const addKeyName = ref('')
+const addFormat = ref<'text' | 'json'>('text')
+const addValue = ref('')
+const addTtl = ref<number | null>(null)
+const creating = ref(false)
+
+const addJsonInvalid = computed(() => {
+  if (addFormat.value !== 'json') return null
+  try {
+    JSON.parse(addValue.value)
+    return null
+  } catch {
+    return locateJsonError(addValue.value)
+  }
+})
+
+function openAdd() {
+  addKeyName.value = ''
+  addFormat.value = 'text'
+  addValue.value = ''
+  addTtl.value = null
+  addShow.value = true
+}
+
+async function createKey() {
+  if (!siteStore.currentSiteId || !instanceId.value) return
+  const key = addKeyName.value.trim()
+  if (!key) {
+    message.error(t('redis.keyRequired'))
+    return
+  }
+  if (addJsonInvalid.value) {
+    message.error(t('redis.jsonInvalidSave', { reason: addJsonInvalid.value }))
+    return
+  }
+  creating.value = true
+  try {
+    // 与编辑写回一致：底层都是 string key，json 仅是值的格式约定（原样存字符串）
+    await operate(siteStore.currentSiteId, instanceId.value, {
+      op: 'set', db: db.value, key, type: 'string', value: addValue.value,
+    })
+    if (addTtl.value != null && addTtl.value > 0) {
+      await operate(siteStore.currentSiteId, instanceId.value, {
+        op: 'expire', db: db.value, key, ttl: addTtl.value,
+      })
+    }
+    message.success(t('redis.created', { key }))
+    addShow.value = false
+    await search(true)
+    loadInfo()
+    selectKey({ key, type: 'string' })
+  } catch (e) {
+    message.error((e as Error).message)
+  } finally {
+    creating.value = false
+  }
 }
 
 function fmtBytes(n: number | null | undefined): string {
@@ -445,7 +526,10 @@ const INFO_METRICS = computed(() => {
     <div class="split">
       <n-card size="small" class="left-pane" :title="$t('redis.keys')">
         <template #header-extra>
-          <span style="color: #999; font-size: 12px">{{ $t('redis.keysCount', { n: keys.length }) }}</span>
+          <n-space align="center" :size="8" :wrap="false">
+            <n-button size="small" @click="openAdd">{{ $t('redis.addKey') }}</n-button>
+            <span style="color: #999; font-size: 12px">{{ $t('redis.keysCount', { n: keys.length }) }}</span>
+          </n-space>
         </template>
         <n-spin :show="loading && !!treeData.length">
           <div class="tree-scroll">
@@ -502,7 +586,8 @@ const INFO_METRICS = computed(() => {
               :rows="16" :input-props="{ spellcheck: false }" class="mono" />
 
             <!-- JSON 语法错误横幅：编辑器内有红波浪线，这里给出行/列定位（jsonInvalid 仅 json 格式非空） -->
-            <n-alert v-if="jsonInvalid" type="error" :show-icon="false" style="margin-top: 8px">
+            <n-alert v-if="jsonInvalid" type="error" :show-icon="false" :class="{ shake: bannerShake }"
+              style="margin-top: 8px">
               {{ $t('redis.jsonInvalidTitle') }} — {{ jsonInvalid }}
             </n-alert>
 
@@ -514,9 +599,10 @@ const INFO_METRICS = computed(() => {
               <n-button size="small" @click="applyTtl">{{ $t('redis.applyTtl') }}</n-button>
               <div style="flex: 1" />
               <countdown-confirm :label="$t('common.delete')" :target="detail.key" :seconds="5" @confirm="deleteKey" />
-              <!-- 不禁用按钮：点击时由 saveValue 校验并弹出明确错误（禁用会让用户不知道为何点不了） -->
+              <!-- 不禁用按钮：点击时校验并弹明确错误（禁用会让用户不知道为何点不了）；
+                   校验必须在开弹窗前做：弹窗内 toast 会被遮罩盖住（见 openSaveConfirm 注释） -->
               <n-button size="small" type="primary" :loading="saving"
-                @click="confirmShow = true">{{ $t('common.save') }}</n-button>
+                @click="openSaveConfirm">{{ $t('common.save') }}</n-button>
             </div>
           </template>
           <div v-else style="text-align: center; color: #999; padding: 60px 0">
@@ -534,6 +620,41 @@ const INFO_METRICS = computed(() => {
           <n-button size="small" @click="confirmShow = false">{{ $t('common.cancel') }}</n-button>
           <n-button size="small" type="primary" :loading="saving"
             @click="saveValue">{{ $t('redis.confirmWrite') }}</n-button>
+        </div>
+      </template>
+    </n-modal>
+
+    <!-- 新增 Key：set 建 key（string）+ 可选 expire 设 TTL -->
+    <n-modal :mask-closable="false" :close-on-esc="false" v-model:show="addShow" preset="card" :title="$t('redis.addKey')" style="width: 520px">
+      <div class="add-field">
+        <span>{{ $t('redis.keyName') }}</span>
+        <n-input v-model:value="addKeyName" class="mono" :placeholder="$t('redis.keyNamePh')"
+          :input-props="{ spellcheck: false }" />
+      </div>
+      <div class="add-field">
+        <span>{{ $t('redis.keyType') }}</span>
+        <n-radio-group v-model:value="addFormat" size="small">
+          <n-radio-button value="text">Text</n-radio-button>
+          <n-radio-button value="json">Json</n-radio-button>
+        </n-radio-group>
+      </div>
+      <div class="add-field">
+        <span>{{ $t('redis.initialValue') }}</span>
+        <n-input v-model:value="addValue" type="textarea" :rows="6" class="mono"
+          :input-props="{ spellcheck: false }" />
+        <n-alert v-if="addJsonInvalid" type="error" :show-icon="false" style="margin-top: 6px">
+          {{ $t('redis.jsonInvalidTitle') }} — {{ addJsonInvalid }}
+        </n-alert>
+      </div>
+      <div class="add-field">
+        <span>{{ $t('redis.ttlOptional') }}</span>
+        <n-input-number v-model:value="addTtl" size="small" :min="1" style="width: 100%" />
+      </div>
+      <template #footer>
+        <div style="display: flex; justify-content: end; gap: 8px">
+          <n-button size="small" @click="addShow = false">{{ $t('common.cancel') }}</n-button>
+          <n-button size="small" type="primary" :loading="creating"
+            @click="createKey">{{ $t('common.save') }}</n-button>
         </div>
       </template>
     </n-modal>
@@ -591,6 +712,16 @@ const INFO_METRICS = computed(() => {
   gap: 12px;
   margin-top: 12px;
 }
+.add-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 12px;
+}
+.add-field > span {
+  font-size: 13px;
+  color: var(--ops-text-2);
+}
 .metric {
   display: inline-flex;
   gap: 6px;
@@ -629,5 +760,14 @@ const INFO_METRICS = computed(() => {
   color: #b0b3b8;
   font-size: 12px;
   margin-left: 8px;
+}
+/* JSON 错误横幅抖动（保存被拦截时的就地反馈；keyframes 放全局避免 scoped 改名） */
+.shake {
+  animation: ops-shake 0.3s ease-in-out 1;
+}
+@keyframes ops-shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-4px); }
+  75% { transform: translateX(4px); }
 }
 </style>

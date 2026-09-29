@@ -24,7 +24,7 @@ import CountUp from '../../components/bits/CountUp.vue'
 import { useSiteStore } from '../../stores/site'
 import { getSamples, type SamplePoint } from '../overview/api'
 import { serverApi, type ProcessRow, type ServerMetrics, type ZombieRow } from './api'
-import { fmtBytes, fmtMB, pctColor } from '../../utils/format'
+import { fmtBytes, pctColor } from '../../utils/format'
 
 const siteStore = useSiteStore()
 const message = useMessage()
@@ -158,17 +158,32 @@ async function killZombie(z: ZombieRow) {
 
 const memPct = computed(() => {
   const m = metrics.value?.memory
-  return m?.total && m?.used != null ? Math.round((m.used / m.total) * 100) : null
+  // 保留 1 位小数：整数百分比在 16GB 机器上约 157MB 才动一格，看起来"永远不变"
+  return m?.total && m?.used != null ? Math.round((m.used / m.total) * 1000) / 10 : null
 })
 
+// HH:mm:ss（手动补零：不受浏览器 locale 影响，en-US 会带 AM/PM）
+function hhmmss(ts: number): string {
+  const d = new Date(ts * 1000)
+  const p = (n: number) => String(n).padStart(2, '0')
+  return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
+}
+
 const trendOption = computed(() => {
-  const labels = cpuSeries.value.map((p) => new Date(p.ts * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }))
+  const labels = cpuSeries.value.map((p) => hhmmss(p.ts))
   const memPoints = memSeries.value.map((p) => p.v)
   return {
     grid: { left: 44, right: 16, top: 36, bottom: 26 },
     legend: { data: [t('server.cpuCol'), t('server.memCol')], top: 0 },
     tooltip: { trigger: 'axis' },
-    xAxis: { type: 'category', data: labels },
+    xAxis: {
+      type: 'category',
+      data: labels,
+      axisLabel: {
+        // 固定步长取整秒标签（最多 ~6 个）：避免 ECharts 自动间隔导致标签"跳动"
+        interval: Math.max(0, Math.ceil(labels.length / 6) - 1),
+      },
+    },
     yAxis: { type: 'value', max: 100, axisLabel: { formatter: '{value}%' } },
     series: [
       { name: t('server.cpuCol'), type: 'line', smooth: true, showSymbol: false, areaStyle: { opacity: 0.12 }, data: cpuSeries.value.map((p) => p.v) },
@@ -258,6 +273,7 @@ const diskColumns = computed<DataTableColumns<DiskRow>>(() => [
         />
         <n-button size="small" :loading="loading" @click="load(false)">{{ $t('server.refresh') }}</n-button>
         <tab-help topic="server" />
+        <span class="poll-note">{{ $t('server.autoRefresh') }}</span>
         <!-- 已存资源的行级测试需 per-resource test 端点（PRD §18 POST .../test），落地后补 -->
         <status-badge v-if="metrics" :status="metrics.diagnosis?.status" />
       </n-space>
@@ -291,7 +307,7 @@ const diskColumns = computed<DataTableColumns<DiskRow>>(() => [
         </n-table>
       </n-card>
 
-      <!-- 指标卡统一 4 列网格：等宽等高；僵尸卡为第 5 张，自动换行到第二行 -->
+      <!-- 指标卡统一 5 列网格：等宽等高，一行放下 CPU/内存/网络/磁盘/僵尸 -->
       <div class="sv-cards">
         <n-card size="small" :title="$t('server.cpu')">
           <div class="donut-wrap">
@@ -311,20 +327,24 @@ const diskColumns = computed<DataTableColumns<DiskRow>>(() => [
           <div class="donut-wrap">
             <base-chart :option="memDonutOption" height="120px" />
             <div class="donut-center" :style="{ color: pctColor(memPct) }">
-              <CountUp v-if="memPct != null" :value="memPct" suffix="%" :duration="500" />
+              <CountUp v-if="memPct != null" :value="memPct" :decimals="1" suffix="%" :duration="500" />
               <span v-else>?</span>
             </div>
           </div>
           <div class="metric-note">{{ $t('server.thresholdNote') }}</div>
+          <!-- MB 级直出：GB 四舍五入会吃掉百 MB 级波动，看起来"数值不变" -->
           <div class="metric-sub">
-            {{ $t('server.used') }} {{ fmtMB(metrics.memory.used) }} / {{ $t('server.total') }} {{ fmtMB(metrics.memory.total) }} ·
-            {{ $t('server.avail') }} {{ fmtMB(metrics.memory.available) }} · {{ $t('server.swap') }} {{ fmtMB(metrics.memory.swap_used ?? 0) }}
+            {{ $t('server.used') }} {{ metrics.memory.used }}MB / {{ $t('server.total') }} {{ metrics.memory.total }}MB
+          </div>
+          <div class="metric-sub">
+            {{ $t('server.avail') }} {{ metrics.memory.available }}MB · {{ $t('server.swap') }} {{ metrics.memory.swap_used ?? 0 }}MB
           </div>
         </n-card>
         <n-card size="small" :title="$t('server.network')">
-          <div class="metric-big mono">
-            {{ fmtBytes(metrics.network.rx) }}<span class="unit">↓</span>
-            {{ fmtBytes(metrics.network.tx) }}<span class="unit">↑</span>
+          <!-- 5 列布局下收窄：RX/TX 两行竖排省宽度 -->
+          <div class="net-lines mono">
+            <div>{{ fmtBytes(metrics.network.rx) }}<span class="unit">↓</span></div>
+            <div>{{ fmtBytes(metrics.network.tx) }}<span class="unit">↑</span></div>
           </div>
           <div class="metric-sub">
             errors {{ metrics.network.errors }} · dropped {{ metrics.network.dropped }}
@@ -382,7 +402,7 @@ const diskColumns = computed<DataTableColumns<DiskRow>>(() => [
         </n-table>
       </n-card>
 
-      <n-card size="small" :title="$t('server.disk')">
+      <n-card size="small" :title="$t('server.diskTable')">
         <n-data-table
           :columns="diskColumns"
           :data="metrics.disk"
@@ -447,10 +467,10 @@ const diskColumns = computed<DataTableColumns<DiskRow>>(() => [
   flex-direction: column;
   gap: 12px;
 }
-/* 指标卡统一网格：4 列等宽等高（grid 默认 stretch），僵尸卡第 5 张自动换行 */
+/* 指标卡统一网格：5 列等宽等高（grid 默认 stretch），一行放下 CPU/内存/网络/磁盘/僵尸 */
 .sv-cards {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   gap: 12px;
   align-items: stretch;
 }
@@ -474,11 +494,16 @@ const diskColumns = computed<DataTableColumns<DiskRow>>(() => [
   font-variant-numeric: tabular-nums;
   pointer-events: none;
 }
-.metric-big {
-  flex-shrink: 0;
-  font-size: 30px;
+/* 网络卡 RX/TX 竖排两行（5 列布局下省宽度），数值 24px */
+.net-lines {
+  font-size: 24px;
   font-weight: 600;
-  line-height: 1.2;
+  line-height: 1.4;
+}
+/* 服务器选择栏的轮询频率注记 */
+.poll-note {
+  color: var(--ops-text-3);
+  font-size: 12px;
 }
 .mono {
   font-family: var(--ops-font-mono);

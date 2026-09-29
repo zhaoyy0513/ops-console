@@ -297,10 +297,14 @@ const worstQueueStatus = computed(() => {
   return worst || 'HEALTHY'
 })
 
-/** 队列 5 分钟趋势色：堆积上涨红、消化下降绿、持平灰 */
+/** 队列积压趋势色（迷你线）：堆积上涨红、消化下降绿、持平灰 */
 function trendColor(growth: number | null): string {
   if (growth == null || growth === 0) return 'var(--ops-text-3)'
   return growth > 0 ? '#d03050' : '#18a058'
+}
+/** 5m 新增（吞吐）着色：有流量蓝、无流量灰 */
+function addedColor(added: number | null): string {
+  return added != null && added > 0 ? '#2080f0' : 'var(--ops-text-3)'
 }
 /** 两点趋势线：5 分钟前 → 现在（后端已有 backlog 采样） */
 function trendData(q: QueueRow): number[] {
@@ -392,7 +396,7 @@ function trendData(q: QueueRow): number[] {
         <n-table :single-line="false" size="small">
           <thead>
             <tr>
-              <th>{{ $t('mq.queueCol') }}</th><th>{{ $t('mq.addressCol') }}</th><th>{{ $t('mq.statusCol') }}</th><th>{{ $t('mq.messagesCol') }}</th><th style="width: 130px">{{ $t('mq.trendCol') }}</th><th>{{ $t('mq.consumersCol') }}</th>
+              <th>{{ $t('mq.queueCol') }}</th><th>{{ $t('mq.addressCol') }}</th><th>{{ $t('mq.statusCol') }}</th><th>{{ $t('mq.messagesCol') }}</th><th style="width: 130px">{{ $t('mq.added5mCol') }}</th><th>{{ $t('mq.consumersCol') }}</th>
               <th>{{ $t('mq.added') }}</th><th>{{ $t('common.actions') }}</th>
             </tr>
           </thead>
@@ -412,10 +416,11 @@ function trendData(q: QueueRow): number[] {
               </td>
               <td :style="{ fontWeight: (q.message_count ?? 0) > 5000 ? 700 : 400 }">{{ q.message_count ?? '-' }}</td>
               <td>
-                <div class="trend-cell" :title="`5m: ${q.backlog_5m_ago ?? '-'} → ${q.message_count ?? '-'}`">
+                <div class="trend-cell"
+                  :title="$t('mq.trendTip', { added: q.added_5m ?? '-', ago: q.backlog_5m_ago ?? '-', now: q.message_count ?? '-' })">
                   <trend-spark :data="trendData(q)" :color="trendColor(q.growth_5m)" :width="64" :height="18" />
-                  <span class="trend-num" :style="{ color: trendColor(q.growth_5m) }">
-                    {{ q.growth_5m == null ? '-' : q.growth_5m > 0 ? `+${q.growth_5m}` : q.growth_5m }}
+                  <span class="trend-num" :style="{ color: addedColor(q.added_5m) }">
+                    {{ q.added_5m == null ? '-' : q.added_5m > 0 ? `+${q.added_5m}` : '0' }}
                   </span>
                 </div>
               </td>

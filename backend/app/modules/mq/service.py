@@ -52,7 +52,12 @@ async def get_overview(site_id: str, mq_id: str) -> dict[str, Any]:
 
 
 async def get_queues(site_id: str, mq_id: str) -> list[dict[str, Any]]:
-    """队列列表 + 5 分钟趋势 + 逐队列诊断（PRD §9.5/§9.6）。"""
+    """队列列表 + 5 分钟趋势 + 逐队列诊断（PRD §9.5/§9.6）。
+
+    两个趋势序列：backlog（message_count 瞬时积压）与 added（messages_added 累计）。
+    健康队列消费者即时消化，backlog 恒 0、其增量为 0 是真实但无信息量的；
+    added_5m（5 分钟新增，吞吐）才是"队列是否在跑"的直观指标。
+    """
     config = await _require_mq_config(site_id, mq_id)
     provider = _build_provider(config)
 
@@ -61,17 +66,24 @@ async def get_queues(site_id: str, mq_id: str) -> list[dict[str, Any]]:
             return await provider.get_queues()
 
     queues = await cached(f"ops:cache:mq:{mq_id}:queues", CACHE_TTL, with_retry(factory))
+    series = {q.get("name") or "": _series_key(site_id, mq_id, q.get("name") or "") for q in queues}
+    pairs = [(series[q.get("name") or ""], s) for q in queues for s in ("backlog", "added")]
+    olds = await sampling.values_minutes_ago(pairs, minutes=5)  # 先读旧值，再写新样本
+    pushes: list[tuple[str, str, float]] = []
     for q in queues:
-        name = q.get("name") or ""
-        series = _series_key(site_id, mq_id, name)
-        old = await sampling.value_minutes_ago(series, "backlog", minutes=5)
-        current = q.get("message_count")
-        if isinstance(current, (int, float)):
-            await sampling.push_sample(series, "backlog", current)
-        growth = (current - old) if (old is not None and isinstance(current, (int, float))) else None
-        q["backlog_5m_ago"] = old
-        q["growth_5m"] = growth
+        key = series[q.get("name") or ""]
+        backlog, added = q.get("message_count"), q.get("messages_added")
+        if isinstance(backlog, (int, float)):
+            pushes.append((key, "backlog", backlog))
+        if isinstance(added, (int, float)):
+            pushes.append((key, "added", added))
+        old_backlog, old_added = olds.get((key, "backlog")), olds.get((key, "added"))
+        q["backlog_5m_ago"] = old_backlog
+        q["growth_5m"] = (backlog - old_backlog) if (old_backlog is not None and isinstance(backlog, (int, float))) else None
+        # added 为负只可能是 broker 重启计数清零，截断为 0
+        q["added_5m"] = max(added - old_added, 0) if (old_added is not None and isinstance(added, (int, float))) else None
         q["diagnosis"] = diagnose_queue(q)
+    await sampling.push_samples(pushes)
     return queues
 
 
