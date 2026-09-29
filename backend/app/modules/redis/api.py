@@ -54,6 +54,7 @@ class OperationIn(BaseModel):
     type: Literal["string", "hash", "list", "set", "zset"] | None = None
     value: Any = None
     ttl: int | None = None  # expire：秒；负数 = PERSIST 清除过期
+    struct: Literal["string", "hash", "list", "set", "zset"] | None = None  # set：value 为纯文本，按类型解析
 
 
 @router.post("/sites/{site_id}/redis/{redis_id}/operations")
@@ -68,6 +69,7 @@ async def operate(site_id: str, redis_id: str, body: OperationIn) -> dict:
             ktype=body.type,
             value=body.value,
             ttl=body.ttl,
+            struct=body.struct,
         )
     except NotFound as e:
         raise HTTPException(status_code=404, detail=str(e)) from None

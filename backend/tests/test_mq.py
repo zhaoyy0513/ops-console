@@ -202,6 +202,22 @@ async def test_queues_api_added_delta(client, fake_platform_redis):
     assert r.json()[0]["added_5m"] == 50000 - 48000
 
 
+async def test_queues_api_added_1m(client, fake_platform_redis):
+    import time as _t
+    import json as _json
+
+    # 预置 70 秒前的 added 样本：够 1 分钟窗口、不够 5 分钟窗口
+    key = service._series_key("sz", "mq1", "q1")
+    await fake_platform_redis.lpush(
+        sampling.sample_key(key, "added"), _json.dumps({"ts": int(_t.time() - 70), "v": 49400}))
+
+    r = await client.get("/api/sites/sz/mq/mq1/queues")
+    q1, q2 = r.json()[0], r.json()[1]
+    assert q1["added_1m"] == 50000 - 49400  # 600
+    assert q1["added_5m"] is None  # 70s 样本不满足 5 分钟窗口
+    assert q2["added_1m"] is None  # 无 1 分钟历史（预热）
+
+
 async def test_mq_tester(client):
     r = await client.post("/api/test-connection", json={"type": "mq", "config": {"host": "target"}})
     assert r.status_code == 200

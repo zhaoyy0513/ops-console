@@ -1,16 +1,15 @@
 <script setup lang="ts">
 import { computed, inject, onBeforeUnmount, onMounted, ref, watch, type Ref } from 'vue'
-import { NButton, NCard, NInput, NModal, NSelect, NSpace, NSpin, NTable, NTooltip, useMessage } from 'naive-ui'
+import { NButton, NCard, NInput, NSelect, NSpace, NSpin, NTable, NTooltip, useMessage } from 'naive-ui'
 import CountdownConfirm from '../../components/CountdownConfirm.vue'
 import EmptyState from '../../components/EmptyState.vue'
 import BaseChart from '../../components/BaseChart.vue'
 import TabHelp from '../../components/TabHelp.vue'
 import StatusBadge from '../../components/StatusBadge.vue'
 import MetricCard from '../../components/MetricCard.vue'
-import TrendSpark from '../../components/TrendSpark.vue'
 import { useSiteStore } from '../../stores/site'
 import { getSamples } from '../overview/api'
-import { mqApi, type MqOverview, type QueueMessage, type QueueRow } from './api'
+import { mqApi, type MqOverview, type QueueRow } from './api'
 import { fmtBytes, pctColor } from '../../utils/format'
 
 const siteStore = useSiteStore()
@@ -267,28 +266,6 @@ async function emptyQueue(q: QueueRow) {
   }
 }
 
-// ---------- 消息浏览（browse() 只读预览） ----------
-const messagesShow = ref(false)
-const messagesLoading = ref(false)
-const messages = ref<QueueMessage[]>([])
-const messagesQueue = ref('')
-
-async function viewMessages(q: QueueRow) {
-  const siteId = siteStore.currentSiteId
-  if (!siteId || !instanceId.value || !q._mbean) return
-  messagesQueue.value = q.name
-  messagesShow.value = true
-  messagesLoading.value = true
-  try {
-    messages.value = await mqApi.browse(siteId, instanceId.value, q._mbean, q.name, 20)
-  } catch (e) {
-    messages.value = []
-    message.error((e as Error).message)
-  } finally {
-    messagesLoading.value = false
-  }
-}
-
 const worstQueueStatus = computed(() => {
   const order: Record<string, number> = { CRITICAL: 3, WARNING: 2 }
   const worst = queues.value.reduce<string>(
@@ -297,20 +274,9 @@ const worstQueueStatus = computed(() => {
   return worst || 'HEALTHY'
 })
 
-/** 队列积压趋势色（迷你线）：堆积上涨红、消化下降绿、持平灰 */
-function trendColor(growth: number | null): string {
-  if (growth == null || growth === 0) return 'var(--ops-text-3)'
-  return growth > 0 ? '#d03050' : '#18a058'
-}
-/** 5m 新增（吞吐）着色：有流量蓝、无流量灰 */
+/** 新增（吞吐）着色：有流量蓝、无流量灰 */
 function addedColor(added: number | null): string {
   return added != null && added > 0 ? '#2080f0' : 'var(--ops-text-3)'
-}
-/** 两点趋势线：5 分钟前 → 现在（后端已有 backlog 采样） */
-function trendData(q: QueueRow): number[] {
-  const now = q.message_count ?? 0
-  const ago = q.backlog_5m_ago
-  return [ago ?? now, now]
 }
 </script>
 
@@ -396,7 +362,7 @@ function trendData(q: QueueRow): number[] {
         <n-table :single-line="false" size="small">
           <thead>
             <tr>
-              <th>{{ $t('mq.queueCol') }}</th><th>{{ $t('mq.addressCol') }}</th><th>{{ $t('mq.statusCol') }}</th><th>{{ $t('mq.messagesCol') }}</th><th style="width: 130px">{{ $t('mq.added5mCol') }}</th><th>{{ $t('mq.consumersCol') }}</th>
+              <th>{{ $t('mq.queueCol') }}</th><th>{{ $t('mq.addressCol') }}</th><th>{{ $t('mq.statusCol') }}</th><th>{{ $t('mq.messagesCol') }}</th><th style="width: 90px">{{ $t('mq.added1mCol') }}</th><th>{{ $t('mq.consumersCol') }}</th>
               <th>{{ $t('mq.added') }}</th><th>{{ $t('common.actions') }}</th>
             </tr>
           </thead>
@@ -416,31 +382,25 @@ function trendData(q: QueueRow): number[] {
               </td>
               <td :style="{ fontWeight: (q.message_count ?? 0) > 5000 ? 700 : 400 }">{{ q.message_count ?? '-' }}</td>
               <td>
-                <div class="trend-cell"
-                  :title="$t('mq.trendTip', { added: q.added_5m ?? '-', ago: q.backlog_5m_ago ?? '-', now: q.message_count ?? '-' })">
-                  <trend-spark :data="trendData(q)" :color="trendColor(q.growth_5m)" :width="64" :height="18" />
-                  <span class="trend-num" :style="{ color: addedColor(q.added_5m) }">
-                    {{ q.added_5m == null ? '-' : q.added_5m > 0 ? `+${q.added_5m}` : '0' }}
-                  </span>
-                </div>
+                <span class="trend-num" :style="{ color: addedColor(q.added_1m) }"
+                  :title="$t('mq.trendTip', { a1: q.added_1m ?? '-', a5: q.added_5m ?? '-' })">
+                  {{ q.added_1m == null ? '-' : q.added_1m > 0 ? `+${q.added_1m}` : '0' }}
+                </span>
               </td>
               <td>{{ q.consumer_count ?? '-' }}</td>
               <td>{{ q.messages_added ?? '-' }}</td>
               <td>
-                <n-space :size="4" :wrap="false">
-                  <n-button v-if="q._mbean" size="small" style="min-width: 64px" @click="viewMessages(q)">{{ $t('mq.view') }}</n-button>
-                  <!-- 清空积压：10 秒倒计时确认（破坏性操作，记录操作日志） -->
-                  <countdown-confirm
-                    v-if="q._mbean && (q.message_count ?? 0) > 0"
-                    :label="$t('mq.purge')"
-                    :confirm-text="$t('mq.purge')"
-                    :target="q.name"
-                    :seconds="10"
-                    width="64px"
-                    @confirm="emptyQueue(q)"
-                  />
-                  <span v-if="!q._mbean" style="color: #999">-</span>
-                </n-space>
+                <!-- 仅清空一个操作：只对可管理（_mbean）且有积压的队列渲染，否则灰色占位 -->
+                <countdown-confirm
+                  v-if="q._mbean && (q.message_count ?? 0) > 0"
+                  :label="$t('mq.purge')"
+                  :confirm-text="$t('mq.purge')"
+                  :target="q.name"
+                  :seconds="10"
+                  width="64px"
+                  @confirm="emptyQueue(q)"
+                />
+                <span v-else style="color: #999">-</span>
               </td>
             </tr>
             <tr v-if="!filteredQueues.length">
@@ -454,33 +414,6 @@ function trendData(q: QueueRow): number[] {
     <n-card v-else-if="!loading" size="small">
       <span style="color: #999">该站点暂无 MQ 配置——请在「站点管理 → 资源 → ActiveMQ」中添加并测试连接</span>
     </n-card>
-
-    <!-- 消息浏览弹窗（listMessages 只读预览，前 20 条） -->
-    <n-modal :mask-closable="false" :close-on-esc="false" v-model:show="messagesShow" preset="card"
-      :title="`Messages · ${messagesQueue}`" style="width: 720px">
-      <n-spin :show="messagesLoading">
-        <div class="msg-note">{{ $t("mq.msgNote") }}</div>
-        <div v-if="!messages.length && !messagesLoading" style="text-align: center; color: #999; padding: 24px 0">
-          {{ $t("mq.queueEmpty") }}
-        </div>
-        <div v-for="(m, i) in messages" :key="m.message_id ?? i" class="msg-block">
-          <div class="msg-head">
-            <span class="mono">#{{ i + 1 }}</span>
-            <span class="mono" :title="String(m.message_id ?? '')">id: {{ m.message_id ?? '-' }}</span>
-            <span class="mono">{{ $t("mq.priorityCol") }} {{ m.priority ?? '-' }}</span>
-            <span class="mono">{{ m.durable ? $t("mq.durable") : $t("mq.nonDurable") }}</span>
-            <span v-if="m.timestamp" class="mono">{{ new Date(m.timestamp).toLocaleString() }}</span>
-          </div>
-          <div v-if="Object.keys(m.properties ?? {}).length" class="msg-props">
-            <div v-for="(v, k) in m.properties" :key="k" class="msg-prop">
-              <span class="mono prop-key">{{ k }}</span>
-              <span class="mono">{{ v }}</span>
-            </div>
-          </div>
-          <div v-else class="msg-props" style="color: #999">{{ $t("mq.noProps") }}</div>
-        </div>
-      </n-spin>
-    </n-modal>
   </n-space>
 </template>
 
@@ -557,12 +490,7 @@ function trendData(q: QueueRow): number[] {
   gap: 8px;
   margin-bottom: 10px;
 }
-/* 队列表趋势列 */
-.trend-cell {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
+/* 队列表新增（吞吐）列 */
 .trend-num {
   font-family: var(--ops-font-mono);
   font-variant-numeric: tabular-nums;
@@ -572,44 +500,5 @@ function trendData(q: QueueRow): number[] {
   color: #d03050;
   font-size: 12px;
   margin-bottom: 8px;
-}
-.msg-block {
-  border: 1px solid #e5e6eb;
-  border-radius: 4px;
-  padding: 8px 12px;
-  margin-bottom: 10px;
-}
-.msg-head {
-  display: flex;
-  gap: 16px;
-  color: #666;
-  font-size: 12px;
-  margin-bottom: 6px;
-}
-.msg-props {
-  background: #fafbfc;
-  border: 1px solid #f0f1f3;
-  border-radius: 4px;
-  padding: 8px 10px;
-  font-size: 12px;
-}
-.msg-prop {
-  display: flex;
-  gap: 10px;
-  padding: 1px 0;
-}
-.prop-key {
-  color: #0b63ce;
-  min-width: 160px;
-  word-break: break-all;
-}
-.msg-note {
-  background: #fdf6ec;
-  border: 1px solid #f3e3c3;
-  color: #946b2d;
-  border-radius: 4px;
-  padding: 8px 12px;
-  font-size: 12px;
-  margin-bottom: 10px;
 }
 </style>

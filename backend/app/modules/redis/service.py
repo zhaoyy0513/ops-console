@@ -198,6 +198,61 @@ def _validate_value(ktype: str, value: Any) -> None:
         )
 
 
+STRUCT_TYPES = KEY_TYPES  # set 文本直建支持的类型（与 KEY_TYPES 同集，语义命名）
+
+
+def _parse_struct_text(struct: str, text: Any) -> Any:
+    """按 struct 类型把纯文本 value 解析为结构化值（新增 Key 入口）。
+
+    约定（与前端占位文案一致，错误消息里复述）：
+    - list/set：每行一个成员（去除空行；list 保序可重复，set 去重）
+    - hash：每行一个 field=value，value 可含 '='（按第一个拆分）
+    - zset：每行一个 "score member"，score 必须是数字（成员可含空格）
+    """
+    if not isinstance(text, str):
+        raise OpsError("INVALID_OPERATION", f"struct={struct} requires value as text", status_code=400)
+    lines = [ln.strip() for ln in text.splitlines()]
+    lines = [ln for ln in lines if ln]
+    if struct == "list":
+        return lines
+    if struct == "set":
+        return lines
+    if struct == "hash":
+        pairs: dict[str, str] = {}
+        for ln in lines:
+            field, sep, value = ln.partition("=")
+            if not sep or not field.strip():
+                raise OpsError(
+                    "INVALID_OPERATION",
+                    "hash value must be lines of 'field=value' (value may contain '=')",
+                    status_code=400,
+                )
+            pairs[field.strip()] = value
+        return pairs
+    if struct == "zset":
+        members: list[list[Any]] = []
+        for ln in lines:
+            score, _, member = ln.strip().partition(" ")
+            try:
+                score_f = float(score)
+            except ValueError:
+                raise OpsError(
+                    "INVALID_OPERATION",
+                    "zset value must be lines of 'score member' with numeric score",
+                    status_code=400,
+                ) from None
+            member = member.strip()
+            if not member:
+                raise OpsError(
+                    "INVALID_OPERATION",
+                    "zset value must be lines of 'score member' with numeric score",
+                    status_code=400,
+                )
+            members.append([score_f, member])
+        return members
+    raise OpsError("INVALID_OPERATION", f"unknown struct: {struct}", status_code=400)
+
+
 async def _write_value(c, key: str, ktype: str, value: Any) -> None:
     if ktype == "string":
         await c.set(key, value)
@@ -237,6 +292,7 @@ async def operate(
     ktype: str | None = None,
     value: Any = None,
     ttl: int | None = None,
+    struct: str | None = None,
 ) -> dict[str, Any]:
     config = await _require_redis_config(site_id, redis_id)
     started = time.perf_counter()
@@ -248,6 +304,20 @@ async def operate(
         raise OpsError("FORBIDDEN_OPERATION", f"operation not allowed: {op}", status_code=400)
 
     if op == "set":
+        if struct not in (None, *STRUCT_TYPES):
+            raise OpsError("INVALID_OPERATION", f"unknown struct: {struct}", status_code=400)
+        if struct and struct != "string":
+            # 文本直建结构化 key（新增 Key 入口）：type 必须与 struct 一致（缺省取 struct）
+            if ktype not in (None, struct):
+                raise OpsError(
+                    "INVALID_OPERATION", f"type {ktype} conflicts with struct {struct}", status_code=400
+                )
+            ktype = struct
+            value = _parse_struct_text(struct, value)
+            if not value:
+                raise OpsError("INVALID_OPERATION", f"struct={struct} needs at least one entry", status_code=400)
+        elif struct == "string" and ktype is None:
+            ktype = "string"
         if ktype not in KEY_TYPES:
             raise OpsError("INVALID_OPERATION", "set requires a valid key type", status_code=400)
         _validate_value(ktype, value)
@@ -283,7 +353,7 @@ async def operate(
 
     # 验收 13：所有修改/删除操作记操作日志。params 不含 value（可能大或敏感）
     await oplog.record(site_id, f"redis/{instance}", action, target=key,
-                       params={**log_params, "type": ktype, "ttl": ttl})
+                       params={**log_params, "type": ktype, "struct": struct, "ttl": ttl})
     return {"success": True, "latency_ms": int((time.perf_counter() - started) * 1000)}
 
 

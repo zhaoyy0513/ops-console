@@ -71,6 +71,8 @@ export function operate(
     type?: string
     value?: unknown
     ttl?: number
+    /** set：value 为纯文本时目标数据结构（后端按行解析；缺省走 type 的结构化值语义） */
+    struct?: 'string' | 'list' | 'set' | 'hash' | 'zset'
   },
 ): Promise<{ success: boolean; latency_ms: number }> {
   return api.post(`/sites/${siteId}/redis/${id}/operations`, body)

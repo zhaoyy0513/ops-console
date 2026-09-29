@@ -265,3 +265,66 @@ async def test_invalid_value_structure_rejected_before_redis(client, target_redi
         "/api/sites/sz/redis/r1/operations", json={"op": "expire", "key": "x"}
     )
     assert r.status_code == 400  # 缺 ttl
+
+
+# ---------- 新增 Key：struct 文本直建五种类型 ----------
+
+
+async def test_set_struct_creates_typed_keys(client, target_redis):
+    cases = [
+        # (struct, value 文本, 读取断言)
+        ("string", '{"a": 1}', lambda: target_redis.get("sk")),
+        ("list", "a\nb\na", lambda: target_redis.lrange("sk", 0, -1)),
+        ("set", "x\nx\ny", lambda: target_redis.smembers("sk")),
+        ("hash", "a=1\nb=c=d", lambda: target_redis.hgetall("sk")),
+        ("zset", "1.5 m1\n-2 m2 x", lambda: target_redis.zrange("sk", 0, -1, withscores=True)),
+    ]
+    for struct, value, reader in cases:
+        r = await client.post(
+            "/api/sites/sz/redis/r1/operations",
+            json={"op": "set", "key": "sk", "struct": struct, "value": value},
+        )
+        assert r.status_code == 200, struct
+        got = await reader()
+        if struct == "string":
+            assert got == '{"a": 1}'
+        elif struct == "list":
+            assert got == ["a", "b", "a"]  # 保序可重复
+        elif struct == "set":
+            assert got == {"x", "y"}  # 去重
+        elif struct == "hash":
+            assert got == {"a": "1", "b": "c=d"}  # value 可含 '='
+        else:
+            assert dict((m, s) for m, s in got) == {"m1": 1.5, "m2 x": -2}  # 成员可含空格
+
+    # type 与 struct 一致时通过（缺省即取 struct）
+    r = await client.post(
+        "/api/sites/sz/redis/r1/operations",
+        json={"op": "set", "key": "tk2", "struct": "list", "type": "list", "value": "m"},
+    )
+    assert r.status_code == 200
+
+
+async def test_set_struct_malformed_rejected(client, target_redis):
+    bad = [
+        {"struct": "hash", "value": "no-equals-sign"},  # hash 缺 '='
+        {"struct": "zset", "value": "abc m1"},  # score 非数字
+        {"struct": "zset", "value": "1.5"},  # 缺 member
+        {"struct": "list", "value": "\n \n"},  # 空成员
+        {"struct": "list", "value": ["not", "text"]},  # value 不是文本
+        {"struct": "list", "type": "hash", "value": "a"},  # type 与 struct 冲突
+    ]
+    for payload in bad:
+        r = await client.post(
+            "/api/sites/sz/redis/r1/operations",
+            json={"op": "set", "key": "bk", **payload},
+        )
+        assert r.status_code == 400, payload
+    assert await target_redis.exists("bk") == 0
+
+    # struct 白名单外 → pydantic 422
+    r = await client.post(
+        "/api/sites/sz/redis/r1/operations",
+        json={"op": "set", "key": "bk", "struct": "stream", "value": "x"},
+    )
+    assert r.status_code == 422

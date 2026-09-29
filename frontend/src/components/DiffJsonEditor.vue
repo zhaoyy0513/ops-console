@@ -137,10 +137,12 @@ onBeforeUnmount(() => view?.destroy())
   overflow: auto;
 }
 /* JSON 语法错误标记增强：CM 默认只是行内两个小圆点（cm-lintRange-error 的
-   默认背景图），肉眼几乎不可见——覆盖为醒目的红色波浪下划线。
+   默认背景图），肉眼几乎不可见——覆盖为浅红底色 + 醒目的红色波浪下划线。
+   （类名核实于 @codemirror/lint 6.9.7 dist：mark decoration 挂 cm-lintRange-error）
    悬浮仍有 lint tooltip 显示完整错误信息。 */
 .diff-editor :deep(.cm-lintRange-error) {
   background-image: none;
+  background-color: rgba(208, 48, 80, 0.12);
   text-decoration: underline wavy #d03050 2px;
   text-decoration-skip-ink: none;
   text-underline-offset: 3px;

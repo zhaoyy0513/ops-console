@@ -35,6 +35,8 @@ export interface QueueRow {
   growth_5m: number | null
   /** 5 分钟新增消息数（吞吐，messages_added 增量；broker 重启截断为 0） */
   added_5m: number | null
+  /** 1 分钟新增消息数（更快窗口；无 1 分钟采样历史时 null 预热） */
+  added_1m: number | null
   /** 完整 ObjectName（清空积压等管理操作用，由后端校验） */
   _mbean?: string
   diagnosis: { status: string; issues: Array<{ type: string; severity: string; message: string }> }

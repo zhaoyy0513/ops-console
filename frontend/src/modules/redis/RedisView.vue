@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, h, onMounted, ref, watch } from 'vue'
+import { computed, h, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
   NAlert,
@@ -81,9 +81,10 @@ async function loadInstances() {
   }
 }
 
-async function search(reset = true) {
+/** silent：30s 轮询用，不闪 loading 骨架/转圈（手动入口仍走 loading） */
+async function search(reset = true, silent = false) {
   if (!siteStore.currentSiteId || !instanceId.value) return
-  loading.value = true
+  if (!silent) loading.value = true
   try {
     const page = await listKeys(siteStore.currentSiteId, instanceId.value, {
       db: db.value,
@@ -94,9 +95,9 @@ async function search(reset = true) {
     keys.value = reset ? page.keys : [...keys.value, ...page.keys]
     cursor.value = page.cursor
   } catch (e) {
-    message.error((e as Error).message)
+    if (!silent) message.error((e as Error).message)
   } finally {
-    loading.value = false
+    if (!silent) loading.value = false
   }
 }
 
@@ -114,7 +115,15 @@ function refreshDb() {
   loadInfo()
 }
 
-onMounted(loadInstances)
+onMounted(() => {
+  loadInstances()
+  startTimers()
+  document.addEventListener('visibilitychange', onVisibility)
+})
+onBeforeUnmount(() => {
+  stopTimers()
+  document.removeEventListener('visibilitychange', onVisibility)
+})
 watch(() => siteStore.currentSiteId, () => {
   instanceId.value = null
   keys.value = []
@@ -212,6 +221,8 @@ const editText = ref('')
 /** 打开 key 时从 Redis 装载的原始值（diff 基线，不随编辑变化） */
 const originalText = ref('')
 const editTtl = ref<number | null>(null)
+/** 装载/应用 TTL 后的基线：轮询刷新用它判断"用户是否改过 TTL 输入"（未改才允许后端值回显） */
+const editTtlLoaded = ref<number | null>(null)
 const saving = ref(false)
 const confirmShow = ref(false)
 
@@ -227,14 +238,9 @@ function isJson(s: string): boolean {
 }
 
 /** JSON 语法错误定位：lezer 解析拿错误节点位置 -> 行/列 + 附近文本（补全字段名，
- *  V8 原生错误如 'Unexpected token ",", ..."_seconds":...' 常被截断看不清字段） */
+ *  V8 原生错误如 'Unexpected token ",", ..."_seconds":...' 常被截断看不清字段）。
+ *  注意 lezer 是容错解析器，parse 永不抛错——错误只能从 error 节点拿 */
 function locateJsonError(text: string): string {
-  try {
-    jsonParser.parse(text)
-    return ''
-  } catch {
-    // lezer 容错解析不抛错，错误以 error 节点出现
-  }
   let pos: number | null = null
   jsonParser.parse(text).iterate({
     enter: (n) => {
@@ -249,8 +255,12 @@ function locateJsonError(text: string): string {
   return t('redis.jsonErrorAt', { line, col, near })
 }
 
+/** 打开的 key 装载时内容是否为 JSON（不随视图切换/编辑变化）：
+ *  JSON 值的 key 在 Text 视图改坏也必须拦下（曾因 jsonInvalid 只看 format 而静默写坏） */
+const loadedAsJson = ref(false)
+
 const jsonInvalid = computed(() => {
-  if (format.value !== 'json') return null
+  if (format.value !== 'json' && !loadedAsJson.value) return null
   try {
     JSON.parse(editText.value)
     return null
@@ -273,12 +283,14 @@ async function selectKey(k: KeyItem) {
   try {
     detail.value = await getKey(siteStore.currentSiteId, instanceId.value, db.value, k.key)
     const raw = toEditText(detail.value)
-    format.value = isJson(raw) ? 'json' : 'text'
+    loadedAsJson.value = isJson(raw)
+    format.value = loadedAsJson.value ? 'json' : 'text'
     editText.value = format.value === 'json'
       ? JSON.stringify(JSON.parse(raw), null, 2)
       : raw
     originalText.value = editText.value
     editTtl.value = detail.value.ttl > 0 ? detail.value.ttl : null
+    editTtlLoaded.value = editTtl.value
   } catch (e) {
     // key 已被删除/过期等：明确提示并清空右侧（不再让用户对着旧值操作）
     message.error((e as Error).message)
@@ -316,17 +328,12 @@ function switchFormat(v: string) {
   }
 }
 
-/** 保存前校验（两个入口共用）：Json 视图有语法错误一律拦截（string 类型也不例外：
- *  进了 Json 视图就按 JSON 语义编辑写回）；非 string 类型必须是合法 JSON */
+/** 保存前校验（两个入口共用）：jsonInvalid 覆盖 Json 视图语法错误 + JSON 值的 key
+ *  在 Text 视图被改坏（loadedAsJson 基线，见 computed）——一律拦截 */
 function validateBeforeSave(): boolean {
   if (jsonInvalid.value) {
     message.error(t('redis.jsonInvalidSave', { reason: jsonInvalid.value }))
     shakeBanner()
-    return false
-  }
-  const d = detail.value
-  if (d && d.type !== 'string' && !isJson(editText.value)) {
-    message.error(t('redis.jsonInvalidSave', { reason: t('redis.jsonCheck') }))
     return false
   }
   return true
@@ -390,18 +397,24 @@ async function applyTtl() {
   })
   message.success(editTtl.value ? t('redis.ttlSet', { n: editTtl.value }) : t('redis.ttlCleared'))
   detail.value = { ...d, ttl: editTtl.value ?? -1 }
+  editTtlLoaded.value = editTtl.value
 }
 
 // ---------- 新增 Key（左树卡片头入口；set 建 key + 可选 expire 设 TTL） ----------
 const addShow = ref(false)
 const addKeyName = ref('')
+/** 数据类型：非 string 时 value 为纯文本，由后端按类型解析（service._parse_struct_text） */
+const addStruct = ref<'string' | 'list' | 'set' | 'hash' | 'zset'>('string')
 const addFormat = ref<'text' | 'json'>('text')
 const addValue = ref('')
 const addTtl = ref<number | null>(null)
 const creating = ref(false)
 
+const STRUCT_OPTIONS = ['string', 'list', 'set', 'hash', 'zset'].map((v) => ({ label: v, value: v }))
+const addPlaceholder = computed(() => t(`redis.structPh.${addStruct.value}`))
+
 const addJsonInvalid = computed(() => {
-  if (addFormat.value !== 'json') return null
+  if (addStruct.value !== 'string' || addFormat.value !== 'json') return null
   try {
     JSON.parse(addValue.value)
     return null
@@ -412,6 +425,7 @@ const addJsonInvalid = computed(() => {
 
 function openAdd() {
   addKeyName.value = ''
+  addStruct.value = 'string'
   addFormat.value = 'text'
   addValue.value = ''
   addTtl.value = null
@@ -431,9 +445,9 @@ async function createKey() {
   }
   creating.value = true
   try {
-    // 与编辑写回一致：底层都是 string key，json 仅是值的格式约定（原样存字符串）
+    // struct 告知后端 value 文本的目标结构（string=list/set/hash/zset 时按行解析）
     await operate(siteStore.currentSiteId, instanceId.value, {
-      op: 'set', db: db.value, key, type: 'string', value: addValue.value,
+      op: 'set', db: db.value, key, struct: addStruct.value, value: addValue.value,
     })
     if (addTtl.value != null && addTtl.value > 0) {
       await operate(siteStore.currentSiteId, instanceId.value, {
@@ -444,11 +458,69 @@ async function createKey() {
     addShow.value = false
     await search(true)
     loadInfo()
-    selectKey({ key, type: 'string' })
+    selectKey({ key, type: addStruct.value })
   } catch (e) {
     message.error((e as Error).message)
   } finally {
     creating.value = false
+  }
+}
+
+// ---------- 自动刷新 + TTL 活性（30s 轮询列表/info；选中 key 只同步只读 TTL，不打断编辑） ----------
+let pollTimer: number | undefined
+let tickTimer: number | undefined
+const nowSec = ref(Math.floor(Date.now() / 1000))
+/** detail.ttl 的取值时刻（秒）：本地每秒倒计时 = ttl - (now - 快照时刻)，避免每秒打后端 */
+const ttlAt = ref(0)
+watch(detail, () => { ttlAt.value = nowSec.value })
+
+const currentTtl = computed(() => {
+  const d = detail.value
+  if (!d || d.ttl <= 0) return d?.ttl ?? -1
+  return Math.max(0, d.ttl - (nowSec.value - ttlAt.value))
+})
+
+/** 用户是否动过编辑区（值或 TTL 输入）：轮询只在"未编辑"时回显后端侧变化 */
+function userEditing(): boolean {
+  return editText.value !== originalText.value || editTtl.value !== editTtlLoaded.value
+}
+
+async function autoRefresh() {
+  if (document.hidden || !siteStore.currentSiteId || !instanceId.value) return
+  await search(true, true)
+  loadInfo()
+  const sel = selected.value
+  if (!sel) return
+  // 列表里已没有该 key：删除/过期 —— 清详情并提示
+  if (!keys.value.some((k) => k.key === sel.key)) {
+    message.info(t('redis.keyGone', { key: sel.key }))
+    clearDetail()
+    return
+  }
+  // key 还在：用户未编辑时仅同步只读 TTL/内存徽章（编辑中静默跳过，见 userEditing）
+  if (!userEditing()) {
+    try {
+      detail.value = await getKey(siteStore.currentSiteId, instanceId.value, db.value, sel.key)
+    } catch {
+      // 轮询间隙被删：下一轮列表分支会清理
+    }
+  }
+}
+
+function startTimers() {
+  stopTimers()
+  pollTimer = window.setInterval(autoRefresh, 30_000)
+  tickTimer = window.setInterval(() => (nowSec.value = Math.floor(Date.now() / 1000)), 1_000)
+}
+function stopTimers() {
+  window.clearInterval(pollTimer)
+  window.clearInterval(tickTimer)
+}
+function onVisibility() {
+  if (document.hidden) stopTimers()
+  else {
+    startTimers()
+    autoRefresh()
   }
 }
 
@@ -467,6 +539,7 @@ function fmtBytes(n: number | null | undefined): string {
 function fmtTtl(ttl: number): string {
   if (ttl === -1) return t('redis.forever')
   if (ttl === -2) return '-'
+  if (ttl <= 0) return t('redis.expiredLabel')
   return `${ttl}s`
 }
 
@@ -564,7 +637,7 @@ const INFO_METRICS = computed(() => {
                 {{ detail.type.toUpperCase() }}
               </n-tag>
               <span class="detail-key mono">{{ detail.key }}</span>
-              <n-tag size="small" :bordered="false" round>TTL {{ fmtTtl(detail.ttl) }}</n-tag>
+              <n-tag size="small" :bordered="false" round>TTL {{ fmtTtl(currentTtl) }}</n-tag>
               <n-tag size="small" :bordered="false" round>
                 {{ $t('redis.mem') }} {{ detail.memory_usage != null ? fmtBytes(detail.memory_usage) : '?' }}
               </n-tag>
@@ -585,7 +658,8 @@ const INFO_METRICS = computed(() => {
             <n-input v-else v-model:value="editText" type="textarea"
               :rows="16" :input-props="{ spellcheck: false }" class="mono" />
 
-            <!-- JSON 语法错误横幅：编辑器内有红波浪线，这里给出行/列定位（jsonInvalid 仅 json 格式非空） -->
+            <!-- JSON 语法错误横幅：编辑器内有红波浪线+浅红底色，这里给出行/列定位
+                 （Json 视图，或 JSON 值的 key 在 Text 视图被改坏） -->
             <n-alert v-if="jsonInvalid" type="error" :show-icon="false" :class="{ shake: bannerShake }"
               style="margin-top: 8px">
               {{ $t('redis.jsonInvalidTitle') }} — {{ jsonInvalid }}
@@ -624,7 +698,7 @@ const INFO_METRICS = computed(() => {
       </template>
     </n-modal>
 
-    <!-- 新增 Key：set 建 key（string）+ 可选 expire 设 TTL -->
+    <!-- 新增 Key：按数据类型 set 建 key（非 string 由后端按行解析文本）+ 可选 expire 设 TTL -->
     <n-modal :mask-closable="false" :close-on-esc="false" v-model:show="addShow" preset="card" :title="$t('redis.addKey')" style="width: 520px">
       <div class="add-field">
         <span>{{ $t('redis.keyName') }}</span>
@@ -632,6 +706,11 @@ const INFO_METRICS = computed(() => {
           :input-props="{ spellcheck: false }" />
       </div>
       <div class="add-field">
+        <span>{{ $t('redis.keyStruct') }}</span>
+        <n-select v-model:value="addStruct" size="small" :options="STRUCT_OPTIONS" />
+      </div>
+      <!-- Text/Json 只是 string 类型的值格式提示；list/set/hash/zset 均为按行文本 -->
+      <div v-if="addStruct === 'string'" class="add-field">
         <span>{{ $t('redis.keyType') }}</span>
         <n-radio-group v-model:value="addFormat" size="small">
           <n-radio-button value="text">Text</n-radio-button>
@@ -641,7 +720,7 @@ const INFO_METRICS = computed(() => {
       <div class="add-field">
         <span>{{ $t('redis.initialValue') }}</span>
         <n-input v-model:value="addValue" type="textarea" :rows="6" class="mono"
-          :input-props="{ spellcheck: false }" />
+          :placeholder="addPlaceholder" :input-props="{ spellcheck: false }" />
         <n-alert v-if="addJsonInvalid" type="error" :show-icon="false" style="margin-top: 6px">
           {{ $t('redis.jsonInvalidTitle') }} — {{ addJsonInvalid }}
         </n-alert>
