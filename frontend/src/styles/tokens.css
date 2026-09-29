@@ -1,0 +1,51 @@
+/* 设计令牌：全站唯一色彩/字体/圆角事实来源（ui-upgrade-design.md §3.1） */
+:root {
+  /* 品牌主色：信息工具属性 → 蓝色系（绿色留给 HEALTHY） */
+  --ops-primary: #2563eb;
+  --ops-primary-hover: #3b82f6;
+
+  /* 语义状态色（与 naive-ui 对齐） */
+  --ops-healthy: #18a058;
+  --ops-warning: #f0a020;
+  --ops-critical: #d03050;
+  --ops-unknown: #909399;
+
+  /* 中性色阶 */
+  --ops-bg: #f6f7f9;
+  --ops-surface: #ffffff;
+  --ops-surface-2: #f2f3f5;
+  --ops-border: #e5e6eb;
+  --ops-text-1: #1f2329;
+  --ops-text-2: #4e5969;
+  --ops-text-3: #86909c;
+
+  /* 圆角/阴影 */
+  --ops-radius-s: 4px;
+  --ops-radius-m: 8px;
+  --ops-shadow-card: 0 1px 2px rgba(0, 0, 0, 0.04);
+
+  /* 字体（fontsource 自托管，内网离线可用；中文走系统栈） */
+  --ops-font-sans: 'Inter Variable', system-ui, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --ops-font-mono: 'JetBrains Mono Variable', ui-monospace, Consolas, monospace;
+}
+
+html.dark {
+  --ops-bg: #101014;
+  --ops-surface: #17171c;
+  --ops-surface-2: #202026;
+  --ops-border: #2e2e35;
+  --ops-text-1: #e8e8ec;
+  --ops-text-2: #a9a9b3;
+  --ops-text-3: #6f6f79;
+  --ops-warning: #f5a623;
+  --ops-healthy: #27ae60;
+}
+
+/* 全局尊重 reduced-motion（§2.2） */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

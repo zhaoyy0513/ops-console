@@ -1,7 +1,12 @@
 <script setup lang="ts">
-import { computed, onMounted, watch } from 'vue'
+import { computed, h, inject, onMounted, watch, type Component, type Ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { NButton, NMenu, NSelect } from 'naive-ui'
+import { NButton, NIcon, NMenu, NSelect, useLoadingBar } from 'naive-ui'
+import {
+  CubeOutline, GridOutline, HardwareChipOutline,
+  LayersOutline, MoonOutline, PulseOutline,
+  ServerOutline, SunnyOutline, TerminalOutline,
+} from '@vicons/ionicons5'
 import { getModules } from '../modules'
 import { locale, setLocale } from '../i18n'
 import { useSiteStore } from '../stores/site'
@@ -15,15 +20,35 @@ function toggleLocale() {
 }
 
 const modules = getModules()
+
+/** 模块图标映射（§3.5：outline，两档颜色） */
+const MODULE_ICONS: Record<string, Component> = {
+  overview: GridOutline,
+  server: ServerOutline,
+  redis: LayersOutline,
+  mq: PulseOutline,
+  robot: HardwareChipOutline,
+  ssh: TerminalOutline,
+  database: CubeOutline,
+}
+
+// 主题（App.vue provide 的暗色状态）
+const opsDark = inject<{ isDark: Ref<boolean>; toggle: () => void }>('opsDark')!
+
 // 无有效站点时菜单全部置灰（事前可见优于事后弹窗打断），侧栏另有文字提示
 const menuOptions = computed(() =>
   modules.map((m) => ({
     label: m.title,
     key: m.routePath,
     disabled: !siteStore.currentSiteId,
+    icon: MODULE_ICONS[m.id]
+      ? () => h(NIcon, null, { default: () => h(MODULE_ICONS[m.id]!) })
+      : undefined,
   })),
 )
 const activeKey = computed(() => String(route.params.moduleId ?? ''))
+const loadingBar = useLoadingBar()
+watch(() => route.fullPath, () => { loadingBar.start(); setTimeout(() => loadingBar.finish(), 150) })
 
 /** 校验当前 URL 的 siteId：站点被删后立即踢出（响应式，列表/路由变化都触发） */
 function ensureValidSite() {
@@ -84,6 +109,9 @@ function onSiteSelect(id: string) {
         <n-button size="small" quaternary @click="toggleLocale">
           {{ locale === 'zh' ? 'EN' : '中文' }}
         </n-button>
+        <n-button size="small" quaternary :title="$t('layout.theme')" @click="opsDark.toggle">
+          <n-icon :component="opsDark.isDark.value ? SunnyOutline : MoonOutline" />
+        </n-button>
       </div>
     </header>
     <div class="app-body">
@@ -91,7 +119,7 @@ function onSiteSelect(id: string) {
         <div v-if="!siteStore.currentSiteId" class="sider-hint">{{ $t('layout.siderHint') }}</div>
         <n-menu :value="activeKey" :options="menuOptions" @update:value="onMenuSelect" />
         <div class="sider-footer">
-          <span class="build-stamp">b0928-2100</span>
+          <span class="build-stamp">b0928-2200</span>
         </div>
       </aside>
       <main class="app-main">

@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { NCard } from 'naive-ui'
+import EmptyState from '../../components/EmptyState.vue'
 </script>
 
 <template>
   <n-card :title="$t('database.title')" size="small">
-    <p>{{ $t('database.line1') }}</p>
-    <p>{{ $t('database.line2') }}</p>
+    <EmptyState :title="$t('database.line1')" :desc="$t('database.line2')" />
   </n-card>
 </template>

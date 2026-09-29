@@ -2,12 +2,14 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { NButton, NCard, NInput, NModal, NSelect, NSpace, NSpin, NTable, useMessage } from 'naive-ui'
 import CountdownConfirm from '../../components/CountdownConfirm.vue'
+import EmptyState from '../../components/EmptyState.vue'
 import BaseChart from '../../components/BaseChart.vue'
 import TabHelp from '../../components/TabHelp.vue'
 import StatusBadge from '../../components/StatusBadge.vue'
 import { useSiteStore } from '../../stores/site'
 import { getSamples } from '../overview/api'
 import { mqApi, type MqOverview, type QueueMessage, type QueueRow } from './api'
+import { fmtBytes, pctColor } from '../../utils/format'
 
 const siteStore = useSiteStore()
 const message = useMessage()
@@ -251,13 +253,6 @@ const heapPieOption = computed(() => {
   }
 })
 
-function pctColor(pct: number | null): string {
-  if (pct == null) return '#999'
-  if (pct >= 90) return '#d03050'
-  if (pct >= 80) return '#f0a020'
-  return '#18a058'
-}
-
 async function emptyQueue(q: QueueRow) {
   const siteId = siteStore.currentSiteId
   if (!siteId || !instanceId.value || !q._mbean) return
@@ -290,18 +285,6 @@ async function viewMessages(q: QueueRow) {
   } finally {
     messagesLoading.value = false
   }
-}
-
-function fmtBytes(n: number | null | undefined): string {
-  if (n == null) return '-'
-  const units = ['B', 'KB', 'MB', 'GB']
-  let v = n
-  let i = 0
-  while (v >= 1024 && i < units.length - 1) {
-    v /= 1024
-    i++
-  }
-  return `${v.toFixed(1)}${units[i]}`
 }
 
 const worstQueueStatus = computed(() => {
@@ -430,7 +413,7 @@ const worstQueueStatus = computed(() => {
               </td>
             </tr>
             <tr v-if="!filteredQueues.length">
-              <td colspan="7" style="text-align: center; color: #999">无匹配队列</td>
+              <td :colspan="7"><EmptyState :title="$t('mq.noMatch')" /></td>
             </tr>
           </tbody>
         </n-table>

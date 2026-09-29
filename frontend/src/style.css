@@ -12,10 +12,10 @@ body,
 }
 
 body {
-  font-family: system-ui, 'Segoe UI', Roboto, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  font-family: var(--ops-font-sans);
   font-size: 14px;
-  color: #1f2329;
-  background: #f5f6f8;
+  color: var(--ops-text-1);
+  background: var(--ops-bg);
 }
 
 .app-shell {
@@ -34,8 +34,8 @@ body {
   align-items: center;
   gap: 16px;
   padding: 0 16px;
-  background: #fff;
-  border-bottom: 1px solid #e5e6eb;
+  background: var(--ops-surface);
+  border-bottom: 1px solid var(--ops-border);
 }
 
 .brand {
@@ -62,8 +62,8 @@ body {
   height: calc(100vh - 48px);
   width: 200px;
   flex: none;
-  background: #fff;
-  border-right: 1px solid #e5e6eb;
+  background: var(--ops-surface);
+  border-right: 1px solid var(--ops-border);
   display: flex;
   flex-direction: column;
   overflow-y: auto;

@@ -342,9 +342,7 @@ function confirmRun() {
               </td>
             </tr>
             <tr v-if="!scripts.length && !loading">
-              <td colspan="4" style="text-align: center; color: #999">
-                {{ $t('ssh.empty') }}
-              </td>
+              <td :colspan="7"><EmptyState :title="$t('ssh.empty')" /></td>
             </tr>
           </tbody>
         </n-table>

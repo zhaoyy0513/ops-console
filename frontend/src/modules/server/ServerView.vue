@@ -15,6 +15,7 @@ import StatusBadge from '../../components/StatusBadge.vue'
 import { useSiteStore } from '../../stores/site'
 import { getSamples, type SamplePoint } from '../overview/api'
 import { serverApi, type ProcessRow, type ServerMetrics } from './api'
+import { fmtBytes, fmtMB, pctColor } from '../../utils/format'
 
 const siteStore = useSiteStore()
 const message = useMessage()
@@ -163,23 +164,6 @@ function donutOption(pct: number | null | undefined, usedColor: string, label: s
 const cpuDonutOption = computed(() => donutOption(metrics.value?.cpu.usage, '#0b63ce', `${t('server.cpu')} used%`))
 const memDonutOption = computed(() => donutOption(memPct.value, '#d46b08', `${t('server.memory')} used%`))
 
-function fmtBytes(n: number | null | undefined): string {
-  if (n == null) return '-'
-  const units = ['B', 'KB', 'MB', 'GB', 'TB']
-  let v = n
-  let i = 0
-  while (v >= 1024 && i < units.length - 1) {
-    v /= 1024
-    i++
-  }
-  return `${v.toFixed(1)}${units[i]}`
-}
-
-function fmtMB(mb: number | null | undefined): string {
-  if (mb == null) return '-'
-  return mb >= 1024 ? `${(mb / 1024).toFixed(1)}GB` : `${Math.round(mb)}MB`
-}
-
 // Disk 概览卡：use_percent 最高的挂载点
 const topDisk = computed(() => {
   const rows = metrics.value?.disk ?? []
@@ -187,12 +171,6 @@ const topDisk = computed(() => {
   return rows.reduce((a, b) => (b.use_percent > a.use_percent ? b : a))
 })
 
-function pctColor(pct: number | null | undefined): string {
-  if (pct == null) return '#999'
-  if (pct >= 90) return '#d03050'
-  if (pct >= 80) return '#f0a020'
-  return '#18a058'
-}
 </script>
 
 <template>
