@@ -300,6 +300,9 @@ function confirmRun() {
         if (m.timed_out) message.warning(t('ssh.timeoutWarn'))
       } catch { /* 忽略 */ }
       running.value = false
+      // 全程无输出的执行（如 .12 上裸 top 静默退出）：结论落进 console 持久显示，
+      // 否则会回落到"点击执行"占位、把此前的无输出提示顶掉
+      if (!runOutput.value) appendOut(t('ssh.noOutputEnd'))
     } else if (kind === 'error') {
       appendOut(t('ssh.runFailed', { msg: data }))
       running.value = false
