@@ -1,10 +1,12 @@
 /** 全站共用格式化工具（ui-upgrade-design.md §3.1：单一实现）。 */
 
+/** 百分比 → 语义色。返回 hex（非 var()）：ECharts canvas 解析不了 CSS 变量。
+ *  所选值在亮/暗两种底色上对比度均可接受，无需双份。 */
 export function pctColor(pct: number | null | undefined): string {
-  if (pct == null) return 'var(--ops-unknown)'
-  if (pct >= 90) return 'var(--ops-critical)'
-  if (pct >= 80) return 'var(--ops-warning)'
-  return 'var(--ops-healthy)'
+  if (pct == null) return '#909399'
+  if (pct >= 90) return '#d03050'
+  if (pct >= 80) return '#f0a020'
+  return '#18a058'
 }
 
 export function fmtBytes(n: number | null | undefined): string {

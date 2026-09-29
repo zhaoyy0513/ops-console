@@ -11,7 +11,6 @@ import {
   NModal,
   NPopconfirm,
   NSpace,
-  NSwitch,
   NTable,
   NTag,
   useMessage,
@@ -19,6 +18,7 @@ import {
 import { sitesApi, type Site } from './api'
 import { useSiteStore } from '../../stores/site'
 import SiteResourcesDrawer from './SiteResourcesDrawer.vue'
+import OpsSwitch from '../../components/OpsSwitch.vue'
 
 const router = useRouter()
 const message = useMessage()
@@ -118,7 +118,7 @@ function goConsole(site: Site) {
           <td><n-tag size="small" :bordered="false">{{ s.id }}</n-tag></td>
           <td>{{ s.name }}</td>
           <td>{{ s.description }}</td>
-          <td><n-switch size="small" :value="s.enabled" @update:value="toggle(s)" /></td>
+          <td><ops-switch size="small" :value="s.enabled" @update:value="toggle(s)" /></td>
           <td>
             <n-space :size="4">
               <n-button size="tiny" @click="openResources(s)">{{ $t('sites.resourcesBtn') }}</n-button>
@@ -154,7 +154,7 @@ function goConsole(site: Site) {
         <n-input v-model:value="form.description" type="textarea" :rows="2" />
       </n-form-item>
       <n-form-item :label="$t('common.enabled')">
-        <n-switch v-model:value="form.enabled" />
+        <ops-switch v-model:value="form.enabled" />
       </n-form-item>
     </n-form>
     <template #footer>

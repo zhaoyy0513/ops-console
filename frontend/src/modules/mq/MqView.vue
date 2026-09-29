@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, inject, onBeforeUnmount, onMounted, ref, watch, type Ref } from 'vue'
 import { NButton, NCard, NInput, NModal, NSelect, NSpace, NSpin, NTable, useMessage } from 'naive-ui'
 import CountdownConfirm from '../../components/CountdownConfirm.vue'
 import EmptyState from '../../components/EmptyState.vue'
@@ -136,6 +136,10 @@ const filteredQueues = computed(() => {
 })
 
 // ---------- 图表 ----------
+const opsDark = inject<{ isDark: Ref<boolean> }>('opsDark')!
+/** donut 剩余段底色：随暗色切换（浅灰在黑底刺眼） */
+const freeColor = computed(() => (opsDark.isDark.value ? '#26262c' : '#c1c8d0'))
+
 const heapPct = computed(() => {
   const j = overview.value?.jvm
   if (!j?.heap_used || !j?.heap_max) return null
@@ -160,8 +164,6 @@ const heapOption = computed(() => ({
     smooth: true,
     showSymbol: false,
     areaStyle: { opacity: 0.15 },
-    lineStyle: { color: '#0b63ce' },
-    itemStyle: { color: '#0b63ce' },
   }],
 }))
 
@@ -187,17 +189,13 @@ const topQueuesOption = computed(() => {
       name: '消息数',
       type: 'bar',
       data: top.map((q) => q.message_count),
-      itemStyle: { color: '#0b63ce' },
       label: { show: true, position: 'right' },
     }],
   }
 })
 
-const FREE_COLOR = '#c1c8d0'
-
-function pieTooltipFormatter(p: { name: string; value: number; percent: number }): string {
-  return `${p.name}<br/>${fmtBytes(p.value)}（${p.percent}%）`
-}
+const pieTooltipFormatter = (p: { name: string; value: number; percent: number }): string =>
+  `${p.name}<br/>${fmtBytes(p.value)}（${p.percent}%）`
 
 const addrMemPie = computed(() => {
   const used = overview.value?.address_memory_usage
@@ -216,8 +214,8 @@ const addrMemPie = computed(() => {
       radius: ['55%', '80%'],
       label: { show: false },
       data: [
-        { name: 'Address Memory', value: used, itemStyle: { color: '#0b63ce' } },
-        { name: 'Free', value: Math.max(0, max - used), itemStyle: { color: FREE_COLOR } },
+        { name: 'Address Memory', value: used, itemStyle: { color: '#2563eb' } },
+        { name: 'Free', value: Math.max(0, max - used), itemStyle: { color: freeColor.value } },
       ],
     }],
   }
@@ -246,8 +244,8 @@ const heapPieOption = computed(() => {
       radius: ['55%', '80%'],
       label: { show: false },
       data: [
-        { name: 'Used', value: used, itemStyle: { color: '#d46b08' } },
-        { name: 'Free', value: Math.max(0, max - used), itemStyle: { color: FREE_COLOR } },
+        { name: 'Used', value: used, itemStyle: { color: '#f0a020' } },
+        { name: 'Free', value: Math.max(0, max - used), itemStyle: { color: freeColor.value } },
       ],
     }],
   }

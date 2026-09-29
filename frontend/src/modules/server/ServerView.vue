@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, inject, onBeforeUnmount, onMounted, ref, watch, type Ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
   NButton,
@@ -20,6 +20,7 @@ import { fmtBytes, fmtMB, pctColor } from '../../utils/format'
 const siteStore = useSiteStore()
 const message = useMessage()
 const { t } = useI18n()
+const opsDark = inject<{ isDark: Ref<boolean> }>('opsDark')!
 
 const servers = ref<Array<{ label: string; value: string }>>([])
 const serverId = ref<string | null>(null)
@@ -127,8 +128,8 @@ const trendOption = computed(() => {
     xAxis: { type: 'category', data: labels },
     yAxis: { type: 'value', max: 100, axisLabel: { formatter: '{value}%' } },
     series: [
-      { name: t('server.cpuCol'), type: 'line', smooth: true, showSymbol: false, data: cpuSeries.value.map((p) => p.v), itemStyle: { color: '#0b63ce' } },
-      { name: t('server.memCol'), type: 'line', smooth: true, showSymbol: false, data: memPoints, itemStyle: { color: '#d46b08' } },
+      { name: t('server.cpuCol'), type: 'line', smooth: true, showSymbol: false, areaStyle: { opacity: 0.12 }, data: cpuSeries.value.map((p) => p.v) },
+      { name: t('server.memCol'), type: 'line', smooth: true, showSymbol: false, areaStyle: { opacity: 0.12 }, data: memPoints },
     ],
   }
 })
@@ -154,15 +155,15 @@ function donutOption(pct: number | null | undefined, usedColor: string, label: s
         emphasis: { disabled: true }, // hover 不淡出剩余段
         data: [
           { value: v, itemStyle: { color: usedColor } },
-          { value: Math.max(0, 100 - v), itemStyle: { color: '#e5e6eb' } },
+          { value: Math.max(0, 100 - v), itemStyle: { color: opsDark.isDark.value ? '#26262c' : '#e5e6eb' } },
         ],
       },
     ],
   }
 }
 
-const cpuDonutOption = computed(() => donutOption(metrics.value?.cpu.usage, '#0b63ce', `${t('server.cpu')} used%`))
-const memDonutOption = computed(() => donutOption(memPct.value, '#d46b08', `${t('server.memory')} used%`))
+const cpuDonutOption = computed(() => donutOption(metrics.value?.cpu.usage, '#2563eb', `${t('server.cpu')} used%`))
+const memDonutOption = computed(() => donutOption(memPct.value, '#f0a020', `${t('server.memory')} used%`))
 
 // Disk 概览卡：use_percent 最高的挂载点
 const topDisk = computed(() => {

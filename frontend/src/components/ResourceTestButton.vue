@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { NButton, NSpace, NTag, NTooltip } from 'naive-ui'
+import { NButton, NIcon, NSpace, NTag, NTooltip } from 'naive-ui'
+import { CheckmarkCircleOutline, CloseCircleOutline } from '@vicons/ionicons5'
 import { i18n } from '../i18n'
 import api from '../api'
 
@@ -53,11 +54,16 @@ async function run() {
       <template #trigger>
         <n-tag
           class="result-tag"
+          :class="{ shake: !result.success }"
           :type="result.success ? 'success' : 'error'"
           size="small"
           :bordered="false"
         >
-          {{ result.success ? 'OK' : 'FAILED' }} · {{ shortMessage }} ({{ result.latency_ms }}ms)
+          <span class="result-inner">
+            <n-icon :component="result.success ? CheckmarkCircleOutline : CloseCircleOutline" />
+            {{ result.success ? 'OK' : 'FAILED' }} · {{ shortMessage }}
+            <span class="latency">{{ result.latency_ms }}ms</span>
+          </span>
         </n-tag>
       </template>
       {{ result.message }} <!-- 悬浮看全文，标签内截断不撑破弹窗 -->
@@ -67,11 +73,32 @@ async function run() {
 
 <style scoped>
 .result-tag {
-  max-width: 260px;
+  max-width: 280px;
 }
 .result-tag :deep(.n-tag__content) {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.result-inner {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+/* latency 等宽：数字刷新时宽度不抖 */
+.latency {
+  font-family: var(--ops-font-mono);
+  font-variant-numeric: tabular-nums;
+}
+/* 失败轻微抖动（L1 反馈，120ms 一次性） */
+.shake {
+  animation: ops-shake 120ms ease-in-out 2;
+}
+@keyframes ops-shake {
+  25% { transform: translateX(-2px); }
+  75% { transform: translateX(2px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .shake { animation: none; }
 }
 </style>

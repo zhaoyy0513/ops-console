@@ -13,13 +13,13 @@ import {
   NSelect,
   NSpace,
   NSpin,
-  NSwitch,
   NTable,
   useMessage,
 } from 'naive-ui'
 import { useSiteStore } from '../../stores/site'
 import { ContractOutline, ExpandOutline } from '@vicons/ionicons5'
 import api from '../../api'
+import OpsSwitch from '../../components/OpsSwitch.vue'
 import { sshApi, type SshScript } from './api'
 
 const siteStore = useSiteStore()
@@ -353,7 +353,7 @@ function confirmRun() {
               <td>{{ serverName(item.server_id) }}</td>
               <td class="mono">{{ item.cron || '-' }}</td>
               <td>
-                <n-switch
+                <ops-switch
                   v-if="item.cron"
                   size="small"
                   :value="item.sched_enabled"
@@ -391,7 +391,7 @@ function confirmRun() {
           <n-input v-model:value="form.name" :placeholder="$t('ssh.namePh')" />
         </n-form-item>
         <n-form-item :label="$t('ssh.isCron')">
-          <n-switch v-model:value="isCron" />
+          <ops-switch v-model:value="isCron" />
         </n-form-item>
         <n-form-item v-if="isCron" :label="$t('ssh.cronLabel')" :show-feedback="false">
           <div class="cron-block">

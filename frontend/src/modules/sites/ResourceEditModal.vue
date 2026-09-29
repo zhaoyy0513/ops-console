@@ -9,10 +9,10 @@ import {
   NInputNumber,
   NModal,
   NSelect,
-  NSwitch,
   useMessage,
 } from 'naive-ui'
 import ResourceTestButton from '../../components/ResourceTestButton.vue'
+import OpsSwitch from '../../components/OpsSwitch.vue'
 
 export interface EditTarget {
   /** 编辑已有资源的 id；null = 新增 */
@@ -160,11 +160,11 @@ async function save() {
         <n-input v-model:value="form.name" :placeholder="$t('sites.newName')" />
       </n-form-item>
       <n-form-item v-if="props.target?.type === 'servers'" :label="$t('common.enabled')">
-        <n-switch v-model:value="form.enabled" :default-value="true" />
+        <ops-switch v-model:value="form.enabled" />
       </n-form-item>
       <template v-for="(f, fi) in fields" :key="f.key">
         <n-form-item v-if="fi === 1 && props.target?.type !== 'servers'" :label="$t('common.enabled')">
-          <n-switch v-model:value="form.enabled" :default-value="true" />
+          <ops-switch v-model:value="form.enabled" />
         </n-form-item>
         <n-form-item
           :label="$t(`fields.${f.key}`)"
