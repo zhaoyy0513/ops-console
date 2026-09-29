@@ -136,6 +136,15 @@ onBeforeUnmount(() => view?.destroy())
   height: 100%;
   overflow: auto;
 }
+/* JSON 语法错误标记增强：CM 默认只是行内两个小圆点（cm-lintRange-error 的
+   默认背景图），肉眼几乎不可见——覆盖为醒目的红色波浪下划线。
+   悬浮仍有 lint tooltip 显示完整错误信息。 */
+.diff-editor :deep(.cm-lintRange-error) {
+  background-image: none;
+  text-decoration: underline wavy #d03050 2px;
+  text-decoration-skip-ink: none;
+  text-underline-offset: 3px;
+}
 /* 变更行整行底色 + 左侧 2px 实色条（用户反馈：默认底色太淡，变更行不醒目）。
    merge 包在两侧 .cm-editor 上分别标 cm-merge-a / cm-merge-b，变更行加 .cm-changedLine；
    a 侧=删除（红）b 侧=新增（绿），同 git-review 语义。

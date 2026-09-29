@@ -144,7 +144,8 @@ const freeColor = computed(() => (opsDark.isDark.value ? '#26262c' : '#c1c8d0'))
 
 const heapPct = computed(() => {
   const j = overview.value?.jvm
-  if (!j?.heap_used || !j?.heap_max) return null
+  // heap_used 为 0 是合法值，仅 null 视为无数据（falsy 判断会把 0 误判成缺失）
+  if (j?.heap_used == null || !j?.heap_max) return null
   return Math.round((j.heap_used / j.heap_max) * 100)
 })
 
@@ -202,7 +203,8 @@ const pieTooltipFormatter = (p: { name: string; value: number; percent: number }
 const addrMemPie = computed(() => {
   const used = overview.value?.address_memory_usage
   const max = overview.value?.global_max_size
-  if (!used || !max) return null
+  // 空闲时 address_memory_usage = 0 是合法值，不能 falsy 判断（否则饼图在 0 字节时消失）
+  if (used == null || !max) return null
   return {
     title: {
       text: `${addrMemPct.value ?? '?'}%`,
@@ -226,7 +228,7 @@ const addrMemPie = computed(() => {
 const addrMemPct = computed(() => {
   const u = overview.value?.address_memory_usage
   const m = overview.value?.global_max_size
-  return u && m ? Math.round((u / m) * 100) : null
+  return u != null && m ? Math.round((u / m) * 100) : null
 })
 
 const heapPieOption = computed(() => {
@@ -353,7 +355,9 @@ function trendData(q: QueueRow): number[] {
         <n-card size="small" class="grow-1" :title="$t('mq.broker')">
           <div class="mc-grid">
             <metric-card :title="$t('mq.connectionsCol')" :value="overview.connections" />
-            <metric-card :title="$t('mq.sessionsCol')" :value="overview.sessions" />
+            <!-- Artemis 2.19 不上报 SessionCount（恒 null 只能显示 ?），
+                 换队列数：与下方队列表同源同值（15s 轮询） -->
+            <metric-card :title="$t('mq.queuesCount')" :value="queues.length" />
             <metric-card :title="$t('mq.consumersCol')" :value="overview.consumers" />
             <metric-card :title="$t('mq.addressesCol')" :value="overview.addresses" />
           </div>

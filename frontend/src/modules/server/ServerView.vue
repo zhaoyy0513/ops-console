@@ -441,6 +441,23 @@ const diskColumns = computed<DataTableColumns<DiskRow>>(() => [
 </template>
 
 <style scoped>
+/* 页面纵向堆叠（替代 n-space vertical，避免重复 key 告警） */
+.sv-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+/* 指标卡统一网格：4 列等宽等高（grid 默认 stretch），僵尸卡第 5 张自动换行 */
+.sv-cards {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  align-items: stretch;
+}
+/* 可点击卡片（Overview tile-wrap 同款） */
+.tile-wrap {
+  cursor: pointer;
+}
 /* donut 中心数字叠加层（echarts 只画环，数字由 HTML 渲染才能接 CountUp） */
 .donut-wrap {
   position: relative;

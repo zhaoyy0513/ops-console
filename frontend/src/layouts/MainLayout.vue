@@ -49,7 +49,13 @@ const menuOptions = computed(() =>
       : undefined,
   })),
 )
-const activeKey = computed(() => String(route.params.moduleId ?? ''))
+// 路由表按模块生成静态尾段（/console/site/:siteId/redis），不存在 :moduleId 参数，
+// route.params.moduleId 恒为 undefined —— 当前模块只能从 path 末段反查。
+// （旧代码读这个不存在的参数导致：切站点必跳 overview、侧栏高亮从未生效）
+const activeModule = computed(() =>
+  modules.find((m) => route.path.endsWith(`/${m.routePath}`)),
+)
+const activeKey = computed(() => activeModule.value?.routePath ?? '')
 const loadingBar = useLoadingBar()
 watch(() => route.fullPath, () => { loadingBar.start(); setTimeout(() => loadingBar.finish(), 150) })
 
@@ -60,7 +66,7 @@ function ensureValidSite() {
   const options = siteStore.options
   if (options.some((o) => o.value === current)) return
   if (options.length) {
-    const target = String(route.params.moduleId ?? modules[0]?.routePath ?? 'overview')
+    const target = activeModule.value?.routePath ?? modules[0]?.routePath ?? 'overview'
     router.replace(`/console/site/${options[0].value}/${target}`)
   } else {
     siteStore.setSite('') // 站点已删，清空选中态（下拉不再显示老 ID）
@@ -86,9 +92,9 @@ function onMenuSelect(key: string) {
   router.push(siteId ? `/console/site/${siteId}/${key}` : '/sites')
 }
 
-// 切换站点后停留在当前模块（PRD §21）
+// 切换站点后停留在当前模块（PRD §21）——从 path 尾段反查，params.moduleId 不存在
 function onSiteSelect(id: string) {
-  const target = route.params.moduleId ?? modules[0]?.routePath
+  const target = activeModule.value?.routePath ?? modules[0]?.routePath
   router.push(`/console/site/${id}/${target}`)
 }
 </script>
@@ -132,7 +138,7 @@ function onSiteSelect(id: string) {
           <button class="collapse-btn" :title="collapsed ? $t('layout.expand') : $t('layout.collapse')" @click="collapsed = !collapsed">
             <n-icon :component="collapsed ? ChevronForwardOutline : ChevronBackOutline" :size="16" />
           </button>
-          <span v-if="!collapsed" class="build-stamp">b0929-1312</span>
+          <span v-if="!collapsed" class="build-stamp">b0929-1457</span>
         </div>
       </aside>
       <main class="app-main">

@@ -10,11 +10,15 @@ import {
   TitleComponent,
   TooltipComponent,
 } from 'echarts/components'
+import { LegacyGridContainLabel } from 'echarts/features'
 import { CanvasRenderer } from 'echarts/renderers'
 
 echarts.use([
   LineChart, BarChart, PieChart,
   GridComponent, LegendComponent, TitleComponent, TooltipComponent,
+  // echarts v6 把 grid.containLabel 移入兼容层（在 features 而非 components），
+  // 不注册则 MqView top10 图的控制台出现告警
+  LegacyGridContainLabel,
   CanvasRenderer,
 ])
 

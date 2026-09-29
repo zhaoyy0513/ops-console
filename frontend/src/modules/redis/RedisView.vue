@@ -514,7 +514,8 @@ const INFO_METRICS = computed(() => {
               <n-button size="small" @click="applyTtl">{{ $t('redis.applyTtl') }}</n-button>
               <div style="flex: 1" />
               <countdown-confirm :label="$t('common.delete')" :target="detail.key" :seconds="5" @confirm="deleteKey" />
-              <n-button size="small" type="primary" :loading="saving" :disabled="!!jsonInvalid"
+              <!-- 不禁用按钮：点击时由 saveValue 校验并弹出明确错误（禁用会让用户不知道为何点不了） -->
+              <n-button size="small" type="primary" :loading="saving"
                 @click="confirmShow = true">{{ $t('common.save') }}</n-button>
             </div>
           </template>
@@ -531,7 +532,7 @@ const INFO_METRICS = computed(() => {
       <template #footer>
         <div style="display: flex; justify-content: end; gap: 8px">
           <n-button size="small" @click="confirmShow = false">{{ $t('common.cancel') }}</n-button>
-          <n-button size="small" type="primary" :loading="saving" :disabled="!!jsonInvalid"
+          <n-button size="small" type="primary" :loading="saving"
             @click="saveValue">{{ $t('redis.confirmWrite') }}</n-button>
         </div>
       </template>
