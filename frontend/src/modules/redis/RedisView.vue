@@ -5,7 +5,6 @@ import {
   NAlert,
   NButton,
   NCard,
-  NIcon,
   NInput,
   NInputNumber,
   NModal,
@@ -22,7 +21,6 @@ import {
   type TreeOption,
 } from 'naive-ui'
 import { parser as jsonParser } from '@lezer/json'
-import { ContractOutline, ExpandOutline } from '@vicons/ionicons5'
 import CountdownConfirm from '../../components/CountdownConfirm.vue'
 import TabHelp from '../../components/TabHelp.vue'
 import DiffJsonEditor from '../../components/DiffJsonEditor.vue'
@@ -627,16 +625,13 @@ const INFO_METRICS = computed(() => {
     <div class="split">
       <n-card size="small" class="left-pane" :title="$t('redis.keys')">
         <template #header-extra>
-          <n-space align="center" :size="8" :wrap="false">
-            <n-button size="small" @click="openAdd">{{ $t('redis.addKey') }}</n-button>
-            <!-- 图标按钮 + title 提示：窄面板放不下两条英文长文案（曾挤成一团） -->
-            <n-button size="tiny" quaternary :title="$t('redis.expandAll')" @click="expandAll">
-              <template #icon><n-icon :component="ExpandOutline" /></template>
-            </n-button>
-            <n-button size="tiny" quaternary :title="$t('redis.collapseAll')" @click="collapseAll">
-              <template #icon><n-icon :component="ContractOutline" /></template>
-            </n-button>
-            <span style="color: #999; font-size: 12px">{{ $t('redis.keysCount', { n: keys.length }) }}</span>
+          <!-- 头部动作条统一 tiny 文本按钮：新增是唯一真实动作（主色 ghost 弱化为轻量入口），
+               展开/合并为 quaternary 轻按钮，计数弱化放末尾；窄面板下中英文均单行放下 -->
+          <n-space align="center" :size="6" :wrap="false">
+            <n-button size="tiny" type="primary" ghost @click="openAdd">{{ $t('redis.add') }}</n-button>
+            <n-button size="tiny" quaternary @click="expandAll">{{ $t('redis.expandAll') }}</n-button>
+            <n-button size="tiny" quaternary @click="collapseAll">{{ $t('redis.collapseAll') }}</n-button>
+            <span class="keys-count">{{ $t('redis.keysCount', { n: keys.length }) }}</span>
           </n-space>
         </template>
         <n-spin :show="loading && !!treeData.length">
@@ -796,6 +791,11 @@ const INFO_METRICS = computed(() => {
 /* 顶栏自动刷新频率注记（对齐 Server 页 poll-note） */
 .poll-note {
   color: var(--ops-text-3);
+  font-size: 12px;
+}
+/* Keys 头部计数（与按钮同高垂直居中，弱化灰） */
+.keys-count {
+  color: #999;
   font-size: 12px;
 }
 .mono {

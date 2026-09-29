@@ -1,6 +1,7 @@
 <script setup lang="ts">
 /** 通用指标卡（ui-upgrade-design.md §6.1）：图标 + 标题 + CountUp 数值 +
- *  顶边 2px 状态色条 + slot（副文案/迷你图）。
+ *  slot（副文案/迷你图）。
+ *  顶边 2px 状态色条为 opt-in：仅传 barColor 时渲染，否则完全素卡。
  *  容器为 SpotlightCard 的降级形态（普通卡 + hover 边框高亮），
  *  光效版本待 Phase D 评审后决定是否启用。 */
 import type { Component } from 'vue'
@@ -18,7 +19,7 @@ withDefaults(
     suffix?: string
     /** 数值颜色（如 pctColor() 结果） */
     color?: string
-    /** 顶边状态色条，默认主色 */
+    /** 顶边 2px 状态色条，opt-in：不传则不渲染色条（素卡） */
     barColor?: string
     /** hover 边框高亮改为 opt-in：仅可点击卡片传 true，非交互卡不暗示可点 */
     hoverable?: boolean
@@ -29,7 +30,7 @@ withDefaults(
 
 <template>
   <div class="metric-card" :class="{ hoverable }">
-    <div class="mc-bar" :style="{ background: barColor ?? 'var(--ops-primary)' }" />
+    <div v-if="barColor" class="mc-bar" :style="{ background: barColor }" />
     <div class="mc-head">
       <n-icon v-if="icon" :component="icon" :size="14" class="mc-icon" />
       <span class="mc-title">{{ title }}</span>

@@ -162,18 +162,13 @@ const memPct = computed(() => {
   return m?.total && m?.used != null ? Math.round((m.used / m.total) * 1000) / 10 : null
 })
 
-// 紧凑刻度（Artemis 风格）：常规 mm:ss（秒保持可见）；跨小时后的首个刻度保留 HH:mm:ss 兜底。
-// interval:0 → 每个样本都是渲染刻度，prevHour 逐点推进，小时切换一定落在可见标签上。
-// 手动补零：不受浏览器 locale 影响（en-US 会带 AM/PM）
+// 刻度统一 HH:mm:ss（手动补零，不受浏览器 locale 影响，en-US 会带 AM/PM）。
+// 每 5 个样本显示一个标签（3s 采样 × 5 = 15s 一个），40 样本窗口不拥挤；hideOverlap 兜底防挤
 function axisLabels(points: SamplePoint[]): string[] {
   const p = (n: number) => String(n).padStart(2, '0')
-  let prevHour = -1
   return points.map((pt) => {
     const d = new Date(pt.ts * 1000)
-    const hms = `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
-    const full = d.getHours() !== prevHour
-    prevHour = d.getHours()
-    return full ? hms : hms.slice(3) // mm:ss
+    return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
   })
 }
 
@@ -191,7 +186,7 @@ const trendOption = computed(() => {
       type: 'category',
       data: axisLabels(cpu),
       axisLabel: {
-        interval: 0, // 每个样本一个刻度（连续 3s 间隔标签），hideOverlap 兜底防挤
+        interval: 4, // 每 5 个样本一个标签（3s × 5 = 15s），全 HH:mm:ss 不拥挤
         fontSize: 10,
         hideOverlap: true,
       },
@@ -367,7 +362,6 @@ const diskColumns = computed<DataTableColumns<DiskRow>>(() => [
           :value="topDisk?.use_percent ?? null"
           suffix="%"
           :color="pctColor(topDisk?.use_percent)"
-          :bar-color="pctColor(topDisk?.use_percent)"
         >
           <template v-if="topDisk">
             {{ topDisk.mount }} · {{ $t('server.used') }} {{ topDisk.used }} / {{ $t('server.total') }} {{ topDisk.size }}

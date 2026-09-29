@@ -28,16 +28,16 @@ function changePage(p: number) {
 type Row = NonNullable<AuditPage['items'][number]>
 
 const columns = computed(() => [
-  // 时间列固定宽 + 禁止换行：'2026-09-29 16:20:33' 必须单行（换行两行太高）
-  { title: t('audit.colTime'), key: 'time', width: 170, className: 'nowrap', render: (row: Row) => (row.time ?? '').replace('T', ' ').slice(0, 19) },
+  // 时间列固定宽 + 禁止换行：'2026-09-29 16:20:33'（19 字符 mono）@12-14px 实测约 172-180px，170 会折行，195 稳妥
+  { title: t('audit.colTime'), key: 'time', width: 195, className: 'mono nowrap', render: (row: Row) => (row.time ?? '').replace('T', ' ').slice(0, 19) },
   { title: t('audit.colSite'), key: 'site', width: 120 },
   { title: t('audit.colResource'), key: 'resource', width: 170, className: 'mono', ellipsis: { tooltip: true } },
-  // 180px：最长常见操作 RESOURCE_CONFIG_DELETED / SERVER_KILL_ZOMBIE 单行放得下
-  { title: t('audit.colOperation'), key: 'operation', width: 180 },
+  // 220px：最长操作 RESOURCE_CONFIG_DELETED（23 字符大写）单行约 208px，180 会折行
+  { title: t('audit.colOperation'), key: 'operation', width: 220, className: 'nowrap' },
   {
     title: t('audit.colTarget'),
     key: 'target',
-    minWidth: 120,
+    minWidth: 100,
     className: 'mono',
     ellipsis: { tooltip: true },
     render: (row: Row) => row.target ?? '-',
