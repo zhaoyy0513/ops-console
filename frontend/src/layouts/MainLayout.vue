@@ -132,14 +132,19 @@ function onSiteSelect(id: string) {
           <button class="collapse-btn" :title="collapsed ? $t('layout.expand') : $t('layout.collapse')" @click="collapsed = !collapsed">
             <n-icon :component="collapsed ? ChevronForwardOutline : ChevronBackOutline" :size="16" />
           </button>
-          <span v-if="!collapsed" class="build-stamp">b0929-1109</span>
+          <span v-if="!collapsed" class="build-stamp">b0929-1122</span>
         </div>
       </aside>
       <main class="app-main">
-        <!-- 路由/站点切换淡入淡出（out-in：旧视图先退再进，掩盖数据重载白屏） -->
+        <!-- 路由/站点切换淡入淡出（out-in：旧视图先退再进，掩盖数据重载白屏）。
+             Transition 必须动画单元素根：视图组件可能是多根 fragment，
+             直接放 component 会导致 out-in 离场无法完成、导航卡死——
+             因此包一层带 key 的 div 作为动画目标。 -->
         <router-view v-slot="{ Component }">
           <transition name="ops-fade" mode="out-in">
-            <component :is="Component" :key="route.path" />
+            <div :key="route.path" class="route-view">
+              <component :is="Component" />
+            </div>
           </transition>
         </router-view>
       </main>
