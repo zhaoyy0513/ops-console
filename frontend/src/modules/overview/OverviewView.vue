@@ -4,7 +4,7 @@ import { useRouter } from 'vue-router'
 import {
   HardwareChipOutline, LayersOutline, PulseOutline, ServerOutline,
 } from '@vicons/ionicons5'
-import { NButton, NCard, NSpace, NTable, NTag, useMessage } from 'naive-ui'
+import { NButton, NCard, NTable, NTag, useMessage } from 'naive-ui'
 import StatusBadge from '../../components/StatusBadge.vue'
 import TabHelp from '../../components/TabHelp.vue'
 import MetricCard from '../../components/MetricCard.vue'
@@ -74,9 +74,9 @@ function fmtTime(iso: string): string {
 </script>
 
 <template>
-  <n-space vertical :size="12">
+  <div class="ov-stack">
     <n-card size="small">
-      <n-space align="center" :size="12">
+      <div class="ov-bar">
         <span style="font-size: 16px; font-weight: 600">{{ data?.site.name ?? siteStore.currentSiteId }}</span>
         <status-badge v-if="data" :status="data.overall" />
         <n-button size="small" :loading="loading" @click="refresh">{{ $t('overview.checkNow') }}</n-button>
@@ -84,10 +84,10 @@ function fmtTime(iso: string): string {
         <span v-if="data?.checked_at" style="color: var(--ops-text-3); font-size: 12px">
           {{ $t('overview.lastCheck', { time: fmtTime(data.checked_at) }) }}
         </span>
-      </n-space>
+      </div>
     </n-card>
 
-    <n-space v-if="data" :size="12">
+    <div v-if="data" class="ov-tiles">
       <div v-for="(_, kind) in KIND_META" :key="kind" class="tile-wrap" @click="goIssueModule(kind)">
         <metric-card
           :title="$t(`tabs.${kind}`)"
@@ -103,7 +103,7 @@ function fmtTime(iso: string): string {
           </span>
         </metric-card>
       </div>
-    </n-space>
+    </div>
 
     <n-card v-if="data?.issues?.length" size="small" :title="$t('overview.issues')">
       <n-table :single-line="false" size="small">
@@ -146,10 +146,25 @@ function fmtTime(iso: string): string {
         </tbody>
       </n-table>
     </n-card>
-  </n-space>
+  </div>
 </template>
 
 <style scoped>
+.ov-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.ov-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.ov-tiles {
+  display: flex;
+  gap: 12px;
+}
 .tile-wrap {
   flex: 1;
   min-width: 140px;

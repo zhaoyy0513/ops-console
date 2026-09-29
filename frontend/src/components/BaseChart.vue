@@ -52,7 +52,7 @@ watch(() => opsDark.isDark.value, () => {
   <div class="base-chart" :style="{ height: height ?? '240px' }">
     <div ref="el" style="width: 100%; height: 100%" />
     <div v-if="empty" class="chart-empty">{{ empty }}</div>
-    <n-spin :show="!!loading" size="small" class="chart-spin" />
+    <n-spin v-if="loading" size="small" class="chart-spin" />
   </div>
 </template>
 

@@ -7,6 +7,8 @@ import {
   NInput,
   NInputNumber,
   NModal,
+  NRadioButton,
+  NRadioGroup,
   NSelect,
   NSpace,
   NSpin,
@@ -20,7 +22,7 @@ import {
 import { parser as jsonParser } from '@lezer/json'
 import CountdownConfirm from '../../components/CountdownConfirm.vue'
 import TabHelp from '../../components/TabHelp.vue'
-import CodeJsonEditor from '../../components/CodeJsonEditor.vue'
+import DiffJsonEditor from '../../components/DiffJsonEditor.vue'
 import { useSiteStore } from '../../stores/site'
 import {
   getKey,
@@ -206,6 +208,8 @@ const detail = ref<KeyDetail | null>(null)
 const detailLoading = ref(false)
 const format = ref<'text' | 'json'>('text')
 const editText = ref('')
+/** 打开 key 时从 Redis 装载的原始值（diff 基线，不随编辑变化） */
+const originalText = ref('')
 const editTtl = ref<number | null>(null)
 const saving = ref(false)
 const confirmShow = ref(false)
@@ -272,6 +276,7 @@ async function selectKey(k: KeyItem) {
     editText.value = format.value === 'json'
       ? JSON.stringify(JSON.parse(raw), null, 2)
       : raw
+    originalText.value = editText.value
     editTtl.value = detail.value.ttl > 0 ? detail.value.ttl : null
   } catch (e) {
     // key 已被删除/过期等：明确提示并清空右侧（不再让用户对着旧值操作）
@@ -297,7 +302,10 @@ function switchFormat(v: string) {
   if (next === 'json') {
     // 进 Json 视图：格式化展示（CodeMirror 高亮 + 实时校验，可直接编辑）
     if (isJson(editText.value)) {
-      editText.value = JSON.stringify(JSON.parse(editText.value), null, 2)
+      const pretty = JSON.stringify(JSON.parse(editText.value), null, 2)
+      // 未编辑过的内容格式化时，diff 基线同步格式化（否则整篇都算变更）
+      if (editText.value === originalText.value) originalText.value = pretty
+      editText.value = pretty
       format.value = 'json'
     } else {
       message.warning(t('redis.notJson'))
@@ -306,13 +314,6 @@ function switchFormat(v: string) {
     format.value = 'text'
   }
 }
-
-const changeSummary = computed(() => {
-  const d = detail.value
-  if (!d) return ''
-  const preview = editText.value.length > 160 ? `${editText.value.slice(0, 160)}…` : editText.value
-  return `${d.type.toUpperCase()} · ${editText.value.length} chars\n${preview}`
-})
 
 async function saveValue() {
   const d = detail.value
@@ -491,7 +492,7 @@ const INFO_METRICS = computed(() => {
               <div style="flex: 1" />
             </div>
 
-            <code-json-editor v-if="format === 'json'" v-model="editText" height="420px" />
+            <diff-json-editor v-if="format === 'json'" :original="originalText" v-model="editText" height="420px" />
             <n-input v-else v-model:value="editText" type="textarea"
               :rows="16" :input-props="{ spellcheck: false }" class="mono" />
 
@@ -516,8 +517,6 @@ const INFO_METRICS = computed(() => {
     <!-- 保存确认对话框（PRD §11.4） -->
     <n-modal :mask-closable="false" :close-on-esc="false" v-model:show="confirmShow" preset="card" :title="$t('redis.confirmSave')" style="width: 520px">
       <p>{{ $t('redis.writeKey') }} <b class="mono">{{ detail?.key }}</b></p>
-      <p>{{ $t('redis.changeSummary') }}</p>
-      <pre class="summary mono">{{ changeSummary }}</pre>
       <template #footer>
         <div style="display: flex; justify-content: end; gap: 8px">
           <n-button size="small" @click="confirmShow = false">{{ $t('common.cancel') }}</n-button>
@@ -599,17 +598,6 @@ const INFO_METRICS = computed(() => {
 .metric .mono {
   font-family: var(--ops-font-mono);
   font-variant-numeric: tabular-nums;
-}
-.summary {
-  background: #f5f6f8;
-  border: 1px solid #e5e6eb;
-  border-radius: 4px;
-  padding: 8px 12px;
-  font-size: 12px;
-  max-height: 200px;
-  overflow: auto;
-  white-space: pre-wrap;
-  word-break: break-all;
 }
 </style>
 

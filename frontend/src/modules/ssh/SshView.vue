@@ -20,6 +20,7 @@ import { useSiteStore } from '../../stores/site'
 import { ContractOutline, ExpandOutline } from '@vicons/ionicons5'
 import api from '../../api'
 import OpsSwitch from '../../components/OpsSwitch.vue'
+import EmptyState from '../../components/EmptyState.vue'
 import { sshApi, type SshScript } from './api'
 
 const siteStore = useSiteStore()

@@ -101,6 +101,7 @@ const messages = {
     server: {
       title: '服务器',
       select: '选择服务器',
+      noServers: '该站点暂无 Server 资源',
       refresh: '刷新',
       cpu: 'CPU',
       memory: '内存',
@@ -521,6 +522,7 @@ const messages = {
     server: {
       title: 'Server',
       select: 'Select server',
+      noServers: 'No Server resources in this site',
       refresh: 'Refresh',
       cpu: 'CPU',
       memory: 'Memory',

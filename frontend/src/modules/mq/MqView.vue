@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, inject, onBeforeUnmount, onMounted, ref, watch, type Ref } from 'vue'
-import { NButton, NCard, NInput, NModal, NSelect, NSpace, NSpin, NTable, useMessage } from 'naive-ui'
+import { NButton, NCard, NInput, NModal, NSelect, NSpace, NSpin, NTable, NTooltip, useMessage } from 'naive-ui'
 import CountdownConfirm from '../../components/CountdownConfirm.vue'
 import EmptyState from '../../components/EmptyState.vue'
 import BaseChart from '../../components/BaseChart.vue'
