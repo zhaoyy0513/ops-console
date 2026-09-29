@@ -2,6 +2,7 @@
 import { computed, h, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
+  NAlert,
   NButton,
   NCard,
   NInput,
@@ -318,6 +319,11 @@ function switchFormat(v: string) {
 async function saveValue() {
   const d = detail.value
   if (!d || !siteStore.currentSiteId || !instanceId.value) return
+  // Json 视图下有语法错误一律拦截（string 类型也不例外：进了 Json 视图就按 JSON 语义编辑写回）
+  if (jsonInvalid.value) {
+    message.error(t('redis.jsonInvalidSave', { reason: jsonInvalid.value }))
+    return
+  }
   // 非 string 类型按 JSON 解析后提交结构化对象（后端按类型校验结构）
   let value: unknown = editText.value
   if (d.type !== 'string') {
@@ -488,13 +494,17 @@ const INFO_METRICS = computed(() => {
                 <n-radio-button value="text">Text</n-radio-button>
                 <n-radio-button value="json">Json</n-radio-button>
               </n-radio-group>
-              <span v-if="jsonInvalid" class="json-error">{{ $t('redis.jsonError') }}{{ jsonInvalid }}</span>
               <div style="flex: 1" />
             </div>
 
             <diff-json-editor v-if="format === 'json'" :original="originalText" v-model="editText" height="420px" />
             <n-input v-else v-model:value="editText" type="textarea"
               :rows="16" :input-props="{ spellcheck: false }" class="mono" />
+
+            <!-- JSON 语法错误横幅：编辑器内有红波浪线，这里给出行/列定位（jsonInvalid 仅 json 格式非空） -->
+            <n-alert v-if="jsonInvalid" type="error" :show-icon="false" style="margin-top: 8px">
+              {{ $t('redis.jsonInvalidTitle') }} — {{ jsonInvalid }}
+            </n-alert>
 
             <!-- TTL / 删除 / 保存（按钮规格统一：small 实心） -->
             <div class="detail-actions">
@@ -504,7 +514,8 @@ const INFO_METRICS = computed(() => {
               <n-button size="small" @click="applyTtl">{{ $t('redis.applyTtl') }}</n-button>
               <div style="flex: 1" />
               <countdown-confirm :label="$t('common.delete')" :target="detail.key" :seconds="5" @confirm="deleteKey" />
-              <n-button size="small" type="primary" :loading="saving" @click="confirmShow = true">{{ $t('common.save') }}</n-button>
+              <n-button size="small" type="primary" :loading="saving" :disabled="!!jsonInvalid"
+                @click="confirmShow = true">{{ $t('common.save') }}</n-button>
             </div>
           </template>
           <div v-else style="text-align: center; color: #999; padding: 60px 0">
@@ -520,7 +531,8 @@ const INFO_METRICS = computed(() => {
       <template #footer>
         <div style="display: flex; justify-content: end; gap: 8px">
           <n-button size="small" @click="confirmShow = false">{{ $t('common.cancel') }}</n-button>
-          <n-button size="small" type="primary" :loading="saving" @click="saveValue">{{ $t('redis.confirmWrite') }}</n-button>
+          <n-button size="small" type="primary" :loading="saving" :disabled="!!jsonInvalid"
+            @click="saveValue">{{ $t('redis.confirmWrite') }}</n-button>
         </div>
       </template>
     </n-modal>
@@ -571,10 +583,6 @@ const INFO_METRICS = computed(() => {
   align-items: center;
   gap: 12px;
   margin-bottom: 8px;
-}
-.json-error {
-  color: #d03050;
-  font-size: 12px;
 }
 .detail-actions {
   display: flex;

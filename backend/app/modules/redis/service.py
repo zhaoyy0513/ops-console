@@ -240,6 +240,9 @@ async def operate(
 ) -> dict[str, Any]:
     config = await _require_redis_config(site_id, redis_id)
     started = time.perf_counter()
+    # oplog 展示用实例名（配置带 name，见 sites 资源表单）；内部 id 进 params 不进展示列
+    instance = str(config.get("name") or redis_id)
+    log_params = {"op": op, "db": db, "instance_id": redis_id, "host": config.get("host")}
 
     if op in FORBIDDEN_OPS:
         raise OpsError("FORBIDDEN_OPERATION", f"operation not allowed: {op}", status_code=400)
@@ -274,13 +277,13 @@ async def operate(
         except OpsError:
             raise
         except (ConnectionError, TimeoutError, OSError) as e:
-            await oplog.record(site_id, f"redis/{redis_id}", action, target=key,
-                               params={"op": op}, result="FAILED", error=str(e))
+            await oplog.record(site_id, f"redis/{instance}", action, target=key,
+                               params=log_params, result="FAILED", error=str(e))
             raise OpsError("REMOTE_CONNECTION_FAILED", f"Redis write failed: {e}", config["host"]) from None
 
     # 验收 13：所有修改/删除操作记操作日志。params 不含 value（可能大或敏感）
-    await oplog.record(site_id, f"redis/{redis_id}", action, target=key,
-                       params={"op": op, "type": ktype, "ttl": ttl})
+    await oplog.record(site_id, f"redis/{instance}", action, target=key,
+                       params={**log_params, "type": ktype, "ttl": ttl})
     return {"success": True, "latency_ms": int((time.perf_counter() - started) * 1000)}
 
 

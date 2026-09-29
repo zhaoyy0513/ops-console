@@ -55,7 +55,8 @@ async def create_site(data: dict) -> dict:
     }
     await r.hset(site_key(site_id), mapping=full)
     await r.sadd(SITES_KEY, site_id)
-    await oplog.record(site_id, "site-config", "SITE_CREATED", target=site_id)
+    await oplog.record(site_id, "site-config", "SITE_CREATED",
+                       target=data["name"], params={"site_id": site_id})
     return _row_to_site(full)
 
 
@@ -88,18 +89,21 @@ async def update_site(site_id: str, data: dict) -> dict | None:
         row["thresholds"] = json.dumps(data["thresholds"]) if data["thresholds"] else ""
     row["updated_at"] = _now()
     await r.hset(key, mapping=row)
-    await oplog.record(site_id, "site-config", "SITE_UPDATED", target=site_id)
+    await oplog.record(site_id, "site-config", "SITE_UPDATED",
+                       target=row["name"], params={"site_id": site_id})
     return _row_to_site(row)
 
 
 async def delete_site(site_id: str) -> bool:
     r = get_platform_redis()
-    if not await r.hexists(site_key(site_id), "id"):
+    row = await r.hgetall(site_key(site_id))
+    if not row:
         return False
     keys = [site_key(site_id)] + [resource_key(site_id, t) for t in RESOURCE_TYPES]
     await r.delete(*keys)
     await r.srem(SITES_KEY, site_id)
-    await oplog.record(site_id, "site-config", "SITE_DELETED", target=site_id)
+    await oplog.record(site_id, "site-config", "SITE_DELETED",
+                       target=row.get("name") or site_id, params={"site_id": site_id})
     return True
 
 
@@ -134,6 +138,11 @@ async def get_resource(site_id: str, res_type: str, resource_id: str) -> dict | 
     return await get_resource_raw(site_id, res_type, resource_id)
 
 
+def _res_label(data: dict, resource_id: str) -> str:
+    """oplog 展示用资源名：name 优先，缺省退回 id（内部 id 一律只进 params）。"""
+    return str(data.get("name") or resource_id)
+
+
 async def create_resource(site_id: str, res_type: str, data: dict) -> dict:
     await _require_site(site_id)
     r = get_platform_redis()
@@ -143,7 +152,9 @@ async def create_resource(site_id: str, res_type: str, data: dict) -> dict:
         raise DuplicateResource(resource_id)
     data = {**data, "id": resource_id}
     await r.hset(key, resource_id, json.dumps(data, ensure_ascii=False))
-    await oplog.record(site_id, f"{res_type}/{resource_id}", "RESOURCE_CONFIG_CREATED", target=resource_id)
+    name = _res_label(data, resource_id)
+    await oplog.record(site_id, f"{res_type}/{name}", "RESOURCE_CONFIG_CREATED",
+                       target=name, params={"resource_id": resource_id})
     return data
 
 
@@ -159,16 +170,24 @@ async def update_resource(site_id: str, res_type: str, resource_id: str, data: d
     old.update(data)
     old["id"] = resource_id
     await r.hset(key, resource_id, json.dumps(old, ensure_ascii=False))
-    await oplog.record(site_id, f"{res_type}/{resource_id}", "RESOURCE_CONFIG_UPDATED", target=resource_id)
+    name = _res_label(old, resource_id)
+    await oplog.record(site_id, f"{res_type}/{name}", "RESOURCE_CONFIG_UPDATED",
+                       target=name, params={"resource_id": resource_id})
     return old
 
 
 async def delete_resource(site_id: str, res_type: str, resource_id: str) -> bool:
     await _require_site(site_id)
-    deleted = await get_platform_redis().hdel(resource_key(site_id, res_type), resource_id)
-    if deleted:
-        await oplog.record(site_id, f"{res_type}/{resource_id}", "RESOURCE_CONFIG_DELETED", target=resource_id)
-    return deleted > 0
+    r = get_platform_redis()
+    key = resource_key(site_id, res_type)
+    raw = await r.hget(key, resource_id)
+    if not raw:
+        return False
+    name = _res_label(json.loads(raw), resource_id)
+    await r.hdel(key, resource_id)
+    await oplog.record(site_id, f"{res_type}/{name}", "RESOURCE_CONFIG_DELETED",
+                       target=name, params={"resource_id": resource_id})
+    return True
 
 
 class NotFound(Exception):

@@ -5,9 +5,12 @@ import {
   NButton,
   NCard,
   NDataTable,
+  NModal,
+  NPopconfirm,
   NProgress,
   NSelect,
   NSpace,
+  NSpin,
   NTable,
   useMessage,
   type DataTableColumns,
@@ -16,10 +19,11 @@ import BaseChart from '../../components/BaseChart.vue'
 import TabHelp from '../../components/TabHelp.vue'
 import StatusBadge from '../../components/StatusBadge.vue'
 import MetricCard from '../../components/MetricCard.vue'
+import EmptyState from '../../components/EmptyState.vue'
 import CountUp from '../../components/bits/CountUp.vue'
 import { useSiteStore } from '../../stores/site'
 import { getSamples, type SamplePoint } from '../overview/api'
-import { serverApi, type ProcessRow, type ServerMetrics } from './api'
+import { serverApi, type ProcessRow, type ServerMetrics, type ZombieRow } from './api'
 import { fmtBytes, fmtMB, pctColor } from '../../utils/format'
 
 const siteStore = useSiteStore()
@@ -36,7 +40,7 @@ const error = ref('')
 const cpuSeries = ref<SamplePoint[]>([])
 const memSeries = ref<SamplePoint[]>([])
 
-// 只读原则：本页面无任何写入口（验收 8）
+// 只读原则（验收 8）：本页面唯一写入口为僵尸进程终止（kill -9 走后端，记 oplog）
 async function loadServers() {
   try {
     const siteId = siteStore.currentSiteId
@@ -117,6 +121,40 @@ watch(() => siteStore.currentSiteId, () => {
   loadServers()
 })
 watch(serverId, () => load(false))
+
+// ---- 僵尸进程：卡片计数 → 点击弹窗列表 → 逐行终止 ----
+const ZOMBIE_RED = '#e5484d'
+const showZombies = ref(false)
+const zombies = ref<ZombieRow[]>([])
+const zombieLoading = ref(false)
+const zombieCount = computed(() => metrics.value?.zombie_count ?? null)
+
+async function loadZombies() {
+  if (!siteStore.currentSiteId || !serverId.value) return
+  zombieLoading.value = true
+  try {
+    zombies.value = await serverApi.zombies(siteStore.currentSiteId, serverId.value)
+  } catch (e) {
+    message.error((e as Error).message)
+  } finally {
+    zombieLoading.value = false
+  }
+}
+
+// 弹窗打开即拉取列表（kill 后也复用此函数刷新）
+watch(showZombies, (v) => { if (v) loadZombies() })
+
+async function killZombie(z: ZombieRow) {
+  if (!siteStore.currentSiteId || !serverId.value) return
+  try {
+    await serverApi.killZombie(siteStore.currentSiteId, serverId.value, z.pid, z.comm)
+    message.success(t('server.zombieKilled'))
+    await loadZombies()
+    load(true) // 静默刷新卡片上的计数
+  } catch (e) {
+    message.error((e as Error).message)
+  }
+}
 
 const memPct = computed(() => {
   const m = metrics.value?.memory
@@ -206,7 +244,8 @@ const diskColumns = computed<DataTableColumns<DiskRow>>(() => [
 </script>
 
 <template>
-  <n-space vertical :size="12">
+  <!-- flex 布局替代 n-space（避免重复 key 告警），间距与全局 12px 规范一致 -->
+  <div class="sv-stack">
     <n-card size="small">
       <n-space align="center" :size="12" :wrap="false">
         <span>{{ $t('server.title') }}</span>
@@ -252,9 +291,9 @@ const diskColumns = computed<DataTableColumns<DiskRow>>(() => [
         </n-table>
       </n-card>
 
-      <!-- 指标卡在前，趋势图全宽在后 -->
-      <n-space :size="12">
-        <n-card size="small" :title="$t('server.cpu')" style="flex: 1">
+      <!-- 指标卡统一 4 列网格：等宽等高；僵尸卡为第 5 张，自动换行到第二行 -->
+      <div class="sv-cards">
+        <n-card size="small" :title="$t('server.cpu')">
           <div class="donut-wrap">
             <base-chart :option="cpuDonutOption" height="120px" />
             <div class="donut-center" :style="{ color: pctColor(metrics.cpu.usage) }">
@@ -268,7 +307,7 @@ const diskColumns = computed<DataTableColumns<DiskRow>>(() => [
             {{ $t('server.load') }} {{ metrics.load.load1 ?? '?' }} / {{ metrics.load.load5 ?? '?' }} / {{ metrics.load.load15 ?? '?' }}
           </div>
         </n-card>
-        <n-card size="small" :title="$t('server.memory')" style="flex: 1">
+        <n-card size="small" :title="$t('server.memory')">
           <div class="donut-wrap">
             <base-chart :option="memDonutOption" height="120px" />
             <div class="donut-center" :style="{ color: pctColor(memPct) }">
@@ -282,7 +321,7 @@ const diskColumns = computed<DataTableColumns<DiskRow>>(() => [
             {{ $t('server.avail') }} {{ fmtMB(metrics.memory.available) }} · {{ $t('server.swap') }} {{ fmtMB(metrics.memory.swap_used ?? 0) }}
           </div>
         </n-card>
-        <n-card size="small" :title="$t('server.network')" style="flex: 1">
+        <n-card size="small" :title="$t('server.network')">
           <div class="metric-big mono">
             {{ fmtBytes(metrics.network.rx) }}<span class="unit">↓</span>
             {{ fmtBytes(metrics.network.tx) }}<span class="unit">↑</span>
@@ -291,20 +330,29 @@ const diskColumns = computed<DataTableColumns<DiskRow>>(() => [
             errors {{ metrics.network.errors }} · dropped {{ metrics.network.dropped }}
           </div>
         </n-card>
-        <div style="flex: 1; min-width: 200px">
+        <metric-card
+          :title="$t('server.disk')"
+          :value="topDisk?.use_percent ?? null"
+          suffix="%"
+          :color="pctColor(topDisk?.use_percent)"
+          :bar-color="pctColor(topDisk?.use_percent)"
+        >
+          <template v-if="topDisk">
+            {{ topDisk.mount }} · {{ $t('server.used') }} {{ topDisk.used }} / {{ $t('server.total') }} {{ topDisk.size }}
+          </template>
+        </metric-card>
+        <!-- 僵尸进程：>0 红色告警，0 灰色健康；点击打开明细弹窗 -->
+        <div class="tile-wrap" @click="showZombies = true">
           <metric-card
-            :title="$t('server.disk')"
-            :value="topDisk?.use_percent ?? null"
-            suffix="%"
-            :color="pctColor(topDisk?.use_percent)"
-            :bar-color="pctColor(topDisk?.use_percent)"
+            :title="$t('server.zombies')"
+            :value="zombieCount"
+            :color="zombieCount ? ZOMBIE_RED : undefined"
+            :bar-color="zombieCount ? ZOMBIE_RED : '#9ca0a8'"
           >
-            <template v-if="topDisk">
-              {{ topDisk.mount }} · {{ $t('server.used') }} {{ topDisk.used }} / {{ $t('server.total') }} {{ topDisk.size }}
-            </template>
+            {{ zombieCount ? $t('server.zombieList') : $t('server.zombieEmpty') }}
           </metric-card>
         </div>
-      </n-space>
+      </div>
 
       <n-card size="small" :title="$t('server.trend')" style="width: 100%">
         <base-chart v-if="cpuSeries.length" :option="trendOption" height="220px" />
@@ -348,7 +396,48 @@ const diskColumns = computed<DataTableColumns<DiskRow>>(() => [
     <n-card v-else-if="!error && !loading" size="small">
       <span style="color: #999">{{ $t('server.noServers') }}</span>
     </n-card>
-  </n-space>
+
+    <!-- 僵尸进程明细弹窗：PID/PPID/STAT/CMD + 逐行终止（kill -9，后端记 oplog） -->
+    <n-modal
+      v-model:show="showZombies"
+      preset="card"
+      :mask-closable="false"
+      :close-on-esc="false"
+      :title="`${$t('server.zombies')} (${zombies.length})`"
+      style="width: 720px"
+    >
+      <n-spin :show="zombieLoading">
+        <empty-state v-if="!zombieLoading && !zombies.length" :title="$t('server.zombieEmpty')" />
+        <n-table v-else :single-line="false" size="small">
+          <thead>
+            <tr>
+              <th>PID</th>
+              <th>PPID</th>
+              <th>STAT</th>
+              <th>CMD</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="z in zombies" :key="z.pid">
+              <td class="mono">{{ z.pid }}</td>
+              <td class="mono">{{ z.ppid }}</td>
+              <td class="mono">{{ z.stat }}</td>
+              <td class="cmd" :title="z.comm">{{ z.comm }}</td>
+              <td>
+                <n-popconfirm @positive-click="killZombie(z)">
+                  <template #trigger>
+                    <n-button size="tiny" type="error">{{ $t('server.killZombie') }}</n-button>
+                  </template>
+                  kill -9 {{ z.pid }} ?
+                </n-popconfirm>
+              </td>
+            </tr>
+          </tbody>
+        </n-table>
+      </n-spin>
+    </n-modal>
+  </div>
 </template>
 
 <style scoped>

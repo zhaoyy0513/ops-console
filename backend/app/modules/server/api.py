@@ -20,3 +20,21 @@ async def get_processes(site_id: str, server_id: str) -> list[dict]:
         return await service.get_processes(site_id, server_id)
     except NotFound as e:
         raise HTTPException(status_code=404, detail=str(e)) from None
+
+
+@router.get("/sites/{site_id}/servers/{server_id}/zombies")
+async def get_zombies(site_id: str, server_id: str) -> list[dict]:
+    """僵尸进程明细 [{pid, ppid, stat, comm}]（与 metrics 同一条 SSH 命令路径）。"""
+    try:
+        return await service.get_zombies(site_id, server_id)
+    except NotFound as e:
+        raise HTTPException(status_code=404, detail=str(e)) from None
+
+
+@router.post("/sites/{site_id}/servers/{server_id}/zombies/{pid}/kill")
+async def kill_zombie(site_id: str, server_id: str, pid: str, comm: str | None = None) -> dict:
+    """kill -9 指定僵尸进程（pid 纯数字校验；comm 仅用于 oplog 展示）。"""
+    try:
+        return await service.kill_zombie(site_id, server_id, pid, comm)
+    except NotFound as e:
+        raise HTTPException(status_code=404, detail=str(e)) from None

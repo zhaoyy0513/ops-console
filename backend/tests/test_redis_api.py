@@ -242,6 +242,10 @@ async def test_delete_and_oplog(client, target_redis):
     entries = await oplog.read_recent(1)
     assert entries[0]["operation"] == "REDIS_DELETE_KEY"
     assert entries[0]["target"] == "dk"
+    # resource 用实例名（seeded name=r1）而非内部 id；db/instance_id 进 params
+    assert entries[0]["resource"] == "redis/r1"
+    assert entries[0]["params"]["db"] == 0
+    assert entries[0]["params"]["instance_id"] == "r1"
 
 
 async def test_invalid_value_structure_rejected_before_redis(client, target_redis):

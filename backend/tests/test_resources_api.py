@@ -57,6 +57,15 @@ async def test_redis_resource_crud_and_password_rules(client, fake_platform_redi
     assert (await client.delete("/api/sites/sz-test/redis/redis-01")).status_code == 204
     assert (await client.get("/api/sites/sz-test/redis/redis-01")).status_code == 404
 
+    # oplog：target/resource 用资源名（删除前最后改名为 x2），内部 id 进 params
+    from backend.app.core import oplog
+
+    entry = (await oplog.read_recent(1))[0]
+    assert entry["operation"] == "RESOURCE_CONFIG_DELETED"
+    assert entry["target"] == "x2"
+    assert entry["resource"] == "redis/x2"
+    assert entry["params"]["resource_id"] == "redis-01"
+
 
 async def test_server_resource_defaults(client, fake_platform_redis):
     await _make_site(client)

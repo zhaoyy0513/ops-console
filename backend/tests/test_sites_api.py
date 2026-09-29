@@ -30,6 +30,15 @@ async def test_site_crud_and_enable(client):
     assert r.status_code == 204
     assert (await client.get("/api/sites/sz-test")).status_code == 404
 
+    # oplog target 用站点名（而非内部 id）；site_id 进 params
+    from backend.app.core import oplog
+
+    entries = await oplog.read_recent(3)
+    assert [e["operation"] for e in entries] == ["SITE_DELETED", "SITE_UPDATED", "SITE_CREATED"]
+    assert all(e["target"] != "sz-test" for e in entries)
+    assert entries[0]["target"] == "深圳测试站-改"
+    assert entries[0]["params"]["site_id"] == "sz-test"
+
 
 async def test_create_duplicate_site_conflict(client):
     await client.post("/api/sites", json={"id": "a", "name": "A"})

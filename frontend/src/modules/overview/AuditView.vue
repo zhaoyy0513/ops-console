@@ -30,11 +30,14 @@ type Row = NonNullable<AuditPage['items'][number]>
 const columns = computed(() => [
   { title: t('audit.colTime'), key: 'time', width: 170, render: (row: Row) => (row.time ?? '').replace('T', ' ').slice(0, 19) },
   { title: t('audit.colSite'), key: 'site', width: 120 },
-  { title: t('audit.colResource'), key: 'resource', width: 180 },
+  { title: t('audit.colResource'), key: 'resource', width: 180, className: 'mono', ellipsis: { tooltip: true } },
   { title: t('audit.colOperation'), key: 'operation', width: 220 },
   {
     title: t('audit.colTarget'),
     key: 'target',
+    minWidth: 200,
+    className: 'mono',
+    ellipsis: { tooltip: true },
     render: (row: Row) => row.target ?? '-',
   },
   {
@@ -52,7 +55,7 @@ const columns = computed(() => [
     <template #header-extra>
       <span style="color: #999; font-size: 12px">{{ $t('audit.hint') }}</span>
     </template>
-    <n-data-table :columns="columns" :data="data?.items ?? []" :loading="loading"
+    <n-data-table class="audit-table" :columns="columns" :data="data?.items ?? []" :loading="loading"
       :row-key="(row: Record<string, unknown>) => String(row.time) + String(row.operation)" size="small" :bordered="false" :single-line="false" />
     <n-space justify="end" style="margin-top: 12px">
       <n-pagination :page="page" :page-size="size" :item-count="data?.total ?? 0"
@@ -60,3 +63,10 @@ const columns = computed(() => [
     </n-space>
   </n-card>
 </template>
+
+<!-- 非 scoped：数据表格 render 单元格吃不到 scoped 属性，按 .audit-table 收窄 -->
+<style>
+.audit-table td.mono {
+  font-family: var(--ops-font-mono);
+}
+</style>

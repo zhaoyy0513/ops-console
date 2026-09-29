@@ -19,6 +19,11 @@ async def record(
 ) -> None:
     """记录一条操作日志（无用户维度，PRD §17）。
 
+    字段约定（2026-09-29 统一，修复"日志缺关键信息"）：
+    - target   = 操作对象的人类可读标识（redis key、脚本名、站点/资源名、pid+command）；
+    - resource = 模块/实例名（如 redis/{实例name}、ssh/{server名}）——不放内部 id；
+    - params   = 上下文（instance_id / host / db / …），不含大值或敏感值（如 redis value）。
+
     LPUSH + LTRIM 在同一事务管道内执行，超出 OPLOG_MAX 即淘汰旧日志。
     """
     entry = {

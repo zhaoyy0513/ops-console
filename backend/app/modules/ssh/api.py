@@ -97,7 +97,7 @@ async def run_script(site_id: str, script_id: str) -> dict:
 
 @router.post("/sites/{site_id}/ssh_scripts/run-adhoc")
 async def run_adhoc(site_id: str, data: RunAdhocIn) -> dict:
-    """编辑弹窗测试：直接执行表单内容（不落库，oplog 记 ssh_adhoc）。"""
+    """编辑弹窗测试：直接执行表单内容（不落库，oplog 记 adhoc@{server}）。"""
     try:
         return await service.run_adhoc(site_id, data.server_id, data.content)
     except NotFound as e:

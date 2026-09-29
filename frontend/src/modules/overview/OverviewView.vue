@@ -133,9 +133,9 @@ function fmtTime(iso: string): string {
         <tbody>
           <tr v-for="(op, idx) in data.recent_ops" :key="idx">
             <td>{{ fmtTime(op.time) }}</td>
-            <td>{{ op.resource }}</td>
+            <td><div class="ellip" :title="op.resource">{{ op.resource }}</div></td>
             <td>{{ op.operation }}</td>
-            <td class="mono">{{ op.target ?? '-' }}</td>
+            <td><div class="mono ellip" :title="op.target ?? '-'">{{ op.target ?? '-' }}</div></td>
             <td>
               <n-tag :type="op.result === 'SUCCESS' ? 'success' : 'error'" size="tiny" :bordered="false">{{ op.result }}</n-tag>
             </td>
@@ -177,5 +177,12 @@ function fmtTime(iso: string): string {
 .mono {
   font-family: var(--ops-font-mono);
   font-variant-numeric: tabular-nums;
+}
+/* oplog 长值（redis key / 资源名）截断展示，title 悬浮看全量 */
+.ellip {
+  max-width: 260px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 </style>

@@ -1,17 +1,21 @@
 """Server 模块服务层：provider 构建、缓存合并、连接测试。"""
 
+import re
 import time
 from typing import Any
 
-from backend.app.core import sampling
+from backend.app.core import oplog, sampling
 from backend.app.core.cache import cached
 from backend.app.modules.server.provider import SSHServerMetricsProvider
 from backend.app.modules.sites.service import NotFound
 from backend.app.shared import testconn
+from backend.app.shared.errors import OpsError
 from backend.app.shared.retry import with_retry
 from backend.app.shared.concurrency import get_semaphore
 
 CACHE_TTL = 3  # 与前端 3s 轮询对齐：每次轮询都能拿到新数据（单飞锁防重复 SSH）
+
+_PID_RE = re.compile(r"^\d+$")  # kill 的 pid 必须纯数字：合法性校验 + 杜绝命令注入
 
 
 def _build_provider(config: dict[str, Any]) -> SSHServerMetricsProvider:
@@ -70,6 +74,31 @@ async def get_processes(site_id: str, server_id: str) -> list[dict[str, Any]]:
     config = await _require_server_config(site_id, server_id)
     provider = _build_provider(config)
     return await _with_cache(site_id, server_id, "processes", provider.get_processes)
+
+
+async def get_zombies(site_id: str, server_id: str) -> list[dict[str, Any]]:
+    """僵尸进程明细列表。不走缓存：kill 后立即重读，避免 3s 旧值里还躺着已终止的进程。"""
+    config = await _require_server_config(site_id, server_id)
+    provider = _build_provider(config)
+    async with get_semaphore("ssh"):
+        return await provider.get_zombies()
+
+
+async def kill_zombie(site_id: str, server_id: str, pid: str, comm: str | None = None) -> dict[str, Any]:
+    """kill -9 远端僵尸进程（写路径：无重试；记 oplog，PRD §17）。"""
+    if not _PID_RE.fullmatch(pid):
+        raise OpsError("INVALID_OPERATION", f"invalid pid: {pid}", status_code=400)
+    config = await _require_server_config(site_id, server_id)
+    provider = _build_provider(config)
+    async with get_semaphore("ssh"):
+        await provider.kill_zombie(int(pid))
+    # oplog 可读性：resource 用 Server 名（内部 id 移入 params，oplog.record docstring 约定）
+    await oplog.record(
+        site_id, f"server/{config.get('name') or server_id}", "SERVER_KILL_ZOMBIE",
+        target=f"{pid} {comm}" if comm else pid,
+        params={"pid": int(pid), "comm": comm, "host": config.get("host")},
+    )
+    return {"killed": True}
 
 
 async def server_tester(config: dict[str, Any]) -> dict[str, Any]:

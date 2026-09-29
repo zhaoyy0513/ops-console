@@ -77,9 +77,14 @@ async def _require_site(site_id: str) -> None:
         raise NotFound(f"site not found: {site_id}")
 
 
+def _server_label(server_cfg: dict[str, Any]) -> str:
+    """oplog 展示用 Server 标识：name 优先，host 兜底。"""
+    return str(server_cfg.get("name") or server_cfg.get("host") or "?")
+
+
 async def _execute(server_cfg: dict[str, Any], content: str, *,
-                     site_id: str, log_resource: str, log_target: str,
-                     triggered: str) -> dict[str, Any]:
+                   site_id: str, log_resource: str, log_target: str,
+                   triggered: str, log_extra: dict[str, Any] | None = None) -> dict[str, Any]:
     """在指定 Server 上执行脚本内容（共享执行体：按 id 执行与 adhoc 测试共用）。
 
     实时刷新型命令（top/docker stats）永不退出，会跑满超时——超时后
@@ -124,7 +129,7 @@ async def _execute(server_cfg: dict[str, Any], content: str, *,
     except (OSError, asyncssh.Error) as e:
         await oplog.record(site_id, log_resource, "SSH_SCRIPT_RUN",
                            target=log_target,
-                           params={"server": server_cfg["host"], "triggered": triggered},
+                           params={**(log_extra or {}), "server": server_cfg["host"], "triggered": triggered},
                            result="FAILED", error=str(e)[:200])
         raise NotFound(f"SSH 执行失败：{e}") from None
     finally:
@@ -136,7 +141,7 @@ async def _execute(server_cfg: dict[str, Any], content: str, *,
 
     await oplog.record(site_id, log_resource, "SSH_SCRIPT_RUN",
                        target=log_target,
-                       params={"server": server_cfg["host"], "triggered": triggered,
+                       params={**(log_extra or {}), "server": server_cfg["host"], "triggered": triggered,
                                "timed_out": timed_out})
     return {
         "stdout": stdout[-50_000:],
@@ -158,8 +163,9 @@ async def run_script(site_id: str, script_id: str, *, triggered: str = "manual")
     if not content.strip():
         raise ValueError("脚本内容为空")
     return await _execute(server_cfg, content, site_id=site_id,
-                          log_resource=f"ssh_scripts/{script_id}",
-                          log_target=script["name"], triggered=triggered)
+                          log_resource=f"ssh/{_server_label(server_cfg)}",
+                          log_target=script["name"], triggered=triggered,
+                          log_extra={"script_id": script_id})
 
 
 async def run_adhoc(site_id: str, server_id: str, content: str) -> dict[str, Any]:
@@ -170,13 +176,13 @@ async def run_adhoc(site_id: str, server_id: str, content: str) -> dict[str, Any
     if not (content or "").strip():
         raise ValueError("脚本内容为空")
     return await _execute(server_cfg, content, site_id=site_id,
-                          log_resource="ssh_adhoc", log_target="(test)",
-                          triggered="test")
+                          log_resource=f"ssh/{_server_label(server_cfg)}",
+                          log_target=f"adhoc@{_server_label(server_cfg)}", triggered="test")
 
 
 async def stream_execute(server_cfg: dict[str, Any], content: str, *,
                         site_id: str, log_resource: str, log_target: str,
-                        triggered: str):
+                        triggered: str, log_extra: dict[str, Any] | None = None):
     """流式执行：边产出边 yield (kind, chunk)，kind in {stdout, stderr}。
 
     - 整体预算 settings.ssh_command_timeout * 6 秒，到点 kill 并 yield 终态；
@@ -245,7 +251,7 @@ async def stream_execute(server_cfg: dict[str, Any], content: str, *,
     except (OSError, asyncssh.Error) as e:
         await oplog.record(site_id, log_resource, "SSH_SCRIPT_RUN",
                            target=log_target,
-                           params={"server": server_cfg["host"], "triggered": triggered},
+                           params={**(log_extra or {}), "server": server_cfg["host"], "triggered": triggered},
                            result="FAILED", error=str(e)[:200])
         raise NotFound(f"SSH 执行失败：{e}") from None
     finally:
@@ -261,7 +267,7 @@ async def stream_execute(server_cfg: dict[str, Any], content: str, *,
 
     await oplog.record(site_id, log_resource, "SSH_SCRIPT_RUN",
                        target=log_target,
-                       params={"server": server_cfg["host"], "triggered": triggered,
+                       params={**(log_extra or {}), "server": server_cfg["host"], "triggered": triggered,
                                "timed_out": timed_out})
     yield "meta", json.dumps({
         "timed_out": timed_out,
@@ -280,8 +286,9 @@ async def stream_script(site_id: str, script_id: str, *, triggered: str = "manua
     if not content.strip():
         raise ValueError("脚本内容为空")
     async for item in stream_execute(server_cfg, content, site_id=site_id,
-                                     log_resource=f"ssh_scripts/{script_id}",
-                                     log_target=script["name"], triggered=triggered):
+                                     log_resource=f"ssh/{_server_label(server_cfg)}",
+                                     log_target=script["name"], triggered=triggered,
+                                     log_extra={"script_id": script_id}):
         yield item
 
 
@@ -292,6 +299,7 @@ async def stream_adhoc(site_id: str, server_id: str, content: str):
     if not (content or "").strip():
         raise ValueError("脚本内容为空")
     async for item in stream_execute(server_cfg, content, site_id=site_id,
-                                     log_resource="ssh_adhoc", log_target="(test)",
+                                     log_resource=f"ssh/{_server_label(server_cfg)}",
+                                     log_target=f"adhoc@{_server_label(server_cfg)}",
                                      triggered="test"):
         yield item

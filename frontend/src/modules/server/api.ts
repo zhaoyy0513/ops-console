@@ -33,6 +33,8 @@ export interface ServerMetrics {
   network: { rx: number; tx: number; errors: number; dropped: number }
   disk: DiskRow[]
   diagnosis: { status: string; issues: Issue[] }
+  /** 僵尸进程数（metrics 同一 SSH 会话采集；后端未提供时为 undefined） */
+  zombie_count?: number | null
 }
 
 export interface ProcessRow {
@@ -42,9 +44,24 @@ export interface ProcessRow {
   command: string
 }
 
+export interface ZombieRow {
+  pid: number
+  ppid: number
+  stat: string
+  comm: string
+}
+
 export const serverApi = {
   metrics: (siteId: string, serverId: string) =>
     api.get<ServerMetrics>(`/sites/${siteId}/servers/${serverId}/metrics`),
   processes: (siteId: string, serverId: string) =>
     api.get<ProcessRow[]>(`/sites/${siteId}/servers/${serverId}/processes`),
+  zombies: (siteId: string, serverId: string) =>
+    api.get<ZombieRow[]>(`/sites/${siteId}/servers/${serverId}/zombies`),
+  killZombie: (siteId: string, serverId: string, pid: number, comm?: string) =>
+    // comm 仅作 oplog 展示用，走 query 参数
+    api.post<{ killed: boolean }>(
+      `/sites/${siteId}/servers/${serverId}/zombies/${pid}/kill` +
+        (comm ? `?comm=${encodeURIComponent(comm)}` : ''),
+    ),
 }

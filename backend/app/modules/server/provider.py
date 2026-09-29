@@ -25,6 +25,8 @@ COMMANDS: dict[str, str] = {
     # top -bn2 第二帧才是瞬时 CPU%（ps aux 的 %CPU 是进程生命周期平均，基本不动）
     # -c 显示完整命令行（默认会截断）
     "processes": "LC_ALL=C top -bn2 -c -w 512",
+    # 僵尸进程：STAT（第 3 列）含 Z 即僵尸；comm 为可执行名（完整命令行见 processes）
+    "zombies": "LC_ALL=C ps -eo pid,ppid,stat,comm | awk '$3 ~ /Z/'",
 }
 
 
@@ -128,6 +130,27 @@ def parse_network(text: str) -> dict[str, int]:
     return {"rx": rx, "tx": tx, "errors": errors, "dropped": dropped}
 
 
+def parse_zombies(text: str) -> list[dict[str, Any]]:
+    """ps 僵尸行（awk 已过滤）-> [{pid, ppid, stat, comm}]，comm 可含空格故只切 3 刀。"""
+    rows: list[dict[str, Any]] = []
+    for line in text.splitlines():
+        parts = line.split(None, 3)
+        if len(parts) < 4:
+            continue
+        try:
+            rows.append(
+                {
+                    "pid": int(parts[0]),
+                    "ppid": int(parts[1]),
+                    "stat": parts[2],
+                    "comm": parts[3],
+                }
+            )
+        except ValueError:
+            continue
+    return rows
+
+
 def parse_processes(text: str) -> list[dict[str, Any]]:
     """top -bn2 输出 -> [{pid, command, cpu_percent, mem_percent}]（取第二帧=瞬时值）。"""
     frames = text.split("top - ")
@@ -201,18 +224,18 @@ class SSHServerMetricsProvider(ServerMetricsProvider):
                 "REMOTE_CONNECTION_FAILED", f"SSH connect failed: {e}", self._host
             ) from None
 
-    async def _collect(self, names: list[str]) -> dict[str, str]:
-        """一次连接内顺序执行白名单子集，查完即关（PRD §8.4）。"""
+    async def _run(self, commands: list[str]) -> list[str]:
+        """一次连接内顺序执行命令，查完即关（PRD §8.4）。"""
         conn = await self._connect()
         try:
-            out: dict[str, str] = {}
-            for name in names:
+            out: list[str] = []
+            for cmd in commands:
                 result = await with_timeout(
-                    conn.run(COMMANDS[name], check=False),
+                    conn.run(cmd, check=False),
                     settings.ssh_command_timeout,
                     resource=self._host,
                 )
-                out[name] = result.stdout or ""
+                out.append(result.stdout or "")
             return out
         finally:
             conn.close()  # asyncssh: 幂等；配合 wait_closed 释放干净
@@ -221,17 +244,24 @@ class SSHServerMetricsProvider(ServerMetricsProvider):
             except Exception:  # noqa: BLE001 - 关闭阶段的异常不影响主流程
                 pass
 
+    async def _collect(self, names: list[str]) -> dict[str, str]:
+        """白名单子集执行：命令取自模块常量表，非用户输入。"""
+        outs = await self._run([COMMANDS[name] for name in names])
+        return dict(zip(names, outs, strict=True))
+
     async def get_metrics(self) -> dict[str, Any]:
         out = await self._collect(
-            ["cpu", "load", "cores", "memory", "network", "disk_usage", "disk_inode"]
+            ["cpu", "load", "cores", "memory", "network", "disk_usage", "disk_inode", "zombies"]
         )
         cores_raw = out.get("cores", "")
+        zombies = parse_zombies(out["zombies"])
         return {
             "cpu": {**parse_cpu(out["cpu"]), "cores": int(cores_raw) if cores_raw.strip().isdigit() else None},
             "load": parse_load(out["load"]),
             "memory": parse_memory(out["memory"]),
             "network": parse_network(out["network"]),
             "disk": merge_disk(parse_df(out["disk_usage"]), parse_df(out["disk_inode"])),
+            "zombie_count": len(zombies),
         }
 
     async def run_test(self) -> str:
@@ -268,6 +298,15 @@ class SSHServerMetricsProvider(ServerMetricsProvider):
     async def get_processes(self) -> list[dict[str, Any]]:
         out = await self._collect(["processes"])
         return parse_processes(out["processes"])
+
+    async def get_zombies(self) -> list[dict[str, Any]]:
+        out = await self._collect(["zombies"])
+        return parse_zombies(out["zombies"])
+
+    async def kill_zombie(self, pid: int) -> None:
+        """kill -9 指定进程：本模块唯一写命令。pid 已在上层正则校验为纯数字，
+        用户无法借 path 参数注入任意命令（保持"前端不感知命令"的白名单原则）。"""
+        await self._run([f"kill -9 {pid}"])
 
     async def get_disk(self) -> list[dict[str, Any]]:
         out = await self._collect(["disk_usage", "disk_inode"])

@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import { EditorView, basicSetup } from 'codemirror'
-import { json } from '@codemirror/lang-json'
+import { json, jsonParseLinter } from '@codemirror/lang-json'
+import { linter } from '@codemirror/lint'
 import { oneDark } from '@codemirror/theme-one-dark'
 import { MergeView } from '@codemirror/merge'
 import { inject, onBeforeUnmount, onMounted, ref, watch, type Ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 
 // git-review 式左右对比：左 = Redis 当前值（只读），右 = 编辑侧（v-model），
-// 变更块红/绿高亮由 @codemirror/merge 自带主题渲染
+// 变更行红/绿整行底色由下方 scoped 样式强化（merge 包默认底色过淡）
 const props = withDefaults(
   defineProps<{
     original: string
@@ -17,6 +19,7 @@ const props = withDefaults(
 )
 const emit = defineEmits<{ (e: 'update:modelValue', v: string): void }>()
 
+const { t } = useI18n()
 const opsDark = inject<{ isDark: Ref<boolean> }>('opsDark')!
 
 const el = ref<HTMLDivElement>()
@@ -44,6 +47,8 @@ function createView() {
       extensions: [
         basicSetup,
         json(),
+        // 行内红波浪线实时标出语法错误（行/列详情由外层横幅展示）
+        linter(jsonParseLinter()),
         ...theme(),
         EditorView.updateListener.of((u) => {
           if (u.docChanged && !silent) emit('update:modelValue', u.state.doc.toString())
@@ -83,18 +88,72 @@ onBeforeUnmount(() => view?.destroy())
 </script>
 
 <template>
-  <div ref="el" class="diff-editor" :style="{ height }" />
+  <div class="diff-wrap" :style="{ height }">
+    <!-- 双侧标签行：左=原始只读，右=可编辑（用户反馈：看不出哪侧能改） -->
+    <div class="diff-headers">
+      <span class="side-label">{{ t('redis.diffOriginal') }}</span>
+      <span class="side-label edited">{{ t('redis.diffEdited') }}</span>
+    </div>
+    <div ref="el" class="diff-editor" />
+  </div>
 </template>
 
 <style scoped>
-.diff-editor {
+.diff-wrap {
+  display: flex;
+  flex-direction: column;
   border: 1px solid var(--ops-border);
   border-radius: 4px;
   overflow: hidden;
+}
+.diff-headers {
+  display: flex;
+  flex: none;
+  border-bottom: 1px solid var(--ops-border);
+}
+.side-label {
+  flex: 1;
+  padding: 4px 10px;
+  font-size: 12px;
+  color: var(--ops-text-3);
+  background: var(--ops-surface-2);
+  white-space: nowrap;
+  overflow: hidden;
+}
+.side-label + .side-label {
+  border-left: 1px solid var(--ops-border);
+}
+.side-label.edited {
+  color: var(--ops-primary);
+  font-weight: 600;
+}
+.diff-editor {
+  flex: 1;
+  min-height: 0;
 }
 /* merge 包约定：容器给高度+滚动，两侧编辑器自然高度随容器整体滚动 */
 .diff-editor :deep(.cm-mergeView) {
   height: 100%;
   overflow: auto;
+}
+/* 变更行整行底色 + 左侧 2px 实色条（用户反馈：默认底色太淡，变更行不醒目）。
+   merge 包在两侧 .cm-editor 上分别标 cm-merge-a / cm-merge-b，变更行加 .cm-changedLine；
+   a 侧=删除（红）b 侧=新增（绿），同 git-review 语义。
+   用 inset 阴影做色条而非 border：不占布局，两侧编辑器行不错位。
+   半透明色亮/暗两种主题下均可读，无需分主题覆盖 */
+.diff-editor :deep(.cm-merge-a .cm-changedLine) {
+  background: rgba(208, 48, 80, 0.14);
+  box-shadow: inset 2px 0 0 #d03050;
+}
+.diff-editor :deep(.cm-merge-b .cm-changedLine) {
+  background: rgba(39, 174, 96, 0.16);
+  box-shadow: inset 2px 0 0 #27ae60;
+}
+/* 行内变更文字再加深一档，精确定位到 token（cm-deletedLine 在 a 侧、cm-insertedLine 在 b 侧） */
+.diff-editor :deep(.cm-merge-a .cm-changedLine .cm-deletedLine) {
+  background: rgba(208, 48, 80, 0.18);
+}
+.diff-editor :deep(.cm-merge-b .cm-changedLine .cm-insertedLine) {
+  background: rgba(39, 174, 96, 0.22);
 }
 </style>

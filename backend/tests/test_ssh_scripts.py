@@ -237,3 +237,23 @@ async def test_run_stream_sse_stdout_and_stderr(client, monkeypatch):
     assert '"kind": "meta"' in text
     # meta 的 payload 是嵌套 JSON，内层引号被转义
     assert '\\"timed_out\\": false' in text
+
+
+async def test_oplog_resource_and_target_readable(client):
+    """oplog 可读性：resource=ssh/{server名}；target=脚本名 / adhoc@{server名}。"""
+    from backend.app.core import oplog
+
+    r = await client.post("/api/sites/sz/ssh_scripts", json={
+        "name": "disk-check", "server_id": "srv1", "content": "echo hi"})
+    sid = r.json()["id"]
+    assert (await client.post(f"/api/sites/sz/ssh_scripts/{sid}/run")).status_code == 200
+    assert (await client.post("/api/sites/sz/ssh_scripts/run-adhoc",
+                              json={"server_id": "srv1", "content": "echo hi"})).status_code == 200
+
+    entries = [e for e in await oplog.read_recent(5) if e["operation"] == "SSH_SCRIPT_RUN"]
+    adhoc, script_run = entries[0], entries[1]  # 新→旧
+    assert script_run["target"] == "disk-check"
+    assert script_run["resource"] == "ssh/srv"  # 绑定 server（srv1）的 name
+    assert script_run["params"]["script_id"] == sid
+    assert adhoc["target"] == "adhoc@srv"
+    assert adhoc["resource"] == "ssh/srv"

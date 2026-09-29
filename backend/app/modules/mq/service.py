@@ -128,15 +128,18 @@ async def empty_queue(site_id: str, mq_id: str, mbean: str, queue_name: str) -> 
     _validate_queue_mbean(mbean)
     provider = _build_provider(config)
     started = time.perf_counter()
+    # oplog 可读性：resource 用实例名（内部 id 移入 params，oplog.record docstring 约定）
+    res = f"mq/{config.get('name') or mq_id}"
+    extra = {"op": "removeMessages", "instance_id": mq_id, "host": config.get("host")}
     async with get_semaphore("mq"):
         try:
             removed = await provider.empty_queue(mbean)
         except OpsError as e:
-            await oplog.record(site_id, f"mq/{mq_id}", "MQ_EMPTY_QUEUE", target=queue_name,
-                               params={"op": "removeMessages"}, result="FAILED", error=e.message)
+            await oplog.record(site_id, res, "MQ_EMPTY_QUEUE", target=queue_name,
+                               params=extra, result="FAILED", error=e.message)
             raise
-    await oplog.record(site_id, f"mq/{mq_id}", "MQ_EMPTY_QUEUE", target=queue_name,
-                       params={"op": "removeMessages"})
+    await oplog.record(site_id, res, "MQ_EMPTY_QUEUE", target=queue_name,
+                       params=extra)
     return {"success": True, "removed": removed, "latency_ms": int((time.perf_counter() - started) * 1000)}
 
 
