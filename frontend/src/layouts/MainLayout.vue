@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { computed, h, inject, onMounted, watch, type Component, type Ref } from 'vue'
+import { computed, h, inject, onMounted, ref, watch, type Component, type Ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { NButton, NIcon, NMenu, NSelect, useLoadingBar } from 'naive-ui'
 import {
-  CubeOutline, GridOutline, HardwareChipOutline,
-  LayersOutline, MoonOutline, PulseOutline,
+  ChevronBackOutline, ChevronForwardOutline, CubeOutline, GridOutline,
+  HardwareChipOutline, LayersOutline, MoonOutline, PulseOutline,
   ServerOutline, SunnyOutline, TerminalOutline,
 } from '@vicons/ionicons5'
 import { getModules } from '../modules'
@@ -34,6 +34,9 @@ const MODULE_ICONS: Record<string, Component> = {
 
 // 主题（App.vue provide 的暗色状态）
 const opsDark = inject<{ isDark: Ref<boolean>; toggle: () => void }>('opsDark')!
+
+// 侧栏折叠（200px ↔ 56px，只藏文字不藏图标）
+const collapsed = ref(false)
 
 // 无有效站点时菜单全部置灰（事前可见优于事后弹窗打断），侧栏另有文字提示
 const menuOptions = computed(() =>
@@ -115,15 +118,30 @@ function onSiteSelect(id: string) {
       </div>
     </header>
     <div class="app-body">
-      <aside class="app-sider">
-        <div v-if="!siteStore.currentSiteId" class="sider-hint">{{ $t('layout.siderHint') }}</div>
-        <n-menu :value="activeKey" :options="menuOptions" @update:value="onMenuSelect" />
+      <aside class="app-sider" :class="{ collapsed }">
+        <div v-if="!siteStore.currentSiteId && !collapsed" class="sider-hint">{{ $t('layout.siderHint') }}</div>
+        <n-menu
+          :value="activeKey"
+          :options="menuOptions"
+          :collapsed="collapsed"
+          :collapsed-width="56"
+          :collapsed-icon-size="18"
+          @update:value="onMenuSelect"
+        />
         <div class="sider-footer">
-          <span class="build-stamp">b0929-1030</span>
+          <button class="collapse-btn" :title="collapsed ? $t('layout.expand') : $t('layout.collapse')" @click="collapsed = !collapsed">
+            <n-icon :component="collapsed ? ChevronForwardOutline : ChevronBackOutline" :size="16" />
+          </button>
+          <span v-if="!collapsed" class="build-stamp">b0929-1109</span>
         </div>
       </aside>
       <main class="app-main">
-        <router-view />
+        <!-- 路由/站点切换淡入淡出（out-in：旧视图先退再进，掩盖数据重载白屏） -->
+        <router-view v-slot="{ Component }">
+          <transition name="ops-fade" mode="out-in">
+            <component :is="Component" :key="route.path" />
+          </transition>
+        </router-view>
       </main>
     </div>
   </div>
@@ -132,32 +150,63 @@ function onSiteSelect(id: string) {
 <style scoped>
 .sider-footer {
   margin-top: auto;
-  padding: 8px 16px;
-  border-top: 1px solid #f0f1f3;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--ops-border);
 }
 .build-stamp {
   font-size: 10px;
-  color: #b0b3b8;
-  font-family: ui-monospace, monospace;
+  color: var(--ops-text-3);
+  font-family: var(--ops-font-mono);
+}
+.collapse-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  flex: none;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--ops-text-3);
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+}
+.collapse-btn:hover {
+  background: var(--ops-surface-2);
+  color: var(--ops-text-1);
 }
 .sider-hint {
   padding: 12px 16px;
-  color: #999;
+  color: var(--ops-text-3);
   font-size: 12px;
-  border-bottom: 1px solid #f0f1f3;
+  border-bottom: 1px solid var(--ops-border);
 }
-/* 顶栏操作条：三个按钮收进一个浅边框圆角容器，按钮本身去背景，悬停高亮 */
+/* 菜单激活态左侧 2px 主色条（高度 60%） */
+.app-sider :deep(.n-menu-item-content--selected)::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 20%;
+  bottom: 20%;
+  width: 2px;
+  background: var(--ops-primary);
+}
+/* 顶栏操作条：按钮收进一个浅边框圆角容器，按钮本身去背景，悬停高亮 */
 .header-actions {
   display: flex;
   align-items: center;
   gap: 4px;
-  border: 1px solid #e5e6eb;
+  border: 1px solid var(--ops-border);
   border-radius: 6px;
   padding: 2px 4px;
 }
 .header-actions :deep(.n-button) {
   --n-color: transparent;
-  --n-color-hover: #f2f3f5;
-  --n-color-pressed: #e5e6eb;
+  --n-color-hover: var(--ops-surface-2);
+  --n-color-pressed: var(--ops-border);
 }
 </style>

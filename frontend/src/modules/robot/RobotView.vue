@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { NButton, NCard, NModal, NSelect, NSpace, NTable, NTag, useMessage } from 'naive-ui'
+import { NButton, NCard, NModal, NProgress, NSelect, NSpace, NTable, NTag, useMessage } from 'naive-ui'
 import { useSiteStore } from '../../stores/site'
 import { ROBOT_FIELDS } from './fields'
 import TabHelp from '../../components/TabHelp.vue'
+import CodeJsonEditor from '../../components/CodeJsonEditor.vue'
 import { robotApi, type RobotRow } from './api'
 
 const siteStore = useSiteStore()
@@ -143,9 +144,18 @@ watch(instanceId, load)
                 <n-tag :type="statusTagType(r)" size="small" :bordered="false">{{ r.status ?? '-' }}</n-tag>
               </template>
               <template v-else-if="f.key === 'battery'">
-                <n-tag v-if="r.battery != null" :type="Number(r.battery) < 20 ? 'error' : 'default'" size="small" :bordered="false">
-                  {{ r.battery }}%
-                </n-tag>
+                <div v-if="r.battery != null" class="bat-cell">
+                  <n-progress
+                    type="line"
+                    :percentage="Number(r.battery)"
+                    :height="5"
+                    :show-indicator="false"
+                    :color="Number(r.battery) < 20 ? '#d03050' : undefined"
+                    :rail-color="'var(--ops-surface-2)'"
+                    style="width: 44px; flex: none"
+                  />
+                  <span class="mono" :style="{ color: Number(r.battery) < 20 ? '#d03050' : undefined }">{{ r.battery }}%</span>
+                </div>
                 <span v-else>-</span>
               </template>
               <template v-else>{{ (r as any)[f.key] ?? '-' }}</template>
@@ -174,25 +184,22 @@ watch(instanceId, load)
             <tr><th>{{ $t('robot.lastUpdate') }}</th><td>{{ fmtTime(detail.last_update) }}</td></tr>
           </tbody>
         </n-table>
-        <div style="margin: 14px 0 6px; color: #666; font-size: 13px">{{ $t('robot.rawJson') }}</div>
-        <pre class="detail-json">{{ detailJson }}</pre>
+        <div style="margin: 14px 0 6px; color: var(--ops-text-2); font-size: 13px">{{ $t('robot.rawJson') }}</div>
+        <CodeJsonEditor :model-value="detailJson" readonly height="320px" />
       </template>
     </n-modal>
   </n-space>
 </template>
 
 <style scoped>
-.detail-json {
-  background: #fafbfc;
-  border: 1px solid #e5e6eb;
-  border-radius: 4px;
-  padding: 12px;
-  font-family: ui-monospace, Consolas, monospace;
+.bat-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.bat-cell .mono {
+  font-family: var(--ops-font-mono);
+  font-variant-numeric: tabular-nums;
   font-size: 12px;
-  line-height: 1.5;
-  max-height: 300px;
-  overflow: auto;
-  margin: 0;
-  white-space: pre;
 }
 </style>

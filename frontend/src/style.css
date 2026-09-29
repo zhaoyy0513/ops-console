@@ -67,6 +67,29 @@ body {
   display: flex;
   flex-direction: column;
   overflow-y: auto;
+  transition: width 180ms ease;
+}
+.app-sider.collapsed {
+  width: 56px;
+}
+
+/* 路由/站点切换过渡（ui-upgrade-design.md §6.2：150ms 淡出→淡入） */
+.ops-fade-enter-active,
+.ops-fade-leave-active {
+  transition: opacity 150ms ease;
+}
+.ops-fade-enter-from,
+.ops-fade-leave-to {
+  opacity: 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ops-fade-enter-active,
+  .ops-fade-leave-active {
+    transition: none;
+  }
+  .app-sider {
+    transition: none;
+  }
 }
 
 .app-main {

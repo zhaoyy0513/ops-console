@@ -1,9 +1,13 @@
 <script setup lang="ts">
-import { onMounted, ref, watch } from 'vue'
+import { onMounted, ref, watch, type Component } from 'vue'
 import { useRouter } from 'vue-router'
+import {
+  HardwareChipOutline, LayersOutline, PulseOutline, ServerOutline,
+} from '@vicons/ionicons5'
 import { NButton, NCard, NSpace, NTable, NTag, useMessage } from 'naive-ui'
 import StatusBadge from '../../components/StatusBadge.vue'
 import TabHelp from '../../components/TabHelp.vue'
+import MetricCard from '../../components/MetricCard.vue'
 import { useSiteStore } from '../../stores/site'
 import { overviewApi, type OverviewData } from './api'
 
@@ -44,11 +48,19 @@ async function refresh() {
 onMounted(load)
 watch(() => siteStore.currentSiteId, load)
 
-const KIND_META: Record<string, { label: string; route: string }> = {
-  server: { label: 'Server', route: 'server' },
-  redis: { label: 'Redis', route: 'redis' },
-  mq: { label: 'ActiveMQ', route: 'mq' },
-  robot: { label: 'Robot', route: 'robot' },
+const KIND_META: Record<string, { label: string; route: string; icon: Component }> = {
+  server: { label: 'Server', route: 'server', icon: ServerOutline },
+  redis: { label: 'Redis', route: 'redis', icon: LayersOutline },
+  mq: { label: 'ActiveMQ', route: 'mq', icon: PulseOutline },
+  robot: { label: 'Robot', route: 'robot', icon: HardwareChipOutline },
+}
+
+/** tile 顶边色：有 critical 红、有 warning 黄、全健康绿、无资源灰 */
+function tileBar(s: { total: number; healthy: number; warning: number; critical: number }): string {
+  if (s.critical > 0) return 'var(--ops-critical)'
+  if (s.warning > 0) return 'var(--ops-warning)'
+  if (s.total > 0) return 'var(--ops-healthy)'
+  return 'var(--ops-unknown)'
 }
 
 function goIssueModule(kind: string) {
@@ -69,25 +81,28 @@ function fmtTime(iso: string): string {
         <status-badge v-if="data" :status="data.overall" />
         <n-button size="small" :loading="loading" @click="refresh">{{ $t('overview.checkNow') }}</n-button>
         <tab-help topic="overview" />
-        <span v-if="data?.checked_at" style="color: #999; font-size: 12px">
+        <span v-if="data?.checked_at" style="color: var(--ops-text-3); font-size: 12px">
           {{ $t('overview.lastCheck', { time: fmtTime(data.checked_at) }) }}
         </span>
       </n-space>
     </n-card>
 
     <n-space v-if="data" :size="12">
-      <n-card v-for="(_, kind) in KIND_META" :key="kind" size="small"
-        :title="$t(`tabs.${kind}`)" style="flex: 1; cursor: pointer" @click="goIssueModule(kind)">
-        <div class="tile">
-          <span class="total">{{ data.summary[kind as keyof typeof data.summary].total }}</span>
+      <div v-for="(_, kind) in KIND_META" :key="kind" class="tile-wrap" @click="goIssueModule(kind)">
+        <metric-card
+          :title="$t(`tabs.${kind}`)"
+          :icon="KIND_META[kind].icon"
+          :value="data.summary[kind as keyof typeof data.summary].total"
+          :bar-color="tileBar(data.summary[kind as keyof typeof data.summary])"
+        >
           <span class="dist">
             <n-tag type="success" size="tiny" :bordered="false">{{ data.summary[kind as keyof typeof data.summary].healthy }}</n-tag>
             <n-tag v-if="data.summary[kind as keyof typeof data.summary].warning" type="warning" size="tiny" :bordered="false">{{ data.summary[kind as keyof typeof data.summary].warning }}</n-tag>
             <n-tag v-if="data.summary[kind as keyof typeof data.summary].critical" type="error" size="tiny" :bordered="false">{{ data.summary[kind as keyof typeof data.summary].critical }}</n-tag>
             <n-tag v-if="data.summary[kind as keyof typeof data.summary].unknown" size="tiny" :bordered="false">{{ data.summary[kind as keyof typeof data.summary].unknown }}</n-tag>
           </span>
-        </div>
-      </n-card>
+        </metric-card>
+      </div>
     </n-space>
 
     <n-card v-if="data?.issues?.length" size="small" :title="$t('overview.issues')">
@@ -120,13 +135,13 @@ function fmtTime(iso: string): string {
             <td>{{ fmtTime(op.time) }}</td>
             <td>{{ op.resource }}</td>
             <td>{{ op.operation }}</td>
-            <td style="font-family: ui-monospace, monospace">{{ op.target ?? '-' }}</td>
+            <td class="mono">{{ op.target ?? '-' }}</td>
             <td>
               <n-tag :type="op.result === 'SUCCESS' ? 'success' : 'error'" size="tiny" :bordered="false">{{ op.result }}</n-tag>
             </td>
           </tr>
           <tr v-if="!data.recent_ops.length">
-            <td colspan="5" style="text-align: center; color: #999">{{ $t('overview.noOps') }}</td>
+            <td colspan="5" style="text-align: center; color: var(--ops-text-3)">{{ $t('overview.noOps') }}</td>
           </tr>
         </tbody>
       </n-table>
@@ -135,17 +150,17 @@ function fmtTime(iso: string): string {
 </template>
 
 <style scoped>
-.tile {
-  display: flex;
-  align-items: baseline;
-  gap: 12px;
-}
-.total {
-  font-size: 28px;
-  font-weight: 600;
+.tile-wrap {
+  flex: 1;
+  min-width: 140px;
+  cursor: pointer;
 }
 .dist {
-  display: flex;
+  display: inline-flex;
   gap: 4px;
+}
+.mono {
+  font-family: var(--ops-font-mono);
+  font-variant-numeric: tabular-nums;
 }
 </style>

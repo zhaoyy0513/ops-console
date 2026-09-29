@@ -1,17 +1,22 @@
 <script setup lang="ts">
-import { computed, inject, onBeforeUnmount, onMounted, ref, watch, type Ref } from 'vue'
+import { computed, h, inject, onBeforeUnmount, onMounted, ref, watch, type Ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
   NButton,
   NCard,
+  NDataTable,
+  NProgress,
   NSelect,
   NSpace,
   NTable,
   useMessage,
+  type DataTableColumns,
 } from 'naive-ui'
 import BaseChart from '../../components/BaseChart.vue'
 import TabHelp from '../../components/TabHelp.vue'
 import StatusBadge from '../../components/StatusBadge.vue'
+import MetricCard from '../../components/MetricCard.vue'
+import CountUp from '../../components/bits/CountUp.vue'
 import { useSiteStore } from '../../stores/site'
 import { getSamples, type SamplePoint } from '../overview/api'
 import { serverApi, type ProcessRow, type ServerMetrics } from './api'
@@ -134,21 +139,15 @@ const trendOption = computed(() => {
   }
 })
 
-// 环形饼图：used vs 剩余，中心大字百分比
-function donutOption(pct: number | null | undefined, usedColor: string, label: string) {
+// 环形饼图：used vs 剩余（中心百分比由外层 HTML CountUp 叠加渲染，echarts 只画环）
+function donutOption(pct: number | null | undefined, usedColor: string) {
   const v = pct ?? 0
   return {
-    tooltip: { trigger: 'item', formatter: () => `${label}: ${pct ?? '?'}%` },
-    title: {
-      text: pct == null ? '?' : `${pct}%`,
-      left: 'center',
-      top: 'middle',
-      textStyle: { fontSize: 22, fontWeight: 'bold', color: pctColor(pct) },
-    },
+    tooltip: { show: false },
     series: [
       {
         type: 'pie',
-        radius: ['62%', '85%'],
+        radius: ['70%', '92%'],
         center: ['50%', '50%'],
         label: { show: false },
         labelLine: { show: false },
@@ -162,8 +161,8 @@ function donutOption(pct: number | null | undefined, usedColor: string, label: s
   }
 }
 
-const cpuDonutOption = computed(() => donutOption(metrics.value?.cpu.usage, '#2563eb', `${t('server.cpu')} used%`))
-const memDonutOption = computed(() => donutOption(memPct.value, '#f0a020', `${t('server.memory')} used%`))
+const cpuDonutOption = computed(() => donutOption(metrics.value?.cpu.usage, '#2563eb'))
+const memDonutOption = computed(() => donutOption(memPct.value, '#f0a020'))
 
 // Disk 概览卡：use_percent 最高的挂载点
 const topDisk = computed(() => {
@@ -171,6 +170,38 @@ const topDisk = computed(() => {
   if (!rows.length) return null
   return rows.reduce((a, b) => (b.use_percent > a.use_percent ? b : a))
 })
+
+// 磁盘表（NDataTable）：usage 列内联进度条，阈值变色
+type DiskRow = NonNullable<ServerMetrics['disk']>[number]
+const diskColumns = computed<DataTableColumns<DiskRow>>(() => [
+  { title: t('server.mount'), key: 'mount' },
+  { title: t('server.size'), key: 'size' },
+  { title: t('server.usedCol'), key: 'used' },
+  { title: t('server.availCol'), key: 'avail' },
+  {
+    title: t('server.usage'),
+    key: 'use_percent',
+    render: (row) =>
+      h('div', { class: 'usage-cell' }, [
+        h(NProgress, {
+          percentage: row.use_percent ?? 0,
+          showIndicator: false,
+          height: 6,
+          color: pctColor(row.use_percent),
+        }),
+        h(
+          'span',
+          { class: 'usage-num', style: { color: pctColor(row.use_percent) } },
+          `${row.use_percent ?? '?'}%`,
+        ),
+      ]),
+  },
+  {
+    title: t('server.inode'),
+    key: 'inode_percent',
+    render: (row) => `${row.inode_percent ?? '-'}%`,
+  },
+])
 
 </script>
 
@@ -224,7 +255,13 @@ const topDisk = computed(() => {
       <!-- 指标卡在前，趋势图全宽在后 -->
       <n-space :size="12">
         <n-card size="small" :title="$t('server.cpu')" style="flex: 1">
-          <base-chart :option="cpuDonutOption" height="120px" />
+          <div class="donut-wrap">
+            <base-chart :option="cpuDonutOption" height="120px" />
+            <div class="donut-center" :style="{ color: pctColor(metrics.cpu.usage) }">
+              <CountUp v-if="metrics.cpu.usage != null" :value="metrics.cpu.usage" suffix="%" :duration="500" />
+              <span v-else>?</span>
+            </div>
+          </div>
           <div class="metric-note">{{ $t('server.thresholdNote') }}</div>
           <div class="metric-sub">
             {{ $t('server.cores') }} {{ metrics.cpu.cores ?? '?' }} · {{ $t('server.iowait') }} {{ metrics.cpu.iowait ?? '?' }}% ·
@@ -232,7 +269,13 @@ const topDisk = computed(() => {
           </div>
         </n-card>
         <n-card size="small" :title="$t('server.memory')" style="flex: 1">
-          <base-chart :option="memDonutOption" height="120px" />
+          <div class="donut-wrap">
+            <base-chart :option="memDonutOption" height="120px" />
+            <div class="donut-center" :style="{ color: pctColor(memPct) }">
+              <CountUp v-if="memPct != null" :value="memPct" suffix="%" :duration="500" />
+              <span v-else>?</span>
+            </div>
+          </div>
           <div class="metric-note">{{ $t('server.thresholdNote') }}</div>
           <div class="metric-sub">
             {{ $t('server.used') }} {{ fmtMB(metrics.memory.used) }} / {{ $t('server.total') }} {{ fmtMB(metrics.memory.total) }} ·
@@ -240,7 +283,7 @@ const topDisk = computed(() => {
           </div>
         </n-card>
         <n-card size="small" :title="$t('server.network')" style="flex: 1">
-          <div class="metric-big">
+          <div class="metric-big mono">
             {{ fmtBytes(metrics.network.rx) }}<span class="unit">↓</span>
             {{ fmtBytes(metrics.network.tx) }}<span class="unit">↑</span>
           </div>
@@ -248,15 +291,19 @@ const topDisk = computed(() => {
             errors {{ metrics.network.errors }} · dropped {{ metrics.network.dropped }}
           </div>
         </n-card>
-        <n-card size="small" :title="$t('server.disk')" style="flex: 1">
-          <div class="metric-big" :style="{ color: pctColor(topDisk?.use_percent) }">
-            {{ topDisk ? `${topDisk.use_percent}` : '?' }}<span class="unit">%</span>
-          </div>
-          <div class="metric-sub" v-if="topDisk">
-            {{ topDisk.mount }} · {{ $t('server.used') }} {{ topDisk.used }} / {{ $t('server.total') }} {{ topDisk.size }}
-          </div>
-          <div class="metric-sub" v-else>-</div>
-        </n-card>
+        <div style="flex: 1; min-width: 200px">
+          <metric-card
+            :title="$t('server.disk')"
+            :value="topDisk?.use_percent ?? null"
+            suffix="%"
+            :color="pctColor(topDisk?.use_percent)"
+            :bar-color="pctColor(topDisk?.use_percent)"
+          >
+            <template v-if="topDisk">
+              {{ topDisk.mount }} · {{ $t('server.used') }} {{ topDisk.used }} / {{ $t('server.total') }} {{ topDisk.size }}
+            </template>
+          </metric-card>
+        </div>
       </n-space>
 
       <n-card size="small" :title="$t('server.trend')" style="width: 100%">
@@ -288,28 +335,13 @@ const topDisk = computed(() => {
       </n-card>
 
       <n-card size="small" :title="$t('server.disk')">
-        <n-table :single-line="false" size="small">
-          <thead>
-            <tr>
-              <th>{{ $t('server.mount') }}</th>
-              <th>{{ $t('server.size') }}</th>
-              <th>{{ $t('server.usedCol') }}</th>
-              <th>{{ $t('server.availCol') }}</th>
-              <th>{{ $t('server.usage') }}</th>
-              <th>{{ $t('server.inode') }}</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="d in metrics.disk" :key="d.mount">
-              <td>{{ d.mount }}</td>
-              <td>{{ d.size }}</td>
-              <td>{{ d.used }}</td>
-              <td>{{ d.avail }}</td>
-              <td :style="{ color: pctColor(d.use_percent), fontWeight: 600 }">{{ d.use_percent }}%</td>
-              <td>{{ d.inode_percent ?? '-' }}%</td>
-            </tr>
-          </tbody>
-        </n-table>
+        <n-data-table
+          :columns="diskColumns"
+          :data="metrics.disk"
+          size="small"
+          :bordered="false"
+          :single-line="false"
+        />
       </n-card>
     </template>
 
@@ -320,34 +352,69 @@ const topDisk = computed(() => {
 </template>
 
 <style scoped>
+/* donut 中心数字叠加层（echarts 只画环，数字由 HTML 渲染才能接 CountUp） */
+.donut-wrap {
+  position: relative;
+}
+.donut-center {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  font-weight: 700;
+  font-family: var(--ops-font-mono);
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
 .metric-big {
   flex-shrink: 0;
-  font-size: 34px;
+  font-size: 30px;
   font-weight: 600;
   line-height: 1.2;
 }
+.mono {
+  font-family: var(--ops-font-mono);
+  font-variant-numeric: tabular-nums;
+}
 .metric-note {
   margin-top: 6px;
-  color: #999;
+  color: var(--ops-text-3);
   font-size: 11px;
 }
 .unit {
   font-size: 14px;
   font-weight: 400;
   margin-left: 4px;
-  color: #999;
+  color: var(--ops-text-3);
 }
 .metric-sub {
   margin-top: 6px;
-  color: #666;
+  color: var(--ops-text-2);
   font-size: 12px;
 }
 .cmd {
-  font-family: ui-monospace, Consolas, monospace;
+  font-family: var(--ops-font-mono);
   font-size: 12px;
   max-width: 420px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+/* NDataTable usage 列：进度条 + 数字并排 */
+.usage-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.usage-cell :deep(.n-progress) {
+  width: 90px;
+  flex: none;
+}
+.usage-num {
+  font-family: var(--ops-font-mono);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
 }
 </style>

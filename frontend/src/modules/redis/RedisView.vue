@@ -10,6 +10,7 @@ import {
   NSelect,
   NSpace,
   NSpin,
+  NSkeleton,
   NTag,
   NTooltip,
   NTree,
@@ -425,7 +426,7 @@ const INFO_METRICS = computed(() => {
           <template #trigger>
             <span class="metric">
               <span class="metric-label">{{ m.label }}</span>
-              <b>{{ m.value }}</b>
+              <b class="mono">{{ m.value }}</b>
             </span>
           </template>
           {{ m.tip }}
@@ -439,7 +440,7 @@ const INFO_METRICS = computed(() => {
         <template #header-extra>
           <span style="color: #999; font-size: 12px">{{ $t('redis.keysCount', { n: keys.length }) }}</span>
         </template>
-        <n-spin :show="loading">
+        <n-spin :show="loading && !!treeData.length">
           <div class="tree-scroll">
             <n-tree
               v-if="treeData.length"
@@ -453,7 +454,9 @@ const INFO_METRICS = computed(() => {
               :render-label="renderLabel"
               @update:selected-keys="onTreeSelect"
             />
-            <div v-else style="text-align: center; color: #999; padding: 24px 0">{{ $t('redis.noMatch') }}</div>
+            <!-- 首次加载骨架（替换白屏/转圈，ui-upgrade-design.md §6.2） -->
+            <n-skeleton v-else-if="loading" :repeat="5" text class="tree-skel" />
+            <div v-else style="text-align: center; color: var(--ops-text-3); padding: 24px 0">{{ $t('redis.noMatch') }}</div>
           </div>
         </n-spin>
         <div v-if="cursor !== 0" style="text-align: center; margin-top: 8px">
@@ -585,13 +588,17 @@ const INFO_METRICS = computed(() => {
   gap: 6px;
   align-items: baseline;
   font-size: 13px;
-  color: #666;
+  color: var(--ops-text-2);
   cursor: help;
-  border-bottom: 1px dashed #d0d3d8;
+  border-bottom: 1px dashed var(--ops-border);
   padding-bottom: 1px;
 }
 .metric b {
-  color: #1f2329;
+  color: var(--ops-text-1);
+}
+.metric .mono {
+  font-family: var(--ops-font-mono);
+  font-variant-numeric: tabular-nums;
 }
 .summary {
   background: #f5f6f8;

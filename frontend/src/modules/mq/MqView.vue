@@ -6,6 +6,8 @@ import EmptyState from '../../components/EmptyState.vue'
 import BaseChart from '../../components/BaseChart.vue'
 import TabHelp from '../../components/TabHelp.vue'
 import StatusBadge from '../../components/StatusBadge.vue'
+import MetricCard from '../../components/MetricCard.vue'
+import TrendSpark from '../../components/TrendSpark.vue'
 import { useSiteStore } from '../../stores/site'
 import { getSamples } from '../overview/api'
 import { mqApi, type MqOverview, type QueueMessage, type QueueRow } from './api'
@@ -292,6 +294,18 @@ const worstQueueStatus = computed(() => {
   )
   return worst || 'HEALTHY'
 })
+
+/** 队列 5 分钟趋势色：堆积上涨红、消化下降绿、持平灰 */
+function trendColor(growth: number | null): string {
+  if (growth == null || growth === 0) return 'var(--ops-text-3)'
+  return growth > 0 ? '#d03050' : '#18a058'
+}
+/** 两点趋势线：5 分钟前 → 现在（后端已有 backlog 采样） */
+function trendData(q: QueueRow): number[] {
+  const now = q.message_count ?? 0
+  const ago = q.backlog_5m_ago
+  return [ago ?? now, now]
+}
 </script>
 
 <template>
@@ -337,13 +351,15 @@ const worstQueueStatus = computed(() => {
           </div>
         </n-card>
         <n-card size="small" class="grow-1" :title="$t('mq.broker')">
+          <div class="mc-grid">
+            <metric-card :title="$t('mq.connectionsCol')" :value="overview.connections" />
+            <metric-card :title="$t('mq.sessionsCol')" :value="overview.sessions" />
+            <metric-card :title="$t('mq.consumersCol')" :value="overview.consumers" />
+            <metric-card :title="$t('mq.addressesCol')" :value="overview.addresses" />
+          </div>
           <div class="kv">
             <span>{{ $t('mq.versionCol') }} <b>{{ overview.version ?? '-' }}</b></span>
             <span>{{ $t('mq.uptimeCol') }} <b>{{ overview.uptime ?? '-' }}</b></span>
-            <span>{{ $t('mq.connectionsCol') }} <b>{{ overview.connections ?? '-' }}</b></span>
-            <span v-if="overview.sessions != null">{{ $t('mq.sessionsCol') }} <b>{{ overview.sessions }}</b></span>
-            <span>{{ $t('mq.consumersCol') }} <b>{{ overview.consumers ?? '-' }}</b></span>
-            <span>{{ $t('mq.addressesCol') }} <b>{{ overview.addresses ?? '-' }}</b></span>
             <span>{{ $t('mq.nonHeap') }} <b>{{ fmtBytes(overview.jvm.non_heap_used) }}</b></span>
             <span>{{ $t('mq.threads') }} <b>{{ overview.jvm.threads ?? '-' }}</b></span>
           </div>
@@ -372,7 +388,7 @@ const worstQueueStatus = computed(() => {
         <n-table :single-line="false" size="small">
           <thead>
             <tr>
-              <th>{{ $t('mq.queueCol') }}</th><th>{{ $t('mq.addressCol') }}</th><th>{{ $t('mq.statusCol') }}</th><th>{{ $t('mq.messagesCol') }}</th><th>{{ $t('mq.consumersCol') }}</th>
+              <th>{{ $t('mq.queueCol') }}</th><th>{{ $t('mq.addressCol') }}</th><th>{{ $t('mq.statusCol') }}</th><th>{{ $t('mq.messagesCol') }}</th><th style="width: 130px">{{ $t('mq.trendCol') }}</th><th>{{ $t('mq.consumersCol') }}</th>
               <th>{{ $t('mq.added') }}</th><th>{{ $t('common.actions') }}</th>
             </tr>
           </thead>
@@ -391,6 +407,14 @@ const worstQueueStatus = computed(() => {
                 </n-tooltip>
               </td>
               <td :style="{ fontWeight: (q.message_count ?? 0) > 5000 ? 700 : 400 }">{{ q.message_count ?? '-' }}</td>
+              <td>
+                <div class="trend-cell" :title="`5m: ${q.backlog_5m_ago ?? '-'} → ${q.message_count ?? '-'}`">
+                  <trend-spark :data="trendData(q)" :color="trendColor(q.growth_5m)" :width="64" :height="18" />
+                  <span class="trend-num" :style="{ color: trendColor(q.growth_5m) }">
+                    {{ q.growth_5m == null ? '-' : q.growth_5m > 0 ? `+${q.growth_5m}` : q.growth_5m }}
+                  </span>
+                </div>
+              </td>
               <td>{{ q.consumer_count ?? '-' }}</td>
               <td>{{ q.messages_added ?? '-' }}</td>
               <td>
@@ -411,7 +435,7 @@ const worstQueueStatus = computed(() => {
               </td>
             </tr>
             <tr v-if="!filteredQueues.length">
-              <td :colspan="7"><EmptyState :title="$t('mq.noMatch')" /></td>
+              <td :colspan="8"><EmptyState :title="$t('mq.noMatch')" /></td>
             </tr>
           </tbody>
         </n-table>
@@ -512,10 +536,28 @@ const worstQueueStatus = computed(() => {
   flex-direction: column;
   gap: 6px;
   font-size: 13px;
-  color: #666;
+  color: var(--ops-text-2);
 }
 .kv b {
-  color: #1f2329;
+  color: var(--ops-text-1);
+}
+/* Broker 计数 MetricCard 网格 */
+.mc-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin-bottom: 10px;
+}
+/* 队列表趋势列 */
+.trend-cell {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.trend-num {
+  font-family: var(--ops-font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
 }
 .pane-error {
   color: #d03050;

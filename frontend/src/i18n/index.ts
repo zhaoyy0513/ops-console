@@ -63,6 +63,8 @@ const messages = {
       theme: '切换主题',
       selectSite: '选择站点',
       siderHint: '请先在右上角选择站点',
+      collapse: '收起侧栏',
+      expand: '展开侧栏',
     },
     common: {
       refresh: '刷新',
@@ -188,6 +190,7 @@ const messages = {
       addressCol: '所属 Address',
       statusCol: '状态',
       messagesCol: '消息数',
+      trendCol: '5m 趋势',
       deliveringCol: 'Delivering',
       min5: '5 分钟前',
       growth: '增长',
@@ -481,6 +484,8 @@ const messages = {
       theme: 'Toggle theme',
       selectSite: 'Select site',
       siderHint: 'Select a site in the top bar first',
+      collapse: 'Collapse sidebar',
+      expand: 'Expand sidebar',
     },
     common: {
       refresh: 'Refresh',
@@ -605,6 +610,7 @@ const messages = {
       addressCol: 'Address',
       statusCol: 'Status',
       messagesCol: 'Messages',
+      trendCol: '5m trend',
       deliveringCol: 'Delivering',
       min5: '5m ago',
       growth: 'Growth',
