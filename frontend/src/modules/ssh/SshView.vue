@@ -229,10 +229,16 @@ const runTimedOut = ref(false)
 const consoleEl = ref<HTMLElement | null>(null)
 let runAbort: (() => void) | null = null
 
-/** ANSI 转义剥离：docker stats 等实时刷新命令每秒发 [H（光标归位）重绘整表，
- * 原样追加会闪现乱码/方块且看似内容晃动。 */
+/** ANSI 转义剥离：颜色等控制序列原样追加会显示为乱码/方块。 */
 function stripAnsi(s: string): string {
   return s.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '').replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, '')
+}
+
+/** 帧分隔：实时刷新命令（docker stats 等）每次重绘以 [H/[2J 开头，
+ *  将其替换为带时间戳的分隔行——块与块之间一目了然，也能看出刷新节奏。 */
+function frameSeparate(s: string): string {
+  const ts = new Date().toLocaleTimeString('zh-CN', { hour12: false })
+  return s.replace(/\x1b\[(?:H|2J)/g, `\n──── ${ts} ────\n`)
 }
 
 /** 追加输出并跟随滚动：贴底时自动滚到最新；用户向上翻阅（离底 >48px）则暂停跟随 */
@@ -287,7 +293,12 @@ function confirmRun() {
   running.value = true
   let sawStderr = false
   const onChunk = (kind: string, data: string) => {
-    if (kind === 'stdout') appendOut(data)
+    if (kind === 'stdout') {
+      let out = frameSeparate(data)
+      // 首帧前不加分隔行（第一块数据前无需分隔）
+      if (!runOutput.value) out = out.replace(/^\n──── [0-9:]{8} ────\n/, '')
+      appendOut(out)
+    }
     else if (kind === 'stderr') {
       // stderr 实时上屏（top 等无终端命令秒退时报错立即可见，不再攒到最后）
       appendOut((sawStderr ? '' : '[stderr] ') + data)
