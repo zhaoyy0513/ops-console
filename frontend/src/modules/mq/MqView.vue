@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, inject, onBeforeUnmount, onMounted, ref, watch, type Ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { NButton, NCard, NInput, NSelect, NSpace, NSpin, NTable, NTooltip, useMessage } from 'naive-ui'
 import CountdownConfirm from '../../components/CountdownConfirm.vue'
 import EmptyState from '../../components/EmptyState.vue'
@@ -14,6 +15,7 @@ import { fmtBytes, pctColor } from '../../utils/format'
 
 const siteStore = useSiteStore()
 const message = useMessage()
+const { t } = useI18n()
 
 const instances = ref<Array<{ label: string; value: string }>>([])
 const instanceId = ref<string | null>(null)
@@ -176,7 +178,15 @@ const topQueuesOption = computed(() => {
     .slice(0, 10)
   return {
     grid: { left: 10, right: 40, top: 10, bottom: 10, containLabel: true },
-    tooltip: { trigger: 'axis' },
+    tooltip: {
+      trigger: 'axis',
+      // 悬浮展示队列名 + 所属 Address + 消息数（y 轴类目只有名字，Address 从 dataIndex 取回）
+      formatter: (params: Array<{ dataIndex: number }>) => {
+        const q = top[params[0]?.dataIndex]
+        if (!q) return ''
+        return t('mq.topQueueTip', { name: q.name, address: q.address ?? '-', count: q.message_count ?? '-' })
+      },
+    },
     xAxis: { type: 'value' },
     yAxis: {
       type: 'category',

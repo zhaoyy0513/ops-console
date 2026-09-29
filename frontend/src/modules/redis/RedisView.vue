@@ -658,10 +658,10 @@ const INFO_METRICS = computed(() => {
             <n-input v-else v-model:value="editText" type="textarea"
               :rows="16" :input-props="{ spellcheck: false }" class="mono" />
 
-            <!-- JSON 语法错误横幅：编辑器内有红波浪线+浅红底色，这里给出行/列定位
-                 （Json 视图，或 JSON 值的 key 在 Text 视图被改坏） -->
+            <!-- JSON 语法错误横幅（编辑器与操作行之间，紧凑样式）：编辑器内有红波浪线
+                 +浅红底色，这里给出行/列定位（Json 视图，或 JSON 值的 key 在 Text 视图被改坏） -->
             <n-alert v-if="jsonInvalid" type="error" :show-icon="false" :class="{ shake: bannerShake }"
-              style="margin-top: 8px">
+              style="margin-top: 6px" :theme-overrides="{ padding: '4px 12px', fontSize: '12px' }">
               {{ $t('redis.jsonInvalidTitle') }} — {{ jsonInvalid }}
             </n-alert>
 
@@ -672,7 +672,7 @@ const INFO_METRICS = computed(() => {
                 :placeholder="$t('redis.ttlPh')" />
               <n-button size="small" @click="applyTtl">{{ $t('redis.applyTtl') }}</n-button>
               <div style="flex: 1" />
-              <countdown-confirm :label="$t('common.delete')" :target="detail.key" :seconds="5" @confirm="deleteKey" />
+              <countdown-confirm :label="$t('common.delete')" :target="detail.key" :seconds="3" @confirm="deleteKey" />
               <!-- 不禁用按钮：点击时校验并弹明确错误（禁用会让用户不知道为何点不了）；
                    校验必须在开弹窗前做：弹窗内 toast 会被遮罩盖住（见 openSaveConfirm 注释） -->
               <n-button size="small" type="primary" :loading="saving"

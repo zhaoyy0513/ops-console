@@ -7,7 +7,7 @@ import { auditApi, type AuditPage } from './api'
 const { t } = useI18n()
 const data = ref<AuditPage | null>(null)
 const page = ref(1)
-const size = 50
+const size = 10
 const loading = ref(false)
 
 async function load() {
@@ -28,14 +28,15 @@ function changePage(p: number) {
 type Row = NonNullable<AuditPage['items'][number]>
 
 const columns = computed(() => [
-  { title: t('audit.colTime'), key: 'time', width: 170, render: (row: Row) => (row.time ?? '').replace('T', ' ').slice(0, 19) },
+  // 时间列固定宽 + 禁止换行：'2026-09-29 16:20:33' 必须单行（换行两行太高）
+  { title: t('audit.colTime'), key: 'time', width: 165, className: 'nowrap', render: (row: Row) => (row.time ?? '').replace('T', ' ').slice(0, 19) },
   { title: t('audit.colSite'), key: 'site', width: 120 },
-  { title: t('audit.colResource'), key: 'resource', width: 180, className: 'mono', ellipsis: { tooltip: true } },
-  { title: t('audit.colOperation'), key: 'operation', width: 220 },
+  { title: t('audit.colResource'), key: 'resource', width: 170, className: 'mono', ellipsis: { tooltip: true } },
+  { title: t('audit.colOperation'), key: 'operation', width: 200 },
   {
     title: t('audit.colTarget'),
     key: 'target',
-    minWidth: 200,
+    minWidth: 140,
     className: 'mono',
     ellipsis: { tooltip: true },
     render: (row: Row) => row.target ?? '-',
@@ -43,7 +44,7 @@ const columns = computed(() => [
   {
     title: t('audit.colResult'),
     key: 'result',
-    width: 100,
+    width: 90,
     render: (row: Row) =>
       h(NTag, { type: row.result === 'SUCCESS' ? 'success' : 'error', size: 'small', bordered: false }, { default: () => row.result }),
   },
@@ -68,5 +69,8 @@ const columns = computed(() => [
 <style>
 .audit-table td.mono {
   font-family: var(--ops-font-mono);
+}
+.audit-table td.nowrap {
+  white-space: nowrap;
 }
 </style>

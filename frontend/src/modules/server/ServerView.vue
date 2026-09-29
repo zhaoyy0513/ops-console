@@ -162,15 +162,26 @@ const memPct = computed(() => {
   return m?.total && m?.used != null ? Math.round((m.used / m.total) * 1000) / 10 : null
 })
 
-// HH:mm:ss（手动补零：不受浏览器 locale 影响，en-US 会带 AM/PM）
-function hhmmss(ts: number): string {
-  const d = new Date(ts * 1000)
+// 紧凑刻度（Artemis 风格）：常规 mm:ss（秒保持可见）；跨小时后的首个"渲染刻度"保留 HH: 前缀兜底。
+// prevHour 只在渲染刻度上推进（i % (step+1) === 0，与 ECharts interval 语义一致），
+// 保证小时切换一定落在某个可见标签上。手动补零：不受浏览器 locale 影响（en-US 会带 AM/PM）
+function axisLabels(points: SamplePoint[], step: number): string[] {
   const p = (n: number) => String(n).padStart(2, '0')
-  return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
+  let prevHour = -1
+  return points.map((pt, i) => {
+    const d = new Date(pt.ts * 1000)
+    const hms = `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
+    if (i % (step + 1) !== 0) return hms // 未渲染的刻度，内容无所谓
+    const full = d.getHours() !== prevHour
+    prevHour = d.getHours()
+    return full ? hms : hms.slice(3) // mm:ss
+  })
 }
 
 const trendOption = computed(() => {
-  const labels = cpuSeries.value.map((p) => hhmmss(p.ts))
+  // 固定步长取整秒标签（~8 个）：避免 ECharts 自动间隔导致标签"跳动"
+  const step = Math.max(0, Math.ceil(cpuSeries.value.length / 8) - 1)
+  const labels = axisLabels(cpuSeries.value, step)
   const memPoints = memSeries.value.map((p) => p.v)
   return {
     grid: { left: 44, right: 16, top: 36, bottom: 26 },
@@ -180,8 +191,9 @@ const trendOption = computed(() => {
       type: 'category',
       data: labels,
       axisLabel: {
-        // 固定步长取整秒标签（最多 ~6 个）：避免 ECharts 自动间隔导致标签"跳动"
-        interval: Math.max(0, Math.ceil(labels.length / 6) - 1),
+        interval: step,
+        fontSize: 10,
+        hideOverlap: true,
       },
     },
     yAxis: { type: 'value', max: 100, axisLabel: { formatter: '{value}%' } },
@@ -396,7 +408,7 @@ const diskColumns = computed<DataTableColumns<DiskRow>>(() => [
               <td>{{ p.pid }}</td>
               <td :style="{ color: pctColor(p.cpu_percent) }">{{ p.cpu_percent }}</td>
               <td>{{ p.mem_percent }}</td>
-              <td class="cmd">{{ p.command }}</td>
+              <td class="cmd" :title="p.command">{{ p.command }}</td>
             </tr>
           </tbody>
         </n-table>
@@ -423,7 +435,7 @@ const diskColumns = computed<DataTableColumns<DiskRow>>(() => [
       preset="card"
       :mask-closable="false"
       :close-on-esc="false"
-      :title="`${$t('server.zombies')} (${zombies.length})`"
+      :title="`${$t('server.zombieList')} (${zombies.length})`"
       style="width: 720px"
     >
       <n-spin :show="zombieLoading">

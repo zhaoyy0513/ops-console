@@ -2,8 +2,8 @@ from backend.app.core import oplog
 from backend.app.core.oplog import OPLOG_KEY, OPLOG_MAX
 
 
-async def test_oplog_trimmed_to_1000(fake_platform_redis):
-    """PRD §17.1：写入超 1000 条后仅保留最近 1000。"""
+async def test_oplog_trimmed_to_200(fake_platform_redis):
+    """写入超 200 条后仅保留最近 200。"""
     for i in range(OPLOG_MAX + 5):
         await oplog.record(site="s", resource="redis-01", operation="DELETE_KEY", target=f"k{i}")
 
