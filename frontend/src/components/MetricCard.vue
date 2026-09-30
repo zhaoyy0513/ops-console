@@ -2,13 +2,13 @@
 /** 通用指标卡（ui-upgrade-design.md §6.1）：图标 + 标题 + CountUp 数值 +
  *  slot（副文案/迷你图）。
  *  顶边 2px 状态色条为 opt-in：仅传 barColor 时渲染，否则完全素卡。
- *  容器为 SpotlightCard 的降级形态（普通卡 + hover 边框高亮），
- *  光效版本待 Phase D 评审后决定是否启用。 */
+ *  聚光效果（Phase D §5.2④）同为 opt-in：仅 hoverable（可点击）卡片跟随
+ *  鼠标更新 --sx/--sy，极淡一层光斑；非交互卡完全素面。 */
 import type { Component } from 'vue'
 import { NIcon } from 'naive-ui'
 import CountUp from './bits/CountUp.vue'
 
-withDefaults(
+const props = withDefaults(
   defineProps<{
     title: string
     icon?: Component
@@ -26,11 +26,21 @@ withDefaults(
   }>(),
   { value: null, decimals: 0, prefix: '', suffix: '', hoverable: false },
 )
+
+/** 跟随鼠标更新聚光位置：只写 CSS 变量，不进响应式状态、不触发重渲 */
+function onSpotMove(e: MouseEvent) {
+  if (!props.hoverable) return
+  const el = e.currentTarget as HTMLElement
+  const r = el.getBoundingClientRect()
+  el.style.setProperty('--sx', `${e.clientX - r.left}px`)
+  el.style.setProperty('--sy', `${e.clientY - r.top}px`)
+}
 </script>
 
 <template>
-  <div class="metric-card" :class="{ hoverable }">
+  <div class="metric-card" :class="{ hoverable }" @mousemove="onSpotMove">
     <div v-if="barColor" class="mc-bar" :style="{ background: barColor }" />
+    <div v-if="hoverable" class="mc-spot" aria-hidden="true" />
     <div class="mc-head">
       <n-icon v-if="icon" :component="icon" :size="14" class="mc-icon" />
       <span class="mc-title">{{ title }}</span>
@@ -56,6 +66,27 @@ withDefaults(
 }
 .metric-card.hoverable:hover {
   border-color: var(--ops-primary);
+}
+/* 聚光层（§5.2④）：全项目唯一光效，240px 大半径 + 8% 极低透明度 */
+.mc-spot {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    240px circle at var(--sx, 50%) var(--sy, 50%),
+    rgba(37, 99, 235, 0.08),
+    transparent 65%
+  );
+  opacity: 0;
+  transition: opacity 160ms ease;
+  pointer-events: none;
+}
+.metric-card.hoverable:hover .mc-spot {
+  opacity: 1;
+}
+@media (prefers-reduced-motion: reduce) {
+  .mc-spot {
+    display: none; /* 光斑淡入属动效，reduced-motion 下整体关闭 */
+  }
 }
 .mc-bar {
   position: absolute;

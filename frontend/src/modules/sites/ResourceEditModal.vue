@@ -2,13 +2,13 @@
 import { ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
+  NAutoComplete,
   NButton,
   NForm,
   NFormItem,
   NInput,
   NInputNumber,
   NModal,
-  NSelect,
   useMessage,
 } from 'naive-ui'
 import ResourceTestButton from '../../components/ResourceTestButton.vue'
@@ -20,9 +20,9 @@ export interface EditTarget {
   type: 'servers' | 'redis' | 'mq' | 'devices'
   /** 编辑时的初始值（新增时传 {}） */
   item: Record<string, any>
-  /** host 下拉候选（redis/mq/devices 用） */
+  /** host 联想候选（redis/mq/devices 用） */
   hostOptions: Array<{ label: string; value: string }>
-  /** 名称下拉候选（redis/mq/devices 用，来自同站点 Server 的名称） */
+  /** 名称联想候选（redis/mq/devices 用，来自同站点 Server 的名称） */
   nameOptions: Array<{ label: string; value: string }>
   /** 资源所属站点（保存与测试请求的目标） */
   siteId: string
@@ -176,24 +176,21 @@ async function save() {
           style="width: 100%"
           :placeholder="f.ph ? $t(`sites.${f.ph}`) : undefined"
         />
-        <n-select
+        <!-- 输入优先：NAutoComplete 自由输入 + 同站点 Server 名称联想，选中回填、不选直接保留输入 -->
+        <n-auto-complete
           v-else-if="f.kind === 'name-select'"
           v-model:value="form[f.key]"
-          filterable
-          tag
-          default-first-option
           :options="props.target?.nameOptions ?? []"
+          :input-props="{ autocomplete: 'off' }"
           :placeholder="$t('sites.nameSelectPh')"
         />
         <n-input v-else-if="f.kind === 'host-input'" v-model:value="form[f.key]"
           :placeholder="$t('sites.hostInputPh')" />
-        <n-select
+        <n-auto-complete
           v-else-if="f.kind === 'host-select'"
           v-model:value="form[f.key]"
-          filterable
-          tag
-          default-first-option
           :options="props.target?.hostOptions ?? []"
+          :input-props="{ autocomplete: 'off' }"
           :placeholder="(props.target?.hostOptions ?? []).length ? $t('sites.hostSelectPh') : $t('sites.hostInputAddr')"
         />
         <n-input v-else v-model:value="form[f.key]" />

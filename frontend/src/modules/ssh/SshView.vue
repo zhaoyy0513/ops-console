@@ -21,6 +21,7 @@ import { ContractOutline, ExpandOutline } from '@vicons/ionicons5'
 import api from '../../api'
 import OpsSwitch from '../../components/OpsSwitch.vue'
 import EmptyState from '../../components/EmptyState.vue'
+import ClickSpark from '../../components/bits/ClickSpark.vue'
 import { sshApi, type SshScript } from './api'
 
 const siteStore = useSiteStore()
@@ -483,9 +484,11 @@ function confirmRun() {
           <n-button :disabled="running" @click="backToEdit">{{ $t('ssh.backToEdit') }}</n-button>
           <n-space :size="8">
             <n-button @click="runShow = false">{{ $t('common.close') }}</n-button>
-            <n-button type="error" :loading="running" :disabled="running" @click="confirmRun">
-              {{ $t('ssh.confirmRun') }}
-            </n-button>
+            <ClickSpark>
+              <n-button type="error" :loading="running" :disabled="running" @click="confirmRun">
+                {{ $t('ssh.confirmRun') }}
+              </n-button>
+            </ClickSpark>
           </n-space>
         </n-space>
       </template>

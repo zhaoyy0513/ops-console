@@ -2,6 +2,7 @@
 import { onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { NButton, NCard, NModal } from 'naive-ui'
+import ClickSpark from './bits/ClickSpark.vue'
 
 /**
  * 危险操作倒计时确认框（PRD §11.5）。
@@ -45,8 +46,10 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <!-- 触发按钮与 Save 同规格（small 实心红），风格统一 -->
-  <n-button size="small" type="error" :style="width ? { width } : undefined" @click="show = true">{{ label }}</n-button>
+  <!-- 触发按钮与 Save 同规格（small 实心红），风格统一；ClickSpark 仅此危险按钮 -->
+  <ClickSpark>
+    <n-button size="small" type="error" :style="width ? { width } : undefined" @click="show = true">{{ label }}</n-button>
+  </ClickSpark>
   <n-modal :mask-closable="false" :close-on-esc="false" v-model:show="show">
     <n-card style="width: 440px" :title="t('countdown.title')" size="small" :bordered="false">
       <p>{{ t('countdown.about') }}</p>
