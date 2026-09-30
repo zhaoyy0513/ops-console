@@ -111,6 +111,17 @@ async def delete_site(site_id: str) -> bool:
             HEALTH_KEY.format(site_id=site_id)]
     keys += [resource_key(site_id, t) for t in RESOURCE_TYPES]
     await r.delete(*keys)
+    # 采样序列随站点删除：该站点的趋势样本再无读者，留着只会成为孤儿 key
+    # （写时 TTL 只救活被继续推送的序列，删站后无人推送）。站点段位置随
+    # 资源类型不同有三种形态，逐一扫描：
+    #   ops:sample:server:{site}:*  /  ops:sample:mq:{site}:*  /  ops:sample:{site}:*
+    stale: list[str] = []
+    for pat in (f"ops:sample:server:{site_id}:*",
+                f"ops:sample:mq:{site_id}:*",
+                f"ops:sample:{site_id}:*"):
+        stale += [k async for k in r.scan_iter(pat)]
+    if stale:
+        await r.delete(*stale)
     await r.srem(SITES_KEY, site_id)
     await oplog.record(site_id, "site-config", "SITE_DELETED",
                        target=row.get("name") or site_id, params={"site_id": site_id})

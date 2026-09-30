@@ -40,6 +40,22 @@ async def test_site_crud_and_enable(client):
     assert entries[0]["params"]["site_id"] == "sz-test"
 
 
+async def test_delete_site_purges_sample_keys(client, fake_platform_redis):
+    """删站点必须连带清掉该站点的趋势采样 key（孤儿样本无读者、无 TTL 兜底路径之外的清理）。"""
+    from backend.app.core import sampling
+
+    await client.post("/api/sites", json={"id": "s1", "name": "S1"})
+    await sampling.push_sample("server:s1:srv1", "cpu", 1.2)
+    await sampling.push_sample("mq:s1:mq1:abc123def4", "backlog", 5)
+    assert await fake_platform_redis.exists("ops:sample:server:s1:srv1:cpu")
+    assert await fake_platform_redis.exists("ops:sample:mq:s1:mq1:abc123def4:backlog")
+
+    r = await client.delete("/api/sites/s1")
+    assert r.status_code == 204
+    assert not await fake_platform_redis.exists("ops:sample:server:s1:srv1:cpu")
+    assert not await fake_platform_redis.exists("ops:sample:mq:s1:mq1:abc123def4:backlog")
+
+
 async def test_create_duplicate_site_conflict(client):
     await client.post("/api/sites", json={"id": "a", "name": "A"})
     r = await client.post("/api/sites", json={"id": "a", "name": "A2"})
