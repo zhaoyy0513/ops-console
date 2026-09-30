@@ -105,6 +105,8 @@ onBeforeUnmount(() => view?.destroy())
   border: 1px solid var(--ops-border);
   border-radius: 4px;
   overflow: hidden;
+  /* 防止在 flex 行内被内容（merge 双栏）撑出最小宽度，页面级横向滚动的根源之一 */
+  min-width: 0;
 }
 .diff-headers {
   display: flex;
@@ -130,6 +132,7 @@ onBeforeUnmount(() => view?.destroy())
 .diff-editor {
   flex: 1;
   min-height: 0;
+  min-width: 0;
 }
 /* merge 包约定：容器给高度+滚动，两侧编辑器自然高度随容器整体滚动 */
 .diff-editor :deep(.cm-mergeView) {

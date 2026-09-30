@@ -292,7 +292,7 @@ function addedColor(added: number | null): string {
 <template>
   <n-space vertical :size="12">
     <n-card size="small">
-      <n-space align="center" :size="12" :wrap="false">
+      <n-space align="center" :size="12">
         <span>{{ $t('mq.broker') }}</span>
         <n-select v-model:value="instanceId" size="small" style="width: 220px"
           :placeholder="$t('mq.instance')" :options="instances" />
@@ -369,7 +369,8 @@ function addedColor(added: number | null): string {
             :placeholder="$t('mq.search')" />
         </template>
         <div v-if="queuesError" class="pane-error">Queues 读取失败：{{ queuesError }}（每 3s 自动重试）</div>
-        <n-table :single-line="false" size="small">
+        <div class="table-scroll">
+          <n-table :single-line="false" size="small">
           <thead>
             <tr>
               <th>{{ $t('mq.queueCol') }}</th><th>{{ $t('mq.addressCol') }}</th><th>{{ $t('mq.statusCol') }}</th><th>{{ $t('mq.messagesCol') }}</th><th style="width: 90px">{{ $t('mq.added1mCol') }}</th><th>{{ $t('mq.consumersCol') }}</th>
@@ -406,7 +407,7 @@ function addedColor(added: number | null): string {
                   :label="$t('mq.purge')"
                   :confirm-text="$t('mq.purge')"
                   :target="q.name"
-                  :seconds="10"
+                  :seconds="3"
                   width="64px"
                   @confirm="emptyQueue(q)"
                 />
@@ -418,6 +419,7 @@ function addedColor(added: number | null): string {
             </tr>
           </tbody>
         </n-table>
+        </div>
       </n-card>
     </template>
 
@@ -428,15 +430,16 @@ function addedColor(added: number | null): string {
 </template>
 
 <style scoped>
-/* 卡片行布局：原生 flex（n-space 会塌缩子项宽度） */
+/* 卡片行布局：原生 flex（n-space 会塌缩子项宽度）；窄屏换行堆叠，卡片最小 320px */
 .row {
   display: flex;
+  flex-wrap: wrap;
   gap: 12px;
   align-items: stretch;
 }
 .grow-1 {
   flex: 1;
-  min-width: 0;
+  min-width: 320px;
 }
 .grow-2 {
   flex: 1.4;
@@ -498,12 +501,16 @@ function addedColor(added: number | null): string {
 .kv b {
   color: var(--ops-text-1);
 }
-/* Broker 计数 MetricCard 网格 */
+/* Broker 计数 MetricCard 网格：窄屏自动减列 */
 .mc-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
   gap: 8px;
   margin-bottom: 10px;
+}
+/* 表格内部横向滚动，不撑破页面 */
+.table-scroll {
+  overflow-x: auto;
 }
 /* 队列表新增（吞吐）列 */
 .trend-num {

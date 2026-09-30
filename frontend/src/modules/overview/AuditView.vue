@@ -57,7 +57,9 @@ const columns = computed(() => [
     <template #header-extra>
       <span style="color: #999; font-size: 12px">{{ $t('audit.hint') }}</span>
     </template>
+    <!-- scroll-x=900（列宽合计 895）：窄屏时表格内部横向滚动，而不是把页面撑宽 -->
     <n-data-table class="audit-table" :columns="columns" :data="data?.items ?? []" :loading="loading"
+      :scroll-x="900"
       :row-key="(row: Record<string, unknown>) => String(row.time) + String(row.operation)" size="small" :bordered="false" :single-line="false" />
     <n-space justify="end" style="margin-top: 12px">
       <n-pagination :page="page" :page-size="size" :item-count="data?.total ?? 0"

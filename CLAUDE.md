@@ -22,7 +22,7 @@ Monorepo layout:
 ```bash
 # Backend
 uv sync                                                       # install deps into .venv
-uv run --env-file .env uvicorn backend.app.main:app --reload  # dev server (http://127.0.0.1:8000, docs at /docs)
+uv run --env-file .env python -m uvicorn backend.app.main:app --host 0.0.0.0 --port 8000  # dev server (http://127.0.0.1:8000, docs at /docs)
 uv run pytest                                                 # run backend tests (19 files, fakeredis — no live services)
 uv add <package>                                              # add a dependency
 
@@ -38,11 +38,15 @@ uv run --env-file .env python scripts/e2e_live.py
 
 # Deploy (single command; reuses existing Redis via OPS_REDIS_URL, ops-nginx on ${OPS_PORT:-8090})
 docker compose up -d --build
+
+cd frontend && npm run dev -- --host 0.0.0.0 
 ```
 
 Env vars live in `.env` (gitignored) — one file shared by local dev (`--env-file .env`) and Compose (auto-read). Template: `.env.example`. E2E-only vars (ARTEMIS_*, SERVER_*) are optional.
 
 Gotcha: if `uv run uvicorn ...` fails with "uv trampoline failed to canonicalize script path", run `uv sync --reinstall-package uvicorn`, or use `uv run python -m uvicorn backend.app.main:app`.
+
+Gotcha (this machine): do NOT pass `--reload` — StatReload wedges on Windows when the repo is being touched (e.g. PyCharm indexing): the listening socket vanishes while the worker process survives, `Ctrl+C` stops working, and the port stays unusable until both PIDs are killed. Start without `--reload`.
 
 ## Architecture
 

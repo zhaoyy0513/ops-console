@@ -592,14 +592,15 @@ const INFO_METRICS = computed(() => {
 <template>
   <n-space vertical :size="12">
     <n-card size="small">
-      <n-space align="center" :size="12" :wrap="false">
+      <!-- 允许换行：窄屏下控件折行而不是把页面撑出横向滚动条 -->
+      <n-space align="center" :size="12">
         <span>{{ $t('redis.instance') }}</span>
-        <n-select v-model:value="instanceId" size="small" style="width: 200px"
+        <n-select v-model:value="instanceId" size="small" style="width: 200px; max-width: 100%"
           :placeholder="$t('redis.selectRedis')" :options="instances" />
         <span>{{ $t('redis.db') }}</span>
-        <n-select v-model:value="db" size="small" style="width: 160px" :options="DB_OPTIONS"
+        <n-select v-model:value="db" size="small" style="width: 160px; max-width: 100%" :options="DB_OPTIONS"
           :render-label="renderDbLabel" @update:value="refreshDb" />
-        <n-input v-model:value="pattern" size="small" style="width: 240px"
+        <n-input v-model:value="pattern" size="small" style="width: 240px; max-width: 100%"
           :placeholder="$t('redis.search')" @keyup.enter="refreshDb" />
         <n-button size="small" :loading="loading" :title="$t('redis.manualRefreshTip')" @click="refreshDb">{{ $t('common.refresh') }}</n-button>
         <tab-help topic="redis" />
@@ -717,7 +718,7 @@ const INFO_METRICS = computed(() => {
     </div>
 
     <!-- 保存确认对话框（PRD §11.4） -->
-    <n-modal :mask-closable="false" :close-on-esc="false" v-model:show="confirmShow" preset="card" :title="$t('redis.confirmSave')" style="width: 520px">
+    <n-modal :mask-closable="false" :close-on-esc="false" v-model:show="confirmShow" preset="card" :title="$t('redis.confirmSave')" style="width: 520px; max-width: 94vw">
       <p>{{ $t('redis.writeKey') }} <b class="mono">{{ detail?.key }}</b></p>
       <template #footer>
         <div style="display: flex; justify-content: end; gap: 8px">
@@ -729,7 +730,7 @@ const INFO_METRICS = computed(() => {
     </n-modal>
 
     <!-- 新增 Key：按数据类型 set 建 key（非 string 由后端按行解析文本）+ 可选 expire 设 TTL -->
-    <n-modal :mask-closable="false" :close-on-esc="false" v-model:show="addShow" preset="card" :title="$t('redis.addKey')" style="width: 520px">
+    <n-modal :mask-closable="false" :close-on-esc="false" v-model:show="addShow" preset="card" :title="$t('redis.addKey')" style="width: 520px; max-width: 94vw">
       <div class="add-field">
         <span>{{ $t('redis.keyName') }}</span>
         <n-input v-model:value="addKeyName" class="mono" :placeholder="$t('redis.keyNamePh')"
@@ -775,10 +776,12 @@ const INFO_METRICS = computed(() => {
   display: flex;
   gap: 12px;
   align-items: stretch;
+  min-width: 0;
 }
 .left-pane {
   width: 360px;
   flex: none;
+  max-width: 100%;
 }
 .right-pane {
   flex: 1;
@@ -787,6 +790,18 @@ const INFO_METRICS = computed(() => {
 .tree-scroll {
   max-height: calc(100vh - 320px);
   overflow: auto;
+}
+/* 窄屏竖向堆叠：树面板占满宽度并限高，保证值面板可见（不出现页面级横向滚动条） */
+@media (max-width: 960px) {
+  .split {
+    flex-direction: column;
+  }
+  .left-pane {
+    width: auto;
+  }
+  .tree-scroll {
+    max-height: 40vh;
+  }
 }
 /* 顶栏自动刷新频率注记（对齐 Server 页 poll-note） */
 .poll-note {
@@ -830,6 +845,7 @@ const INFO_METRICS = computed(() => {
   align-items: center;
   gap: 12px;
   margin-top: 12px;
+  flex-wrap: wrap;
 }
 .add-field {
   display: flex;

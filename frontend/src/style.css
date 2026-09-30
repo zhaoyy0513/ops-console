@@ -28,11 +28,12 @@ body {
   position: sticky;
   top: 0;
   z-index: 20;
-  height: 48px;
+  min-height: 48px; /* 窄窗口 header-actions 折行时允许增高 */
   flex: none;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 16px;
+  gap: 8px 16px;
   padding: 0 16px;
   background: var(--ops-surface);
   border-bottom: 1px solid var(--ops-border);
@@ -41,10 +42,13 @@ body {
 .brand {
   font-weight: 600;
   font-size: 15px;
+  flex: none;
+  white-space: nowrap;
 }
 
 .site-select {
   width: 200px;
+  min-width: 140px; /* 窄窗口可收缩到 140px，不把整行撑出横向滚动 */
 }
 
 .app-body {
@@ -94,9 +98,16 @@ body {
 
 .app-main {
   flex: 1;
+  min-width: 0; /* flex 子项默认 min-width:auto，宽表格会把整页撑出横向滚动 */
   padding: 16px;
   /* 超宽屏不无限拉伸（约 80% 视觉宽度），窄窗口仍占满 */
   max-width: 1600px;
   margin: 0 auto;
   width: 100%;
+}
+
+@media (max-width: 768px) {
+  .app-main {
+    padding: 12px;
+  }
 }

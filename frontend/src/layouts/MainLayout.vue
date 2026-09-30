@@ -138,7 +138,7 @@ function onSiteSelect(id: string) {
           <button class="collapse-btn" :title="collapsed ? $t('layout.expand') : $t('layout.collapse')" @click="collapsed = !collapsed">
             <n-icon :component="collapsed ? ChevronForwardOutline : ChevronBackOutline" :size="16" />
           </button>
-          <span v-if="!collapsed" class="build-stamp">b0929-1916</span>
+          <span v-if="!collapsed" class="build-stamp">b0930-1012</span>
         </div>
       </aside>
       <main class="app-main">
@@ -214,6 +214,7 @@ function onSiteSelect(id: string) {
   border: 1px solid var(--ops-border);
   border-radius: 6px;
   padding: 2px 4px;
+  flex: none; /* 操作条整体不压缩，空间不足时由 flex-wrap 折到第二行 */
 }
 .header-actions :deep(.n-button) {
   --n-color: transparent;

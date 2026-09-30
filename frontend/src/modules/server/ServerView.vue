@@ -269,7 +269,7 @@ const diskColumns = computed<DataTableColumns<DiskRow>>(() => [
   <!-- flex 布局替代 n-space（避免重复 key 告警），间距与全局 12px 规范一致 -->
   <div class="sv-stack">
     <n-card size="small">
-      <n-space align="center" :size="12" :wrap="false">
+      <n-space align="center" :size="12">
         <span>{{ $t('server.title') }}</span>
         <n-select
           v-model:value="serverId"
@@ -389,7 +389,8 @@ const diskColumns = computed<DataTableColumns<DiskRow>>(() => [
       </n-card>
 
       <n-card size="small" :title="$t('server.topProcesses')">
-        <n-table :single-line="false" size="small">
+        <div class="table-scroll">
+          <n-table :single-line="false" size="small">
           <thead>
             <tr>
               <th>{{ $t('server.pid') }}</th>
@@ -407,6 +408,7 @@ const diskColumns = computed<DataTableColumns<DiskRow>>(() => [
             </tr>
           </tbody>
         </n-table>
+        </div>
       </n-card>
 
       <n-card size="small" :title="$t('server.diskTable')">
@@ -474,12 +476,16 @@ const diskColumns = computed<DataTableColumns<DiskRow>>(() => [
   flex-direction: column;
   gap: 12px;
 }
-/* 指标卡统一网格：5 列等宽等高（grid 默认 stretch），卡片即网格项，不再套包装层 */
+/* 指标卡统一网格：等宽等高（grid 默认 stretch），卡片即网格项；窄屏自动减列换行 */
 .sv-cards {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
   gap: 12px;
   align-items: stretch;
+}
+/* 表格内部横向滚动，不撑破页面 */
+.table-scroll {
+  overflow-x: auto;
 }
 /* 唯一可点击卡片（僵尸进程）：点击绑定在卡片本体上，点击区域与卡片完全一致 */
 .tile-click {

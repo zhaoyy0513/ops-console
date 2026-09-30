@@ -342,7 +342,9 @@ function confirmRun() {
         <n-button size="small" type="primary" @click="openCreate">{{ $t('ssh.newScript') }}</n-button>
       </template>
       <n-spin :show="loading">
-        <n-table :single-line="false" size="small">
+        <!-- overflow-x:auto：窄窗口时表格内部横向滚动，不撑破页面 -->
+        <div class="table-scroll">
+          <n-table :single-line="false" size="small">
           <thead>
             <tr>
               <th>{{ $t('ssh.colName') }}</th><th style="width: 22%">{{ $t('ssh.colServer') }}</th><th style="width: 100px">{{ $t('ssh.colCron') }}</th><th style="width: 70px">{{ $t('ssh.colSched') }}</th><th>{{ $t('ssh.colContent') }}</th><th style="width: 210px">{{ $t('common.actions') }}</th>
@@ -380,13 +382,14 @@ function confirmRun() {
               <td :colspan="7"><EmptyState :title="$t('ssh.empty')" /></td>
             </tr>
           </tbody>
-        </n-table>
+          </n-table>
+        </div>
       </n-spin>
     </n-card>
 
     <!-- 编辑/新增脚本 -->
     <n-modal :mask-closable="false" :close-on-esc="false" v-model:show="editShow" preset="card"
-      :title="editingId ? $t('ssh.editTitle') : $t('ssh.createTitle')" style="width: 640px">
+      :title="editingId ? $t('ssh.editTitle') : $t('ssh.createTitle')" style="width: 640px; max-width: 94vw">
       <n-form label-placement="top">
         <n-form-item :label="$t('ssh.formName')" required>
           <n-input v-model:value="form.name" :placeholder="$t('ssh.namePh')" />
@@ -491,6 +494,10 @@ function confirmRun() {
 </template>
 
 <style scoped>
+/* 窄窗口：表格在容器内横向滚动（列固定宽 22%/100/70/210px 之和可能超出容器） */
+.table-scroll {
+  overflow-x: auto;
+}
 .mono {
   font-family: ui-monospace, Consolas, monospace;
 }

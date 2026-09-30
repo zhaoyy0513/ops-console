@@ -107,7 +107,8 @@ function fmtTime(iso: string): string {
     </div>
 
     <n-card v-if="data?.issues?.length" size="small" :title="$t('overview.issues')">
-      <n-table :single-line="false" size="small">
+      <div class="table-scroll">
+        <n-table :single-line="false" size="small">
         <thead>
           <tr><th style="width: 90px">{{ $t('overview.colLevel') }}</th><th style="width: 90px">{{ $t('overview.colType') }}</th><th>{{ $t('overview.colResource') }}</th><th>{{ $t('overview.colDetail') }}</th><th style="width: 150px">{{ $t('overview.colCheckedAt') }}</th></tr>
         </thead>
@@ -121,13 +122,15 @@ function fmtTime(iso: string): string {
           </tr>
         </tbody>
       </n-table>
+      </div>
     </n-card>
 
     <n-card v-if="data" size="small" :title="$t('overview.recentOps')">
       <template #header-extra>
         <n-button size="tiny" quaternary @click="router.push('/audit')">{{ $t('overview.allLogs') }}</n-button>
       </template>
-      <n-table :single-line="false" size="small">
+      <div class="table-scroll">
+        <n-table :single-line="false" size="small">
         <thead>
           <tr><th style="width: 130px">{{ $t('overview.colTime') }}</th><th>{{ $t('overview.colResource') }}</th><th>{{ $t('overview.colOperation') }}</th><th>{{ $t('overview.colTarget') }}</th><th style="width: 90px">{{ $t('overview.colResult') }}</th></tr>
         </thead>
@@ -146,6 +149,7 @@ function fmtTime(iso: string): string {
           </tr>
         </tbody>
       </n-table>
+      </div>
     </n-card>
   </div>
 </template>
@@ -164,12 +168,17 @@ function fmtTime(iso: string): string {
 }
 .ov-tiles {
   display: flex;
+  flex-wrap: wrap;
   gap: 12px;
 }
 .tile-wrap {
   flex: 1;
-  min-width: 140px;
+  min-width: 150px;
   cursor: pointer;
+}
+/* 表格内部横向滚动，不撑破页面 */
+.table-scroll {
+  overflow-x: auto;
 }
 .dist {
   display: inline-flex;
