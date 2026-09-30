@@ -60,7 +60,7 @@ export const helpContent: Record<HelpLang, Record<string, HelpSection>> = {
       title: '说明 · Device',
       lines: [
         '按实例接入设备 HTTP 接口，展示设备编码、名称、状态、电量、位置、举升与货架编码；列表每 30 秒自动刷新，也可手动刷新。',
-        '每个实例可配置字段映射与值映射（站点管理 → 资源 → 设备 → 字段映射）：字段映射解决接口字段名差异，值映射把状态枚举翻译为可读文本（如 1=CREATE）。',
+        '每个实例可配置字段映射与值映射（站点管理 → 资源 → 设备 → 字段映射）：字段映射支持绑定（直接取 JSON 字段）或模板（自由拼接文本，字段名用花括号占位）两种模式；值映射按行把原始值翻译为可读文本（如 1=CREATE），未命中显示原值。',
         '状态徽标颜色：绿=运行/在线（running/working/active/online），黄=空闲/充电/暂停（idle/charging/standby/paused），红=故障/离线（error/fault/offline/down）；无法识别的状态显示为灰色并保留原始值。',
         '电量 <20% 显示为红色，提醒及时充电。',
         '「Detail」弹窗展示设备关键信息；底部 Raw JSON 为接口返回的原始完整数据，便于核对字段映射是否正确。',
@@ -130,7 +130,7 @@ export const helpContent: Record<HelpLang, Record<string, HelpSection>> = {
       title: 'Instructions · Device',
       lines: [
         'Devices are ingested per HTTP endpoint instance showing device code, name, status, battery and position (per-instance custom columns supported); the list auto-refreshes every 30s, or refresh manually.',
-        'Each instance can configure field mapping and value mapping (Sites → Resources → Device → Field mapping): field mapping resolves API field-name differences; value mapping translates status enums to readable text (e.g. 1=CREATE).',
+        'Each instance can configure field mapping and value mapping (Sites → Resources → Device → Field mapping): field mapping supports bind (take a JSON field directly) or template (free text with curly-brace placeholders) modes; value mapping translates raw values per line (e.g. 1=CREATE); unmatched values show as-is.',
         'Badge colours: green=running/online (running/working/active/online), amber=idle/charging/paused (idle/charging/standby/paused), red=fault/offline (error/fault/offline/down); unrecognised states show grey with the raw value.',
         'Battery <20% is shown in red as a charging reminder.',
         'The "Detail" modal shows key device info; Raw JSON at the bottom is the exact API payload, useful for verifying field mappings.',

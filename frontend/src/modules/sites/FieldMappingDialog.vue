@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { NButton, NDrawer, NDrawerContent, NInput, NModal, NRadio, NSelect, NSpace, NSpin, NTable, useMessage } from 'naive-ui'
+import { NButton, NDrawer, NDrawerContent, NInput, NModal, NRadio, NRadioGroup, NSelect, NSpace, NSpin, NTable, useMessage } from 'naive-ui'
 import { DEVICE_FIELDS } from '../device/fields'
 import type { DeviceCustomField } from '../device/api'
 
@@ -18,10 +18,13 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<{ (e: 'update:show', v: boolean): void; (e: 'saved'): void }>()
 
-// 业务字段列表由 device/fields.ts 公用定义驱动（与 Device 页表头同源）
-const BIZ_FIELDS = DEVICE_FIELDS
+// 弹窗内可映射的业务字段（Device 表格保留电量列，但映射弹窗不再提供 battery 行）
+const BIZ_FIELDS = DEVICE_FIELDS.filter((f) => f.key !== 'battery')
+const BIZ_KEYS = new Set(BIZ_FIELDS.map((f) => f.key))
 // 自定义字段上限（后端同校验）
 const MAX_CUSTOM = 10
+
+type FieldMode = 'bind' | 'template'
 
 const message = useMessage()
 const { t } = useI18n()
@@ -29,13 +32,15 @@ const loading = ref(false)
 const saving = ref(false)
 const jsonFields = ref<string[]>([])
 const sample = ref<Record<string, unknown> | null>(null)
-// 两列独立配置：绑定字段（下拉）与模板（输入框）；保存时模板优先
+// 每字段显式选择模式：绑定 = 直接取 JSON 字段；模板 = 自由文本 + {字段名} 占位。
+// 保存时只写当前模式的取值（另一形态清空），无隐式优先级。
+const modes = ref<Record<string, FieldMode>>({})
 const bindings = ref<Record<string, string | null>>({})
 const templates = ref<Record<string, string>>({})
 // 值->展示映射（枚举翻译），紧凑格式 "1=CREATE, 2=Free"；每实例独立
 const valueMaps = ref<Record<string, string>>({})
 // 自定义展示字段：key 生成一次后稳定（cf_+5hex），bind/template/value_map
-// 复用上面三张以 key 为索引的表 —— 编辑/预览逻辑与内置字段完全同构
+// 复用上面以 key 为索引的表 —— 编辑/预览逻辑与内置字段完全同构
 const customFields = ref<DeviceCustomField[]>([])
 // 统一行模型：内置字段（标题走 i18n，不可删改）+ 自定义字段（双语名可编辑、可删）
 const rows = computed<Array<{ key: string; cf?: DeviceCustomField }>>(() => [
@@ -74,30 +79,34 @@ function serializeValueMap(m: Record<string, string> | undefined): string {
   return Object.entries(m ?? {}).map(([k, v]) => `${k}=${v}`).join('\n')
 }
 
-/** 最终展示：取值/模板求值 -> 值映射查表（字符串化匹配，未命中原样） */
-function applyValueMap(v: unknown, key: string): string {
-  const m = parseValueMap(valueMaps.value[key])
-  return m ? (m[String(v)] ?? String(v ?? '-')) : String(v ?? '-')
+/** 原始值：绑定 = sample[字段]；模板 = 花括号替换（与后端 eval_value 同规则，缺字段补空串） */
+function rawValue(key: string): string {
+  if (!sample.value) return '-'
+  if (modes.value[key] === 'template') {
+    const tpl = templates.value[key]?.trim()
+    if (!tpl) return '-'
+    return tpl.replace(/\{(\w+)\}/g, (_, f) => String(sample.value?.[f] ?? ''))
+  }
+  const b = bindings.value[key]
+  if (!b) return '-'
+  const v = sample.value[b]
+  return v == null ? '-' : String(v)
 }
 
-function isTemplate(v: string | null | undefined): boolean {
-  return !!v && v.includes('{')
-}
-
-/** 预览：仅反映显式配置（绑定/模板 -> 值映射）；未配置显示提示，
- *  不再回退 sample[key] —— 那与后端真实取值（候选+大小写匹配）不一致，造成误导 */
+/** 预览：原始值过值映射（未配置值映射原样显示）；未配置取值显示提示 */
 function preview(key: string): string {
   if (!sample.value) return '-'
-  const tpl = templates.value[key]?.trim()
-  const b = bindings.value[key]
-  if (!tpl && !b) return t('fieldmap.unconfigured')
-  let v: unknown
-  if (tpl) {
-    v = tpl.replace(/\{(\w+)\}/g, (_, f) => String(sample.value?.[f] ?? ''))
-  } else {
-    v = sample.value[b as string] ?? '-'
-  }
-  return applyValueMap(v, key)
+  const configured = modes.value[key] === 'template'
+    ? !!templates.value[key]?.trim()
+    : !!bindings.value[key]
+  if (!configured) return t('fieldmap.unconfigured')
+  const v = rawValue(key)
+  const m = parseValueMap(valueMaps.value[key])
+  return Object.keys(m).length ? (m[v] ?? v) : v
+}
+
+function setMode(key: string, v: string | number | boolean) {
+  modes.value[key] = v as FieldMode
 }
 
 async function fetchSample() {
@@ -109,7 +118,7 @@ async function fetchSample() {
     const result = await deviceApi.sampleFields(props.siteId, props.device.id)
     jsonFields.value = result.fields
     sample.value = result.sample
-    // 已有映射回填（模板归模板列，其余归绑定列；自定义字段一并回填）
+    // 已有映射回填（含自定义字段；模板归模板，其余归绑定）
     applyMapping(props.device.field_map, props.device.value_map, props.device.custom_fields)
   } catch (e) {
     message.error((e as Error).message)
@@ -162,7 +171,7 @@ function applyClone() {
   message.success(t('fieldmap.cloned', { site: src.site_name, device: src.device_name }))
 }
 
-/** 映射配置 -> 表单回显（fetchSample 与克隆共用） */
+/** 映射配置 -> 表单回显（fetchSample 与克隆共用）；模式按已存形态推导，绑定+模板双存按旧语义归模板 */
 function applyMapping(
   fieldMap?: Record<string, string> | null,
   valueMap?: Record<string, Record<string, string>> | null,
@@ -170,15 +179,24 @@ function applyMapping(
 ) {
   const b: Record<string, string | null> = {}
   const t: Record<string, string> = {}
+  const m: Record<string, FieldMode> = {}
   for (const [k, v] of Object.entries(fieldMap ?? {})) {
-    if (isTemplate(v)) t[k] = v
-    else b[k] = v
+    if (v.includes('{')) { t[k] = v; m[k] = 'template' }
+    else { b[k] = v; m[k] = 'bind' }
+  }
+  for (const cf of customs ?? []) {
+    if (cf.template) { t[cf.key] = cf.template; m[cf.key] = 'template' }
+    else if (cf.bind) { b[cf.key] = cf.bind; m[cf.key] = 'bind' }
   }
   bindings.value = b
   templates.value = t
+  modes.value = m
   const vm: Record<string, string> = {}
-  for (const [k, m] of Object.entries(valueMap ?? {})) {
-    vm[k] = serializeValueMap(m)
+  for (const [k, mm] of Object.entries(valueMap ?? {})) {
+    vm[k] = serializeValueMap(mm)
+  }
+  for (const cf of customs ?? []) {
+    if (cf.value_map && Object.keys(cf.value_map).length) vm[cf.key] = serializeValueMap(cf.value_map)
   }
   valueMaps.value = vm
   // 克隆（快照副本）避免直接改到来源对象
@@ -187,31 +205,37 @@ function applyMapping(
 
 async function save() {
   if (!props.siteId || !props.device?.id) return
-  // 模板优先；无模板用绑定；两者皆空不存
+  // 只写当前模式的取值（另一形态不写 = 清空）；battery 等不在本弹窗内的历史映射原样保留
   const clean: Record<string, string> = {}
-  for (const f of BIZ_FIELDS) {
-    const tpl = templates.value[f.key]?.trim()
-    const bind = bindings.value[f.key]?.trim()
-    if (tpl) clean[f.key] = tpl
-    else if (bind) clean[f.key] = bind
+  for (const [k, v] of Object.entries(props.device.field_map ?? {})) {
+    if (!BIZ_KEYS.has(k)) clean[k] = v
   }
-  // 值映射：有内容才存
+  for (const f of BIZ_FIELDS) {
+    const v = modes.value[f.key] === 'template'
+      ? templates.value[f.key]?.trim()
+      : bindings.value[f.key]?.trim()
+    if (v) clean[f.key] = v
+  }
   const vClean: Record<string, Record<string, string>> = {}
+  for (const [k, m] of Object.entries(props.device.value_map ?? {})) {
+    if (!BIZ_KEYS.has(k)) vClean[k] = m
+  }
   for (const f of BIZ_FIELDS) {
     const m = parseValueMap(valueMaps.value[f.key])
     if (Object.keys(m).length) vClean[f.key] = m
   }
-  // 自定义字段：同一套 模板>绑定 + 值映射 规则；key 稳定，随保存写入实例配置
+  // 自定义字段：同一套「单模式取值 + 值映射」规则；key 稳定，随保存写入实例配置
   const customs = customFields.value.map((cf) => {
-    const tpl = templates.value[cf.key]?.trim()
-    const bind = bindings.value[cf.key]?.trim()
+    const tpl = (templates.value[cf.key] ?? '').trim()
+    const bind = bindings.value[cf.key]?.trim() ?? null
     const m = parseValueMap(valueMaps.value[cf.key])
+    const mode = modes.value[cf.key] ?? 'bind'
     return {
       key: cf.key,
       label_zh: cf.label_zh.trim(),
       label_en: cf.label_en.trim(),
-      template: tpl || null,
-      bind: tpl ? null : (bind || null),
+      template: mode === 'template' ? (tpl || null) : null,
+      bind: mode === 'bind' ? (bind || null) : null,
       value_map: Object.keys(m).length ? m : null,
     }
   })
@@ -232,7 +256,8 @@ async function save() {
 </script>
 
 <template>
-  <n-drawer :mask-closable="false" :close-on-esc="false" :show="props.show" :width="920" placement="right"
+  <n-drawer :mask-closable="false" :close-on-esc="false" :show="props.show" :width="1060" placement="right"
+    style="max-width: 94vw"
     @update:show="emit('update:show', $event)">
     <n-drawer-content :title="$t('fieldmap.title', { name: props.device?.name ?? '' })" closable>
       <n-spin :show="loading">
@@ -247,26 +272,39 @@ async function save() {
             + {{ $t('device.addCustom') }}
           </n-button>
         </div>
-        <div class="field-groups">
-          <div v-for="row in rows" :key="row.key" class="field-group">
-            <div class="field-title" :class="{ 'field-title-edit': !!row.cf }">
-              <template v-if="row.cf">
-                <!-- 自定义字段：双语展示名可编辑；内置字段名固定不可改 -->
-                <n-input v-model:value="row.cf.label_zh" size="small"
-                  :placeholder="$t('device.customNameZh')" style="width: 170px" />
-                <n-input v-model:value="row.cf.label_en" size="small"
-                  :placeholder="$t('device.customNameEn')" style="width: 170px" />
-                <n-button size="tiny" type="error" ghost @click="removeCustom(row.key)">
-                  {{ $t('common.delete') }}
-                </n-button>
-              </template>
-              <template v-else>{{ $t(`device.fields.${row.key}`) }}</template>
+        <div class="fm-scroll">
+          <div class="fm-grid">
+            <div class="fm-row fm-head">
+              <div class="c-name">{{ $t('fieldmap.nameLabel') }}</div>
+              <div class="c-mode">{{ $t('fieldmap.modeLabel') }}</div>
+              <div class="c-value">{{ $t('fieldmap.valueLabel') }}</div>
+              <div class="c-raw">{{ $t('fieldmap.raw') }}</div>
+              <div class="c-vm">{{ $t('fieldmap.vmLabel') }}</div>
+              <div class="c-preview">{{ $t('fieldmap.preview') }}</div>
+              <div class="c-del" />
             </div>
-            <div class="field-controls">
-              <div class="f-item">
-                <div class="f-label">{{ $t('fieldmap.bindLabel') }}</div>
+            <div v-for="row in rows" :key="row.key" class="fm-row fm-body">
+              <div class="c-name" :class="{ 'c-name-biz': !row.cf }">
+                <template v-if="row.cf">
+                  <!-- 自定义字段：双语展示名可编辑；内置字段名固定不可改 -->
+                  <n-input v-model:value="row.cf.label_zh" size="small"
+                    :placeholder="$t('device.customNameZh')" />
+                  <n-input v-model:value="row.cf.label_en" size="small"
+                    :placeholder="$t('device.customNameEn')" />
+                </template>
+                <template v-else>{{ $t(`device.fields.${row.key}`) }}</template>
+              </div>
+              <div class="c-mode">
+                <n-radio-group :value="modes[row.key] ?? 'bind'" size="small"
+                  @update:value="(v) => setMode(row.key, v)">
+                  <n-radio value="bind">{{ $t('fieldmap.modeBind') }}</n-radio>
+                  <n-radio value="template">{{ $t('fieldmap.modeTemplate') }}</n-radio>
+                </n-radio-group>
+              </div>
+              <div class="c-value">
                 <!-- key 绑定 deviceKey：切换实例时销毁重建，杜绝上一个 Device 的内容/高度残留 -->
                 <n-select
+                  v-if="(modes[row.key] ?? 'bind') === 'bind'"
                   :key="`b-${deviceKey}-${row.key}`"
                   v-model:value="bindings[row.key]"
                   size="small"
@@ -276,18 +314,17 @@ async function save() {
                   :placeholder="$t('fieldmap.selectPh')"
                   style="width: 100%"
                 />
-              </div>
-              <div class="f-item">
-                <div class="f-label">{{ $t('fieldmap.tplLabel') }}</div>
+                <!-- 花括号示例是模板语法本身，必须硬编码（vue-i18n 会把 {x} 当占位符） -->
                 <n-input
+                  v-else
                   :key="`t-${deviceKey}-${row.key}`"
                   v-model:value="templates[row.key]"
                   size="small"
-                  :placeholder="$t('fieldmap.tplPh')"
+                  :placeholder="'({mapId},{areaId})'"
                 />
               </div>
-              <div class="f-item">
-                <div class="f-label">{{ $t('fieldmap.vmLabel') }}</div>
+              <div class="c-raw mono">{{ rawValue(row.key) }}</div>
+              <div class="c-vm">
                 <n-input
                   :key="`v-${deviceKey}-${row.key}`"
                   v-model:value="valueMaps[row.key]"
@@ -296,9 +333,11 @@ async function save() {
                   :placeholder="$t('fieldmap.vmPh')"
                 />
               </div>
-              <div class="f-item">
-                <div class="f-label">{{ $t('fieldmap.previewLabel') }}</div>
-                <div class="preview mono">{{ preview(row.key) }}</div>
+              <div class="c-preview mono">{{ preview(row.key) }}</div>
+              <div class="c-del">
+                <n-button v-if="row.cf" size="tiny" type="error" ghost @click="removeCustom(row.key)">
+                  {{ $t('common.delete') }}
+                </n-button>
               </div>
             </div>
           </div>
@@ -349,46 +388,66 @@ async function save() {
   </n-modal>
 </template>
 <style scoped>
-.field-groups {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
+.fm-scroll {
+  overflow-x: auto;
 }
-.field-group {
-  padding-bottom: 10px;
+.fm-grid {
+  min-width: 880px;
+}
+.fm-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 0;
   border-bottom: 1px solid #f5f6f8;
 }
-.field-group:last-child {
+.fm-body:last-child {
   border-bottom: none;
 }
-.field-title {
-  font-weight: 600;
-  font-size: 13px;
-  margin-bottom: 8px;
-}
-.field-title-edit {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.field-controls {
-  display: flex;
-  gap: 12px;
-  align-items: flex-end;
-}
-.f-item {
-  flex: 1;
-  min-width: 0;
-}
-.f-label {
+.fm-head {
   color: #86909c;
   font-size: 12px;
-  margin-bottom: 4px;
+  font-weight: 400;
+  padding: 2px 0 6px;
+  border-bottom: 1px solid #e5e6eb;
 }
-.preview {
+.c-name {
+  width: 150px;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.c-name-biz {
+  font-weight: 600;
+  font-size: 13px;
+}
+.c-mode {
+  width: 112px;
+  flex: none;
+}
+.c-value {
+  flex: 1.2;
+  min-width: 170px;
+}
+.c-raw {
+  width: 120px;
+  flex: none;
+}
+.c-vm {
+  flex: 1;
+  min-width: 150px;
+}
+.c-preview {
+  width: 130px;
+  flex: none;
+}
+.c-del {
+  width: 52px;
+  flex: none;
+}
+.mono {
   font-size: 12px;
   word-break: break-all;
-  padding: 5px 0;
-  min-height: 24px;
 }
 </style>
