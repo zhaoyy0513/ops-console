@@ -20,7 +20,7 @@ export const helpContent: Record<HelpLang, Record<string, HelpSection>> = {
     overview: {
       title: '说明 · Overview',
       lines: [
-        '本页展示当前站点的整体健康状态：顶部徽标为全站最严重级别，下方按 Server / ActiveMQ / Robot / Redis 四类展示资源总数与各状态数量。',
+        '本页展示当前站点的整体健康状态：顶部徽标为全站最严重级别，下方按 Server / ActiveMQ / Device / Redis 四类展示资源总数与各状态数量。',
         '资源卡片中的彩色小标签是状态计数：绿=健康、黄=警告、红=严重、灰=未知（只显示非零项）；点击整张卡片可跳转到对应模块。',
         '「异常摘要」列出所有未恢复的诊断问题：级别、资源类型、资源名、具体说明与最近检查时间。',
         '「最近操作」来自操作日志（保留最近 1000 条），记录所有修改/删除类操作；结果 SUCCESS 为绿色、失败为红色，「全部日志」可查看完整审计记录。',
@@ -56,14 +56,14 @@ export const helpContent: Record<HelpLang, Record<string, HelpSection>> = {
       ],
     },
 
-    robot: {
-      title: '说明 · Robot',
+    device: {
+      title: '说明 · Device',
       lines: [
-        '按实例接入机器人 HTTP 接口，展示 robotCode、名称、状态、电量、位置、举升与货架编码；列表每 30 秒自动刷新，也可手动刷新。',
-        '每个实例可配置字段映射与值映射（站点管理 → 资源 → Robot → 字段映射）：字段映射解决接口字段名差异，值映射把状态枚举翻译为可读文本（如 1=CREATE）。',
+        '按实例接入设备 HTTP 接口，展示设备编码、名称、状态、电量、位置、举升与货架编码；列表每 30 秒自动刷新，也可手动刷新。',
+        '每个实例可配置字段映射与值映射（站点管理 → 资源 → 设备 → 字段映射）：字段映射解决接口字段名差异，值映射把状态枚举翻译为可读文本（如 1=CREATE）。',
         '状态徽标颜色：绿=运行/在线（running/working/active/online），黄=空闲/充电/暂停（idle/charging/standby/paused），红=故障/离线（error/fault/offline/down）；无法识别的状态显示为灰色并保留原始值。',
         '电量 <20% 显示为红色，提醒及时充电。',
-        '「Detail」弹窗展示机器人关键信息；底部 Raw JSON 为接口返回的原始完整数据，便于核对字段映射是否正确。',
+        '「Detail」弹窗展示设备关键信息；底部 Raw JSON 为接口返回的原始完整数据，便于核对字段映射是否正确。',
         '接口字段缺失时对应列显示“-”；不同实例（厂商）字段不一致属正常现象，通过字段映射对齐。',
       ],
     },
@@ -90,7 +90,7 @@ export const helpContent: Record<HelpLang, Record<string, HelpSection>> = {
     overview: {
       title: 'Instructions · Overview',
       lines: [
-        'This page shows overall site health: the top badge is the worst level site-wide, and the tiles below show total resources and status counts for Server / ActiveMQ / Robot / Redis.',
+        'This page shows overall site health: the top badge is the worst level site-wide, and the tiles below show total resources and status counts for Server / ActiveMQ / Device / Redis.',
         'The coloured tags in each tile are status counts: green=healthy, amber=warning, red=critical, grey=unknown (non-zero only); click a tile to jump to its module.',
         'The issue summary lists all unresolved diagnosis problems: level, resource type, resource name, detail and last check time.',
         'Recent operations come from the audit log (last 1000 kept) and record every mutating action; SUCCESS results are green, failures red — "All logs" shows the full audit trail.',
@@ -126,14 +126,14 @@ export const helpContent: Record<HelpLang, Record<string, HelpSection>> = {
       ],
     },
 
-    robot: {
-      title: 'Instructions · Robot',
+    device: {
+      title: 'Instructions · Device',
       lines: [
-        'Robots are ingested per HTTP endpoint instance showing robotCode, name, status, battery, position, lift and shelf code; the list auto-refreshes every 30s, or refresh manually.',
-        'Each instance can configure field mapping and value mapping (Sites → Resources → Robot → Field mapping): field mapping resolves API field-name differences; value mapping translates status enums to readable text (e.g. 1=CREATE).',
+        'Devices are ingested per HTTP endpoint instance showing device code, name, status, battery, position, lift and shelf code; the list auto-refreshes every 30s, or refresh manually.',
+        'Each instance can configure field mapping and value mapping (Sites → Resources → Device → Field mapping): field mapping resolves API field-name differences; value mapping translates status enums to readable text (e.g. 1=CREATE).',
         'Badge colours: green=running/online (running/working/active/online), amber=idle/charging/paused (idle/charging/standby/paused), red=fault/offline (error/fault/offline/down); unrecognised states show grey with the raw value.',
         'Battery <20% is shown in red as a charging reminder.',
-        'The "Detail" modal shows key robot info; Raw JSON at the bottom is the exact API payload, useful for verifying field mappings.',
+        'The "Detail" modal shows key device info; Raw JSON at the bottom is the exact API payload, useful for verifying field mappings.',
         'Missing API fields render as "-"; field differences between instances (vendors) are expected and resolved via field mapping.',
       ],
     },

@@ -3,7 +3,7 @@ import './overview'
 import './server'
 import './redis'
 import './mq'
-import './robot'
+import './device'
 import './ssh'
 import './database'
 

@@ -52,8 +52,8 @@ class MqConfig(ResourceBase):
     password: str = ""
 
 
-class RobotConfig(ResourceBase):
-    base_url: str  # 完整 API 地址（可含路径，如 http://host:19030/mission/robot/info/active）
+class DeviceConfig(ResourceBase):
+    base_url: str  # 完整 API 地址（可含路径，如 http://host:19030/mission/robot/info/active——上游真实路径，保持原样）
     list_path: str = ""  # 留空 = 直接请求 base_url；地址与路径分离的场景才填（如 /mission/agent/list）
     username: str = ""
     password: str = ""
@@ -79,7 +79,7 @@ RESOURCE_MODELS: dict[str, tuple[type[BaseModel], type[BaseModel]]] = {
         "servers": ServerConfig,
         "redis": RedisConfig,
         "mq": MqConfig,
-        "robots": RobotConfig,
+        "devices": DeviceConfig,
     }.items()
 }
 
@@ -139,9 +139,9 @@ def _add_resource_routes(res_type: str, url_segment: str, create_model_cls: type
     router.delete(f"/sites/{{site_id}}/{url_segment}/{{resource_id}}", status_code=204)(delete_resource)
 
 
-# robot 实例配置的 URL 段让位给 PRD §18 业务路由（/robots = 机器人列表），
-# 仅 URL 不同，存储 key 与 res_type 仍是 "robots"
-URL_SEGMENT = {"robots": "robot-instances"}
+# device 实例配置的 URL 段让位给业务路由（/sites/{id}/devices = 设备列表），
+# 仅 URL 不同，存储 key 与 res_type 仍是 "devices"（旧数据由 device 模块启动迁移）
+URL_SEGMENT = {"devices": "device-instances"}
 
 
 for _type, (_create, _update) in RESOURCE_MODELS.items():

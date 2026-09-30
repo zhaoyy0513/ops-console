@@ -13,7 +13,7 @@ afterEach(() => vi.useRealTimers())
 describe('CountdownConfirm', () => {
   async function open(seconds = 5) {
     const wrapper = mount(CountdownConfirm, {
-      props: { label: 'Delete', target: 'robot:001', seconds },
+      props: { label: 'Delete', target: 'device:001', seconds },
       global: { plugins: [i18n], stubs: { teleport: true } },
     })
     await wrapper.find('button').trigger('click') // 打开确认框

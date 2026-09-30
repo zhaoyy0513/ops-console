@@ -2,7 +2,7 @@
 
 用法：uv run --env-file .env python scripts/e2e_live.py
 覆盖：建站 → 配 4 类资源 → 连接测试 → Server 指标+诊断 → Redis SCAN/编辑/
-倒计时删除（后端等价物）→ MQ → Robot → Overview → 操作日志 → 导出导入 → 清理。
+倒计时删除（后端等价物）→ MQ → Device → Overview → 操作日志 → 导出导入 → 清理。
 任何一步失败都保证清理站点，不留脏数据。
 """
 
@@ -63,9 +63,9 @@ async def run_checks(c: httpx.AsyncClient, redis_host: str, redis_port: int) -> 
     redis_cfg = {"id": "r1", "name": "redis", "host": redis_host, "port": redis_port}
     mq_cfg = {"id": "m1", "name": "amq", "host": os.environ["ARTEMIS_URI"], "port": 8161,
               "username": os.environ["ARTEMIS_USER_NAME"], "password": os.environ["ARTEMIS_PASSOWRD"]}
-    robot_cfg = {"id": "b1", "name": "env50", "base_url": "http://10.102.129.50:19030",
-                 "list_path": "/mission/robot/info/active"}
-    for path, body in [("servers", ssh), ("redis", redis_cfg), ("mq", mq_cfg), ("robot-instances", robot_cfg)]:
+    device_cfg = {"id": "b1", "name": "env50", "base_url": "http://10.102.129.50:19030",
+                  "list_path": "/mission/robot/info/active"}  # 上游真实路径，保持原样
+    for path, body in [("servers", ssh), ("redis", redis_cfg), ("mq", mq_cfg), ("device-instances", device_cfg)]:
         r = await c.post(f"/api/sites/{SITE}/{path}", json=body)
         check(f"create {path}", r.status_code == 201)
 
@@ -74,7 +74,7 @@ async def run_checks(c: httpx.AsyncClient, redis_host: str, redis_port: int) -> 
     check("password plaintext echo", r.json()[0]["password"] == ssh["password"])
 
     # 3. 连接测试（四类）
-    for ttype, cfg in [("server", ssh), ("redis", redis_cfg), ("mq", mq_cfg), ("robot", robot_cfg)]:
+    for ttype, cfg in [("server", ssh), ("redis", redis_cfg), ("mq", mq_cfg), ("device", device_cfg)]:
         r = await c.post("/api/test-connection", json={"type": ttype, "config": cfg})
         check(f"test {ttype}", r.status_code == 200 and r.json()["success"], r.text[:120])
 
@@ -103,13 +103,13 @@ async def run_checks(c: httpx.AsyncClient, redis_host: str, redis_port: int) -> 
     r = await c.post(f"/api/sites/{SITE}/redis/r1/operations", json={"op": "flushall"})
     check("dangerous op rejected", r.status_code == 422)
 
-    # 6. MQ + Robot
+    # 6. MQ + Device
     r = await c.get(f"/api/sites/{SITE}/mq/m1/overview")
     check("mq overview", r.status_code == 200 and r.json().get("version"), r.text[:120])
     r = await c.get(f"/api/sites/{SITE}/mq/m1/queues")
     check("mq queues", r.status_code == 200 and any(q.get("diagnosis") for q in r.json()))
-    r = await c.get(f"/api/sites/{SITE}/robots")
-    check("robot list", r.status_code == 200 and len(r.json()) > 0, f"got {len(r.json()) if r.status_code == 200 else '-'}")
+    r = await c.get(f"/api/sites/{SITE}/devices")
+    check("device list", r.status_code == 200 and len(r.json()) > 0, f"got {len(r.json()) if r.status_code == 200 else '-'}")
 
     # 7. Overview + 操作日志
     r = await c.get(f"/api/sites/{SITE}/overview")

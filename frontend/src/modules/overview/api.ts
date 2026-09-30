@@ -4,7 +4,7 @@ export interface OverviewData {
   site: { id: string; name: string; description: string; enabled: boolean }
   overall: 'HEALTHY' | 'WARNING' | 'CRITICAL'
   summary: Record<
-    'server' | 'redis' | 'mq' | 'robot',
+    'server' | 'redis' | 'mq' | 'device',
     { total: number; healthy: number; warning: number; critical: number; unknown: number }
   >
   issues: Array<{ kind: string; id: string; name: string; status: string; message: string; checked_at: string }>

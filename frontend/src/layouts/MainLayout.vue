@@ -27,7 +27,7 @@ const MODULE_ICONS: Record<string, Component> = {
   server: ServerOutline,
   redis: LayersOutline,
   mq: PulseOutline,
-  robot: HardwareChipOutline,
+  device: HardwareChipOutline,
   ssh: TerminalOutline,
   database: CubeOutline,
 }
@@ -138,7 +138,7 @@ function onSiteSelect(id: string) {
           <button class="collapse-btn" :title="collapsed ? $t('layout.expand') : $t('layout.collapse')" @click="collapsed = !collapsed">
             <n-icon :component="collapsed ? ChevronForwardOutline : ChevronBackOutline" :size="16" />
           </button>
-          <span v-if="!collapsed" class="build-stamp">b0930-1043</span>
+          <span v-if="!collapsed" class="build-stamp">b0930-1137</span>
         </div>
       </aside>
       <main class="app-main">

@@ -146,7 +146,7 @@ function goConsole(site: Site) {
     :title="editing ? $t('sites.editTitle', { name: editing.name }) : $t('sites.newSite')"
     style="width: 480px"
   >
-    <n-form label-placement="left" label-width="70">
+    <n-form label-placement="left" label-width="90">
       <n-form-item :label="$t('common.name')">
         <n-input v-model:value="form.name" :placeholder="$t('sites.namePh')" />
       </n-form-item>

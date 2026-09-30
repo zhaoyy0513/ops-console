@@ -17,12 +17,12 @@ import OpsSwitch from '../../components/OpsSwitch.vue'
 export interface EditTarget {
   /** 编辑已有资源的 id；null = 新增 */
   id: string | null
-  type: 'servers' | 'redis' | 'mq' | 'robots'
+  type: 'servers' | 'redis' | 'mq' | 'devices'
   /** 编辑时的初始值（新增时传 {}） */
   item: Record<string, any>
-  /** host 下拉候选（redis/mq/robots 用） */
+  /** host 下拉候选（redis/mq/devices 用） */
   hostOptions: Array<{ label: string; value: string }>
-  /** 名称下拉候选（redis/mq/robots 用，来自同站点 Server 的名称） */
+  /** 名称下拉候选（redis/mq/devices 用，来自同站点 Server 的名称） */
   nameOptions: Array<{ label: string; value: string }>
   /** 资源所属站点（保存与测试请求的目标） */
   siteId: string
@@ -39,14 +39,14 @@ const TEST_TYPE: Record<string, string> = {
   servers: 'server',
   redis: 'redis',
   mq: 'mq',
-  robots: 'robot',
+  devices: 'device',
 }
 
 const TYPES: Record<string, string> = {
   servers: 'Server',
   redis: 'Redis',
   mq: 'ActiveMQ',
-  robots: 'Robot',
+  devices: 'Device',
 }
 
 /** 字段 label 文案在 i18n `fields.<key>`；ph 为各自占位 key（fieldmap/ph 见 sites 命名空间） */
@@ -74,7 +74,7 @@ const FIELD_DEFS: Record<
     { key: 'username', label: 'Username' },
     { key: 'password', label: 'Password' },
   ],
-  robots: [
+  devices: [
     { key: 'name', label: 'Name', kind: 'name-select', required: true },
     { key: 'base_url', label: 'Base URL', required: true },
   ],
@@ -84,7 +84,7 @@ const CREATE_DEFAULTS: Record<string, Record<string, unknown>> = {
   servers: { port: 22 },
   redis: { port: 6379 },
   mq: { port: 8161, username: 'prime_admin', password: 'hElloPr1me' },
-  robots: {},
+  devices: {},
 }
 
 const message = useMessage()
@@ -155,7 +155,7 @@ async function save() {
     style="width: 520px"
     @update:show="emit('update:show', $event)"
   >
-    <n-form label-placement="left" label-width="90">
+    <n-form label-placement="left" label-width="110">
       <n-form-item v-if="props.target?.type === 'servers'" :label="$t('common.name')" required>
         <n-input v-model:value="form.name" :placeholder="$t('sites.newName')" />
       </n-form-item>

@@ -6,7 +6,7 @@ import { i18n } from '../i18n'
 import api from '../api'
 
 const props = defineProps<{
-  /** 资源类型：server | redis | mq | robot */
+  /** 资源类型：server | redis | mq | device */
   type: string
   /** 连接配置（表单当前值或已存完整配置，含密码） */
   config: Record<string, unknown>

@@ -2,18 +2,18 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { NButton, NCard, NModal, NProgress, NSelect, NSpace, NTable, NTag, useMessage } from 'naive-ui'
 import { useSiteStore } from '../../stores/site'
-import { ROBOT_FIELDS } from './fields'
+import { DEVICE_FIELDS } from './fields'
 import TabHelp from '../../components/TabHelp.vue'
 import CodeJsonEditor from '../../components/CodeJsonEditor.vue'
-import { robotApi, type RobotRow } from './api'
+import { deviceApi, type DeviceRow } from './api'
 
 const siteStore = useSiteStore()
 const message = useMessage()
 
 const REFRESH_SECONDS = 30
 
-/** 状态徽标语义映射（robot 侧状态词 -> 红绿灯） */
-function statusTagType(r: RobotRow): 'success' | 'warning' | 'error' | 'default' {
+/** 状态徽标语义映射（device 侧状态词 -> 红绿灯） */
+function statusTagType(r: DeviceRow): 'success' | 'warning' | 'error' | 'default' {
   const s = String(r.status ?? '').toLowerCase()
   if (['error', 'fault', 'offline', 'down'].includes(s) || r.error) return 'error'
   if (['running', 'working', 'active', 'online'].includes(s)) return 'success'
@@ -23,9 +23,9 @@ function statusTagType(r: RobotRow): 'success' | 'warning' | 'error' | 'default'
 
 const instances = ref<Array<{ label: string; value: string }>>([])
 const instanceId = ref<string | null>(null)
-const robots = ref<RobotRow[]>([])
+const devices = ref<DeviceRow[]>([])
 const loading = ref(false)
-const detail = ref<RobotRow | null>(null)
+const detail = ref<DeviceRow | null>(null)
 const detailShow = ref(false)
 
 async function loadInstances() {
@@ -34,7 +34,7 @@ async function loadInstances() {
   loading.value = true
   try {
     const { sitesApi } = await import('../sites/api')
-    const list = await sitesApi.listResources(siteId, 'robots')
+    const list = await sitesApi.listResources(siteId, 'devices')
     instances.value = list.map((r) => ({ label: r.name, value: r.id }))
     if (!instanceId.value || !list.some((r) => r.id === instanceId.value)) {
       instanceId.value = list[0]?.id ?? null
@@ -53,10 +53,10 @@ async function load(silent = false) {
   if (!siteId || !instanceId.value) return
   loading.value = true
   try {
-    robots.value = await robotApi.list(siteId, instanceId.value)
+    devices.value = await deviceApi.list(siteId, instanceId.value)
     listWasOk = true
   } catch (e) {
-    robots.value = []
+    devices.value = []
     // 轮询仅在 成功->失败 边缘提示一次（避免轮询 toast 轰炸）；手动刷新始终立即提示
     if (!silent || listWasOk) message.error((e as Error).message)
     listWasOk = false
@@ -65,7 +65,7 @@ async function load(silent = false) {
   }
 }
 
-function openDetail(r: RobotRow) {
+function openDetail(r: DeviceRow) {
   detail.value = r
   detailShow.value = true
 }
@@ -84,7 +84,7 @@ function fmtTime(v: string | null): string {
 
 onMounted(loadInstances)
 
-// 30s 轮询（标签切走暂停，回来恢复；间隔标注在 Robots 标题旁）
+// 30s 轮询（标签切走暂停，回来恢复；间隔标注在 Devices 标题旁）
 let pollTimer: number | null = null
 function startPolling() {
   if (pollTimer != null) return
@@ -113,7 +113,7 @@ onBeforeUnmount(() => {
 
 watch(() => siteStore.currentSiteId, () => {
   instanceId.value = null
-  robots.value = []
+  devices.value = []
   loadInstances()
 })
 watch(instanceId, () => load())
@@ -123,27 +123,27 @@ watch(instanceId, () => load())
   <n-space vertical :size="12">
     <n-card size="small">
       <n-space align="center" :size="12" :wrap="false">
-        <span>{{ $t('robot.instance') }}</span>
+        <span>{{ $t('device.instance') }}</span>
         <n-select v-model:value="instanceId" size="small" style="width: 240px"
-          :placeholder="$t('robot.selectInstance')" :options="instances" />
+          :placeholder="$t('device.selectInstance')" :options="instances" />
         <n-button size="small" :loading="loading" @click="load()">{{ $t('common.refresh') }}</n-button>
-        <tab-help topic="robot" />
-        <span style="color: #999; font-size: 12px">{{ $t('robot.mappingHint') }}</span>
+        <tab-help topic="device" />
+        <span style="color: #999; font-size: 12px">{{ $t('device.mappingHint') }}</span>
       </n-space>
     </n-card>
 
-    <n-card size="small" :title="$t('robot.robotsTitle', { n: REFRESH_SECONDS })">
+    <n-card size="small" :title="$t('device.devicesTitle', { n: REFRESH_SECONDS })">
       <n-table :single-line="false" size="small">
         <thead>
           <tr>
-            <!-- 表头由 robot/fields.ts 公用定义驱动（与字段映射配置同源），文案随语言切换 -->
-            <th v-for="f in ROBOT_FIELDS" :key="f.key">{{ $t(`robot.fields.${f.key}`) }}</th>
-            <th style="width: 80px">{{ $t('robot.action') }}</th>
+            <!-- 表头由 device/fields.ts 公用定义驱动（与字段映射配置同源），文案随语言切换 -->
+            <th v-for="f in DEVICE_FIELDS" :key="f.key">{{ $t(`device.fields.${f.key}`) }}</th>
+            <th style="width: 80px">{{ $t('device.action') }}</th>
           </tr>
         </thead>
         <tbody>
-          <tr v-for="r in robots" :key="r.id ?? ''">
-            <td v-for="f in ROBOT_FIELDS" :key="f.key" :class="{ mono: f.key === 'id' }">
+          <tr v-for="r in devices" :key="r.id ?? ''">
+            <td v-for="f in DEVICE_FIELDS" :key="f.key" :class="{ mono: f.key === 'id' }">
               <template v-if="f.key === 'status'">
                 <n-tag :type="statusTagType(r)" size="small" :bordered="false">{{ r.status ?? '-' }}</n-tag>
               </template>
@@ -164,11 +164,11 @@ watch(instanceId, () => load())
               </template>
               <template v-else>{{ (r as any)[f.key] ?? '-' }}</template>
             </td>
-            <td><n-button size="tiny" @click="openDetail(r)">{{ $t('robot.detail') }}</n-button></td>
+            <td><n-button size="tiny" @click="openDetail(r)">{{ $t('device.detail') }}</n-button></td>
           </tr>
-          <tr v-if="!robots.length && !loading">
-            <td :colspan="ROBOT_FIELDS.length + 1" style="text-align: center; color: #999">
-              {{ instanceId ? $t('robot.emptyInstance') : $t('robot.emptyNone') }}
+          <tr v-if="!devices.length && !loading">
+            <td :colspan="DEVICE_FIELDS.length + 1" style="text-align: center; color: #999">
+              {{ instanceId ? $t('device.emptyInstance') : $t('device.emptyNone') }}
             </td>
           </tr>
         </tbody>
@@ -177,18 +177,18 @@ watch(instanceId, () => load())
 
     <!-- 详情弹窗：基础信息 + 完整 JSON -->
     <n-modal :mask-closable="false" :close-on-esc="false" v-model:show="detailShow" preset="card"
-      :title="$t('robot.detailTitle', { id: detail?.id ?? '' })" style="width: 640px">
+      :title="$t('device.detailTitle', { id: detail?.id ?? '' })" style="width: 640px">
       <template v-if="detail">
         <n-table :single-line="false" size="small">
           <tbody>
-            <tr><th style="width: 140px">{{ $t('robot.robotCode') }}</th><td style="font-family: ui-monospace, monospace">{{ detail.id ?? '-' }}</td></tr>
-            <tr><th>{{ $t('robot.robotName') }}</th><td>{{ detail.name ?? '-' }}</td></tr>
-            <tr><th>{{ $t('robot.battery') }}</th><td>{{ detail.battery ?? '-' }}{{ detail.battery != null ? '%' : '' }}</td></tr>
-            <tr><th>{{ $t('robot.position') }}</th><td>{{ detail.station ?? '-' }}</td></tr>
-            <tr><th>{{ $t('robot.lastUpdate') }}</th><td>{{ fmtTime(detail.last_update) }}</td></tr>
+            <tr><th style="width: 140px">{{ $t('device.deviceCode') }}</th><td style="font-family: ui-monospace, monospace">{{ detail.id ?? '-' }}</td></tr>
+            <tr><th>{{ $t('device.deviceName') }}</th><td>{{ detail.name ?? '-' }}</td></tr>
+            <tr><th>{{ $t('device.battery') }}</th><td>{{ detail.battery ?? '-' }}{{ detail.battery != null ? '%' : '' }}</td></tr>
+            <tr><th>{{ $t('device.position') }}</th><td>{{ detail.station ?? '-' }}</td></tr>
+            <tr><th>{{ $t('device.lastUpdate') }}</th><td>{{ fmtTime(detail.last_update) }}</td></tr>
           </tbody>
         </n-table>
-        <div style="margin: 14px 0 6px; color: var(--ops-text-2); font-size: 13px">{{ $t('robot.rawJson') }}</div>
+        <div style="margin: 14px 0 6px; color: var(--ops-text-2); font-size: 13px">{{ $t('device.rawJson') }}</div>
         <CodeJsonEditor :model-value="detailJson" readonly height="320px" />
       </template>
     </n-modal>

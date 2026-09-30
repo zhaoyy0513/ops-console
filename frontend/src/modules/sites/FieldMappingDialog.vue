@@ -2,12 +2,12 @@
 import { ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { NButton, NDrawer, NDrawerContent, NInput, NModal, NRadio, NSelect, NSpace, NSpin, NTable, useMessage } from 'naive-ui'
-import { ROBOT_FIELDS } from '../robot/fields'
+import { DEVICE_FIELDS } from '../device/fields'
 
 const props = defineProps<{
   show: boolean
   siteId: string
-  robot: {
+  device: {
     id: string
     name: string
     field_map?: Record<string, string> | null
@@ -16,8 +16,8 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<{ (e: 'update:show', v: boolean): void; (e: 'saved'): void }>()
 
-// 业务字段列表由 robot/fields.ts 公用定义驱动（与 Robot 页表头同源）
-const BIZ_FIELDS = ROBOT_FIELDS
+// 业务字段列表由 device/fields.ts 公用定义驱动（与 Device 页表头同源）
+const BIZ_FIELDS = DEVICE_FIELDS
 
 const message = useMessage()
 const { t } = useI18n()
@@ -30,8 +30,8 @@ const bindings = ref<Record<string, string | null>>({})
 const templates = ref<Record<string, string>>({})
 // 值->展示映射（枚举翻译），紧凑格式 "1=CREATE, 2=Free"；每实例独立
 const valueMaps = ref<Record<string, string>>({})
-// 当前编辑实例标识：控件 key 绑定它，切换 Robot 时销毁重建（修复 textarea 高度残留）
-const robotKey = ref('')
+// 当前编辑实例标识：控件 key 绑定它，切换 Device 时销毁重建（修复 textarea 高度残留）
+const deviceKey = ref('')
 
 /** 解析值映射：换行或逗号分隔的 k=v（支持中英文逗号）；非法片段忽略 */
 function parseValueMap(s: string | undefined): Record<string, string> {
@@ -78,16 +78,16 @@ function preview(key: string): string {
 }
 
 async function fetchSample() {
-  if (!props.show || !props.siteId || !props.robot?.id) return
+  if (!props.show || !props.siteId || !props.device?.id) return
   loading.value = true
-  robotKey.value = `${props.robot.id}#${Date.now()}`  // 每次打开换新 key，控件全新（无高度残留）
+  deviceKey.value = `${props.device.id}#${Date.now()}`  // 每次打开换新 key，控件全新（无高度残留）
   try {
-    const { robotApi } = await import('../robot/api')
-    const result = await robotApi.sampleFields(props.siteId, props.robot.id)
+    const { deviceApi } = await import('../device/api')
+    const result = await deviceApi.sampleFields(props.siteId, props.device.id)
     jsonFields.value = result.fields
     sample.value = result.sample
     // 已有映射回填（模板归模板列，其余归绑定列）
-    applyMapping(props.robot.field_map, props.robot.value_map)
+    applyMapping(props.device.field_map, props.device.value_map)
   } catch (e) {
     message.error((e as Error).message)
   } finally {
@@ -95,14 +95,14 @@ async function fetchSample() {
   }
 }
 
-watch(() => [props.show, props.robot?.id] as const, ([show]) => {
+watch(() => [props.show, props.device?.id] as const, ([show]) => {
   if (show) fetchSample()
 })
 
 // ---------- 克隆：从全局任意站点/实例复制映射配置（仅回显，保存才生效） ----------
 const cloneShow = ref(false)
 const cloneList = ref<Array<{
-  site_id: string; site_name: string; robot_id: string; robot_name: string
+  site_id: string; site_name: string; device_id: string; device_name: string
   field_map: Record<string, string> | null; value_map: Record<string, Record<string, string>> | null
 }>>([])
 const cloneLoading = ref(false)
@@ -113,11 +113,11 @@ async function openClone() {
   cloneSelected.value = null
   cloneLoading.value = true
   try {
-    const { robotApi } = await import('../robot/api')
-    const all = await robotApi.listMappings()
+    const { deviceApi } = await import('../device/api')
+    const all = await deviceApi.listMappings()
     // 排除当前编辑的实例（自己克隆自己没有意义）
     cloneList.value = all.filter(
-      (x) => !(x.site_id === props.siteId && x.robot_id === props.robot?.id),
+      (x) => !(x.site_id === props.siteId && x.device_id === props.device?.id),
     )
   } catch (e) {
     message.error((e as Error).message)
@@ -127,15 +127,15 @@ async function openClone() {
 }
 
 function applyClone() {
-  const src = cloneList.value.find((x) => `${x.site_id}/${x.robot_id}` === cloneSelected.value)
+  const src = cloneList.value.find((x) => `${x.site_id}/${x.device_id}` === cloneSelected.value)
   if (!src) {
     message.warning(t('fieldmap.pickSource'))
     return
   }
   applyMapping(src.field_map, src.value_map)
-  robotKey.value = `${robotKey.value}#clone`  // 强制重建控件，确保覆盖/清空立即生效
+  deviceKey.value = `${deviceKey.value}#clone`  // 强制重建控件，确保覆盖/清空立即生效
   cloneShow.value = false
-  message.success(t('fieldmap.cloned', { site: src.site_name, robot: src.robot_name }))
+  message.success(t('fieldmap.cloned', { site: src.site_name, device: src.device_name }))
 }
 
 /** 映射配置 -> 表单回显（fetchSample 与克隆共用） */
@@ -159,7 +159,7 @@ function applyMapping(
 }
 
 async function save() {
-  if (!props.siteId || !props.robot?.id) return
+  if (!props.siteId || !props.device?.id) return
   // 模板优先；无模板用绑定；两者皆空不存
   const clean: Record<string, string> = {}
   for (const f of BIZ_FIELDS) {
@@ -176,7 +176,7 @@ async function save() {
   }
   const { sitesApi } = await import('./api')
   try {
-    await sitesApi.updateResource(props.siteId, 'robots', props.robot.id, {
+    await sitesApi.updateResource(props.siteId, 'devices', props.device.id, {
       field_map: Object.keys(clean).length ? clean : null,
       value_map: Object.keys(vClean).length ? vClean : null,
     })
@@ -192,20 +192,20 @@ async function save() {
 <template>
   <n-drawer :mask-closable="false" :close-on-esc="false" :show="props.show" :width="920" placement="right"
     @update:show="emit('update:show', $event)">
-    <n-drawer-content :title="$t('fieldmap.title', { name: props.robot?.name ?? '' })" closable>
+    <n-drawer-content :title="$t('fieldmap.title', { name: props.device?.name ?? '' })" closable>
       <n-spin :show="loading">
         <p style="margin-bottom: 12px; color: #666; font-size: 13px">
           {{ $t('fieldmap.intro') }}
         </p>
         <div class="field-groups">
           <div v-for="f in BIZ_FIELDS" :key="f.key" class="field-group">
-            <div class="field-title">{{ $t(`robot.fields.${f.key}`) }}</div>
+            <div class="field-title">{{ $t(`device.fields.${f.key}`) }}</div>
             <div class="field-controls">
               <div class="f-item">
                 <div class="f-label">{{ $t('fieldmap.bindLabel') }}</div>
-                <!-- key 绑定 robotKey：切换实例时销毁重建，杜绝上一个 Robot 的内容/高度残留 -->
+                <!-- key 绑定 deviceKey：切换实例时销毁重建，杜绝上一个 Device 的内容/高度残留 -->
                 <n-select
-                  :key="`b-${robotKey}-${f.key}`"
+                  :key="`b-${deviceKey}-${f.key}`"
                   v-model:value="bindings[f.key]"
                   size="small"
                   clearable
@@ -218,7 +218,7 @@ async function save() {
               <div class="f-item">
                 <div class="f-label">{{ $t('fieldmap.tplLabel') }}</div>
                 <n-input
-                  :key="`t-${robotKey}-${f.key}`"
+                  :key="`t-${deviceKey}-${f.key}`"
                   v-model:value="templates[f.key]"
                   size="small"
                   :placeholder="$t('fieldmap.tplPh')"
@@ -227,7 +227,7 @@ async function save() {
               <div class="f-item">
                 <div class="f-label">{{ $t('fieldmap.vmLabel') }}</div>
                 <n-input
-                  :key="`v-${robotKey}-${f.key}`"
+                  :key="`v-${deviceKey}-${f.key}`"
                   v-model:value="valueMaps[f.key]"
                   type="textarea"
                   :rows="1"
@@ -253,7 +253,7 @@ async function save() {
     </n-drawer-content>
   </n-drawer>
 
-  <!-- 克隆来源选择：列出全部站点的 Robot 映射配置 -->
+  <!-- 克隆来源选择：列出全部站点的 Device 映射配置 -->
   <n-modal :mask-closable="false" :close-on-esc="false" v-model:show="cloneShow" preset="card" :title="$t('fieldmap.cloneTitle')" style="width: 520px">
     <p style="margin-bottom: 10px; color: #666; font-size: 13px">
       {{ $t('fieldmap.cloneIntro') }}
@@ -261,16 +261,16 @@ async function save() {
     <n-spin :show="cloneLoading">
       <n-table :single-line="false" size="small" class="clone-table">
         <thead>
-          <tr><th style="width: 50px">{{ $t('fieldmap.pickCol') }}</th><th style="width: 40%">{{ $t('fieldmap.siteCol') }}</th><th>{{ $t('fieldmap.robotCol') }}</th></tr>
+          <tr><th style="width: 50px">{{ $t('fieldmap.pickCol') }}</th><th style="width: 40%">{{ $t('fieldmap.siteCol') }}</th><th>{{ $t('fieldmap.deviceCol') }}</th></tr>
         </thead>
         <tbody>
-          <tr v-for="x in cloneList" :key="x.site_id + '/' + x.robot_id"
+          <tr v-for="x in cloneList" :key="x.site_id + '/' + x.device_id"
             class="clone-row"
-            :class="{ 'clone-selected': cloneSelected === x.site_id + '/' + x.robot_id }"
-            @click="cloneSelected = x.site_id + '/' + x.robot_id">
-            <td><n-radio :checked="cloneSelected === x.site_id + '/' + x.robot_id" /></td>
+            :class="{ 'clone-selected': cloneSelected === x.site_id + '/' + x.device_id }"
+            @click="cloneSelected = x.site_id + '/' + x.device_id">
+            <td><n-radio :checked="cloneSelected === x.site_id + '/' + x.device_id" /></td>
             <td>{{ x.site_name }}</td>
-            <td>{{ x.robot_name }}</td>
+            <td>{{ x.device_name }}</td>
           </tr>
           <tr v-if="!cloneList.length && !cloneLoading">
             <td colspan="2" style="text-align: center; color: #999">{{ $t('fieldmap.noClone') }}</td>

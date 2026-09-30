@@ -52,7 +52,7 @@ const KIND_META: Record<string, { label: string; route: string; icon: Component 
   server: { label: 'Server', route: 'server', icon: ServerOutline },
   redis: { label: 'Redis', route: 'redis', icon: LayersOutline },
   mq: { label: 'ActiveMQ', route: 'mq', icon: PulseOutline },
-  robot: { label: 'Robot', route: 'robot', icon: HardwareChipOutline },
+  device: { label: 'Device', route: 'device', icon: HardwareChipOutline },
 }
 
 /** tile 顶边色：有 critical 红、有 warning 黄、全健康绿、无资源灰 */

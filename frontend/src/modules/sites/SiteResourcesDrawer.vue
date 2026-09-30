@@ -28,7 +28,7 @@ const TYPES: Array<{ key: ResourceType; label: string }> = [
   { key: 'servers', label: 'Server' },
   { key: 'redis', label: 'Redis' },
   { key: 'mq', label: 'ActiveMQ' },
-  { key: 'robots', label: 'Robot' },
+  { key: 'devices', label: 'Device' },
 ]
 
 /** 各 tab 表格的列定义（编辑表单字段定义在 ResourceEditModal 内）；列头文案在 i18n fields.<key> */
@@ -51,7 +51,7 @@ const COLUMN_DEFS: Record<ResourceType, Array<{ key: string; label: string }>> =
     { key: 'username', label: '用户名' },
     { key: 'password', label: '密码' },
   ],
-  robots: [
+  devices: [
     { key: 'base_url', label: 'Base URL' },
   ],
 }
@@ -75,9 +75,9 @@ const editTarget = ref<{
   siteId: string
 } | null>(null)
 
-/** Robot 字段映射弹窗 */
+/** Device 字段映射弹窗 */
 const mappingShow = ref(false)
-const mappingRobot = ref<ResourceConfig | null>(null)
+const mappingDevice = ref<ResourceConfig | null>(null)
 
 async function load() {
   if (!props.show || !siteId.value) return
@@ -88,7 +88,7 @@ async function load() {
   }
 }
 
-/** 同站点 Server 候选（host / 名称），供 redis/mq/robots 快速选择 */
+/** 同站点 Server 候选（host / 名称），供 redis/mq/devices 快速选择 */
 async function loadServerOptions(): Promise<{
   hostOptions: Array<{ label: string; value: string }>
   nameOptions: Array<{ label: string; value: string }>
@@ -159,7 +159,7 @@ function displayValue(item: ResourceConfig, key: string): string {
   return String(v)
 }
 
-const hasMapping = computed(() => activeType.value === 'robots')
+const hasMapping = computed(() => activeType.value === 'devices')
 </script>
 
 <template>
@@ -190,7 +190,7 @@ const hasMapping = computed(() => activeType.value === 'robots')
                     <n-button
                       v-if="hasMapping && item.id"
                       size="tiny"
-                      @click="((mappingRobot = item), (mappingShow = true))"
+                      @click="((mappingDevice = item), (mappingShow = true))"
                     >{{ $t('sites.mappingBtn') }}</n-button>
                     <n-popconfirm @positive-click="remove(item)">
                       <template #trigger>
@@ -220,11 +220,11 @@ const hasMapping = computed(() => activeType.value === 'robots')
     @saved="onSaved"
   />
 
-  <!-- Robot 字段映射弹窗 -->
+  <!-- Device 字段映射弹窗 -->
   <field-mapping-dialog
     v-model:show="mappingShow"
     :site-id="siteId"
-    :robot="mappingRobot"
+    :device="mappingDevice"
     @saved="onSaved"
   />
 </template>

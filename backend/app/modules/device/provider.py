@@ -1,8 +1,11 @@
-"""Robot HTTP Provider（PRD §12）：业务层不直接依赖具体 Robot API。
+"""Device HTTP Provider（PRD §12）：业务层不直接依赖具体设备 API。
 
-V1 约定：GET {base_url}/robots 列表、GET {base_url}/robots/{id} 详情，
-返回 JSON。字段映射尽量宽容（多种常见命名），现场 API 结构确认后只需调整
-映射层（normalize_robot），业务与 API 层不动。
+V1 约定：GET {base_url} 列表（或 list_path），返回 JSON。字段映射尽量宽容
+（多种常见命名），现场 API 结构确认后只需调整映射层（normalize_device），
+业务与 API 层不动。
+
+注意：候选字段名/信封 key 中出现的 robotCode、robots 等是上游设备接口的
+线上字段名（wire contract），不属于本平台命名，保持原样。
 """
 
 from typing import Any
@@ -15,9 +18,10 @@ from backend.app.shared.timeout import with_timeout
 
 # 常见字段名候选（按优先级）；现场同厂商产品线字段基本一致，
 # 新增环境只需在此扩充候选/转换，不改业务与 API 层
+# （robotCode/robotName 等为上游接口字段名，非平台命名）
 _FIELD_CANDIDATES: dict[str, tuple[str, ...]] = {
-    "id": ("robotCode", "id", "robotId", "robot_id", "robotID"),
-    "name": ("robotName", "name", "robot_name"),
+    "id": ("robotCode", "id", "robotId", "robot_id", "robotID", "deviceCode", "deviceId"),
+    "name": ("robotName", "name", "robot_name", "deviceName"),
     "status": ("online", "status", "state", "runStatus", "run_status"),
     "battery": ("battery", "batteryLevel", "battery_level", "power"),
     "station": ("station", "currentStation", "current_station", "position", "location"),
@@ -68,7 +72,7 @@ def _last_update(raw: dict[str, Any]) -> Any:
     return None
 
 
-def normalize_robot(
+def normalize_device(
     raw: dict[str, Any],
     field_map: dict[str, str] | None = None,
     value_map: dict[str, dict[str, str]] | None = None,
@@ -166,24 +170,24 @@ def normalize_robot(
     }
 
 
-class RobotProvider:
+class DeviceProvider:
     """统一接口（PRD §12）：未来其他厂商 API 换实现即可。"""
 
-    async def get_robot_list(self) -> list[dict[str, Any]]:
+    async def get_device_list(self) -> list[dict[str, Any]]:
         raise NotImplementedError
 
-    async def get_robot_detail(self, robot_id: str) -> dict[str, Any]:
+    async def get_device_detail(self, device_id: str) -> dict[str, Any]:
         raise NotImplementedError
 
     async def run_test(self) -> str:
         raise NotImplementedError
 
 
-class HttpRobotProvider(RobotProvider):
+class HttpDeviceProvider(DeviceProvider):
     def __init__(self, config: dict[str, Any]):
         self._base_url: str = str(config.get("base_url") or "").rstrip("/")
         if not self._base_url:
-            raise OpsError("INVALID_OPERATION", "robot base_url required", status_code=400)
+            raise OpsError("INVALID_OPERATION", "device base_url required", status_code=400)
         # 现场仅一个 URL 字段：base_url 即完整地址；地址与路径分离时才配 list_path
         self._list_path: str = str(config.get("list_path") or "")
         self._username: str = config.get("username") or ""
@@ -207,20 +211,20 @@ class HttpRobotProvider(RobotProvider):
         except OpsError:
             raise
         except httpx.HTTPError as e:
-            raise OpsError("REMOTE_CONNECTION_FAILED", f"Robot API request failed: {e}", self._base_url) from None
+            raise OpsError("REMOTE_CONNECTION_FAILED", f"Device API request failed: {e}", self._base_url) from None
         if resp.status_code in (401, 403):
-            raise OpsError("AUTH_FAILED", "Robot API authentication failed", self._base_url, status_code=502)
+            raise OpsError("AUTH_FAILED", "Device API authentication failed", self._base_url, status_code=502)
         if resp.status_code >= 400:
-            raise OpsError("REMOTE_BAD_RESPONSE", f"Robot API HTTP {resp.status_code}", self._base_url)
+            raise OpsError("REMOTE_BAD_RESPONSE", f"Device API HTTP {resp.status_code}", self._base_url)
         try:
             return resp.json()
         except ValueError:
-            raise OpsError("REMOTE_BAD_RESPONSE", "Robot API returned non-JSON", self._base_url) from None
+            raise OpsError("REMOTE_BAD_RESPONSE", "Device API returned non-JSON", self._base_url) from None
 
     @staticmethod
     def _unwrap_list(data: Any) -> list[dict[str, Any]]:
         """宽容解包：直接数组 / 常见信封 key / 自动探测 list-of-dict 信封
-        （现场信封 key 不统一：records / result / data ...）。"""
+        （现场信封 key 不统一：records / result / data ...；robots 为上游信封 key）。"""
         if isinstance(data, list):
             return [x for x in data if isinstance(x, dict)]
         if isinstance(data, dict):
@@ -239,12 +243,12 @@ class HttpRobotProvider(RobotProvider):
         # 路径合并——实测它会给 ".../list" 补尾斜杠，Spring 端 404/500）
         return self._list_path or self._base_url
 
-    async def get_robot_list(self) -> list[dict[str, Any]]:
+    async def get_device_list(self) -> list[dict[str, Any]]:
         async with self._client() as c:
             data = await self._get(c, self._list_request_path())
         out = []
         for raw in self._unwrap_list(data):
-            item = normalize_robot(raw, self._field_map, self._value_map)
+            item = normalize_device(raw, self._field_map, self._value_map)
             item["_raw"] = raw  # 原始完整 JSON，详情弹窗展示用
             out.append(item)
         return out
@@ -256,15 +260,15 @@ class HttpRobotProvider(RobotProvider):
         raw = self._unwrap_list(data)
         return raw[0] if raw else None
 
-    async def get_robot_detail(self, robot_id: str) -> dict[str, Any]:
+    async def get_device_detail(self, device_id: str) -> dict[str, Any]:
         # 列表已含全部展示字段（现场两个环境均如此）：详情 = 列表内查找，
         # 免去第二个端点的格式假设
-        for robot in await self.get_robot_list():
-            if str(robot.get("id")) == str(robot_id):
-                return robot
-        raise OpsError("REMOTE_BAD_RESPONSE", f"robot not found: {robot_id}", self._base_url)
+        for device in await self.get_device_list():
+            if str(device.get("id")) == str(device_id):
+                return device
+        raise OpsError("REMOTE_BAD_RESPONSE", f"device not found: {device_id}", self._base_url)
 
     async def run_test(self) -> str:
         async with self._client() as c:
             data = await self._get(c, self._list_request_path())
-        return f"Robot API OK, {len(self._unwrap_list(data))} robots"
+        return f"Device API OK, {len(self._unwrap_list(data))} devices"

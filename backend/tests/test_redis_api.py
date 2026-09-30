@@ -124,8 +124,8 @@ async def test_redis_tester_via_test_connection(client, patch_info_client):
 
 
 async def _seed_keys(target_redis):
-    await target_redis.set("robot:001", "a")
-    await target_redis.set("robot:002", "b")
+    await target_redis.set("device:001", "a")
+    await target_redis.set("device:002", "b")
     await target_redis.hset("user:1", mapping={"name": "n"})
     await target_redis.sadd("tags", "x", "y")
     await target_redis.rpush("queue", "j1", "j2")
@@ -135,9 +135,9 @@ async def _seed_keys(target_redis):
 async def test_scan_pagination_and_type_filter(client, target_redis):
     await _seed_keys(target_redis)
     # pattern 过滤（显式 glob 走 SCAN MATCH 原语义）
-    r = await client.get("/api/sites/sz/redis/r1/keys", params={"pattern": "robot:*", "count": 10})
+    r = await client.get("/api/sites/sz/redis/r1/keys", params={"pattern": "device:*", "count": 10})
     body = r.json()
-    assert {k["key"] for k in body["keys"]} == {"robot:001", "robot:002"}
+    assert {k["key"] for k in body["keys"]} == {"device:001", "device:002"}
     # type 过滤
     r = await client.get("/api/sites/sz/redis/r1/keys", params={"type": "hash"})
     assert [k["key"] for k in r.json()["keys"]] == ["user:1"]
@@ -150,14 +150,14 @@ async def test_fuzzy_case_insensitive_search(client, target_redis):
     """模糊子串 + 忽略大小写（用户需求）：小写搜大写、大写搜小写、子串命中。"""
     await target_redis.set("COMPLETE_TPS_INFO:6", "a")
     await target_redis.set("COMPLETE_TPS_INFO:7", "b")
-    await target_redis.set("robot:001", "c")
+    await target_redis.set("device:001", "c")
 
     # 小写子串命中大写 key
     r = await client.get("/api/sites/sz/redis/r1/keys", params={"pattern": "tps_info", "count": 10})
     assert {k["key"] for k in r.json()["keys"]} == {"COMPLETE_TPS_INFO:6", "COMPLETE_TPS_INFO:7"}
     # 大写子串命中小写 key
-    r = await client.get("/api/sites/sz/redis/r1/keys", params={"pattern": "ROBOT:", "count": 10})
-    assert {k["key"] for k in r.json()["keys"]} == {"robot:001"}
+    r = await client.get("/api/sites/sz/redis/r1/keys", params={"pattern": "DEVICE:", "count": 10})
+    assert {k["key"] for k in r.json()["keys"]} == {"device:001"}
     # count 截断 + cursor 翻页语义（非 0 cursor 表示还有更多）
     r = await client.get("/api/sites/sz/redis/r1/keys", params={"pattern": "tps", "count": 1})
     body = r.json()
@@ -166,7 +166,7 @@ async def test_fuzzy_case_insensitive_search(client, target_redis):
 
 async def test_key_detail_all_types(client, target_redis):
     await _seed_keys(target_redis)
-    r = await client.get("/api/sites/sz/redis/r1/key", params={"key": "robot:001"})
+    r = await client.get("/api/sites/sz/redis/r1/key", params={"key": "device:001"})
     body = r.json()
     assert body["type"] == "string" and body["value"] == "a"
     assert body["ttl"] == -1  # 无过期

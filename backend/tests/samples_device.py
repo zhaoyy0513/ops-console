@@ -1,4 +1,7 @@
-"""现场真实 Robot API 响应样本（2026-09-21 抓包截取）——映射层回归测试。"""
+"""现场真实设备接口响应样本（2026-09-21 抓包截取）——映射层回归测试。
+
+robotCode/robotName 等为上游接口线上字段名（wire contract），保持原样。
+"""
 
 # 环境 50: GET /mission/robot/info/active  信封 records
 ENV50_BODY = {

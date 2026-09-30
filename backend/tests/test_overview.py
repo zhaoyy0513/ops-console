@@ -26,14 +26,14 @@ async def test_overview_counts_and_overall(client, fake_platform_redis):
         "server:s2": {"name": "s2", "status": "WARNING", "message": "cpu 85%", "checked_at": "2026-09-21T00:00:00+00:00"},
         "redis:r1": {"name": "r1", "status": "HEALTHY", "message": "ping", "checked_at": "2026-09-21T00:00:00+00:00"},
         "mq:m1": {"name": "m1", "status": "CRITICAL", "message": "down", "checked_at": "2026-09-21T00:00:00+00:00"},
-        "robot:b1": {"name": "b1", "status": "UNKNOWN", "message": "no data", "checked_at": "2026-09-21T00:00:00+00:00"},
+        "device:b1": {"name": "b1", "status": "UNKNOWN", "message": "no data", "checked_at": "2026-09-21T00:00:00+00:00"},
     })
     r = await client.get("/api/sites/sz/overview")
     assert r.status_code == 200
     body = r.json()
     assert body["overall"] == "CRITICAL"  # worst wins
     assert body["summary"]["server"] == {"total": 2, "healthy": 1, "warning": 1, "critical": 0, "unknown": 0}
-    assert body["summary"]["robot"]["unknown"] == 1
+    assert body["summary"]["device"]["unknown"] == 1
     issue_kinds = [(i["kind"], i["status"]) for i in body["issues"]]
     assert ("mq", "CRITICAL") in issue_kinds and ("server", "WARNING") in issue_kinds
     assert isinstance(body["recent_ops"], list)  # 建站本身已产生 SITE_CREATED 日志

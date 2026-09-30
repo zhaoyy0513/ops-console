@@ -6,7 +6,7 @@ from backend.app.core import oplog
 from backend.app.core.redis import get_platform_redis
 
 SITES_KEY = "ops:sites"  # Set: 全部站点 id（PRD §6.2）
-RESOURCE_TYPES = ("servers", "redis", "mq", "robots")
+RESOURCE_TYPES = ("servers", "redis", "mq", "devices")
 # 删除站点时一并清理的附属 key：overview 健康 hash、ssh 脚本 hash（字面量直写，避免跨模块循环导入）
 HEALTH_KEY = "ops:health:{site_id}"  # overview/service.py health_key 同格式
 SSH_SCRIPTS_KEY = "ops:site:{site_id}:ssh_scripts"  # ssh/service.py _key 同格式
@@ -117,7 +117,7 @@ async def delete_site(site_id: str) -> bool:
     return True
 
 
-# ---------- 资源配置（servers / redis / mq / robots，PRD §5.2） ----------
+# ---------- 资源配置（servers / redis / mq / devices，PRD §5.2） ----------
 # 决策记录（2026-09-22，用户指令）：内部工具全明文——查询接口返回明文密码，
 # 推翻 PRD §5.2 的"密码不回显"要求；更新语义为"提交什么存什么"。
 

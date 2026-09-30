@@ -17,22 +17,22 @@ export type ResourceConfig = {
   [key: string]: unknown
 }
 
-export type ResourceType = 'servers' | 'redis' | 'mq' | 'robots'
+export type ResourceType = 'servers' | 'redis' | 'mq' | 'devices'
 
-/** 资源实例 CRUD 的 URL 段（robots 让位给业务路由 /robots，PRD §18） */
+/** 资源实例 CRUD 的 URL 段（devices 让位给业务路由 /devices，存储 key 同名） */
 export const URL_SEGMENT: Record<ResourceType, string> = {
   servers: 'servers',
   redis: 'redis',
   mq: 'mq',
-  robots: 'robot-instances',
+  devices: 'device-instances',
 }
 
-/** 资源路由类型 -> 连接测试类型（PRD §13：server|redis|mq|robot） */
+/** 资源路由类型 -> 连接测试类型（server|redis|mq|device） */
 export const TEST_TYPE: Record<ResourceType, string> = {
   servers: 'server',
   redis: 'redis',
   mq: 'mq',
-  robots: 'robot',
+  devices: 'device',
 }
 
 function resUrl(siteId: string, type: ResourceType): string {

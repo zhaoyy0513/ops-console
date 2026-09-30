@@ -25,9 +25,9 @@ async def check_site(site_id: str) -> int:
     站点内逐资源串行；每次出网调用都过资源类型信号量，健康检查与
     前台查询共享并发上限，避免 30s 批量检查挤占正常请求。
     """
+    from backend.app.modules.device.provider import HttpDeviceProvider
     from backend.app.modules.mq.provider import ArtemisProvider
     from backend.app.modules.redis.provider import TargetRedisProvider
-    from backend.app.modules.robot.provider import HttpRobotProvider
     from backend.app.modules.server.provider import SSHServerMetricsProvider
     from backend.app.modules.sites import service as sites_service
 
@@ -73,16 +73,16 @@ async def check_site(site_id: str) -> int:
 
         await put(f"mq:{cfg['id']}", cfg["name"], mq_check, "mq")
 
-    for cfg in await sites_service.list_resources(site_id, "robots", include_password=True):
+    for cfg in await sites_service.list_resources(site_id, "devices", include_password=True):
         if not cfg.get("enabled", True):
             continue
-        provider = HttpRobotProvider(cfg)
+        provider = HttpDeviceProvider(cfg)
 
-        async def robot_check(provider=provider):
+        async def device_check(provider=provider):
             message = await provider.run_test()
             return {"status": "HEALTHY", "message": message}
 
-        await put(f"robot:{cfg['id']}", cfg["name"], robot_check, "robot")
+        await put(f"device:{cfg['id']}", cfg["name"], device_check, "device")
 
     if entries:
         r = get_platform_redis()
@@ -117,7 +117,7 @@ async def get_overview(site_id: str) -> dict[str, Any]:
         entry.update({"kind": kind, "id": rid})
         items.append(entry)
 
-    types = ("server", "redis", "mq", "robot")
+    types = ("server", "redis", "mq", "device")
     summary: dict[str, dict[str, int]] = {}
     for t in types:
         subset = [i for i in items if i["kind"] == t]
