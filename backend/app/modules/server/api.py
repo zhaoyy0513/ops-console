@@ -23,8 +23,8 @@ async def get_processes(site_id: str, server_id: str) -> list[dict]:
 
 
 @router.get("/sites/{site_id}/servers/{server_id}/zombies")
-async def get_zombies(site_id: str, server_id: str) -> list[dict]:
-    """僵尸进程明细 [{pid, ppid, stat, comm}]（与 metrics 同一条 SSH 命令路径）。"""
+async def get_zombies(site_id: str, server_id: str) -> dict:
+    """僵尸进程按父进程分组 {total, groups:[{ppid, count, cmd}]}（与 metrics 同一条 SSH 命令路径）。"""
     try:
         return await service.get_zombies(site_id, server_id)
     except NotFound as e:

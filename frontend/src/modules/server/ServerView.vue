@@ -12,6 +12,7 @@ import {
   NSpace,
   NSpin,
   NTable,
+  NTooltip,
   useMessage,
   type DataTableColumns,
 } from 'naive-ui'
@@ -23,7 +24,7 @@ import EmptyState from '../../components/EmptyState.vue'
 import CountUp from '../../components/bits/CountUp.vue'
 import { useSiteStore } from '../../stores/site'
 import { getSamples, type SamplePoint } from '../overview/api'
-import { serverApi, type ProcessRow, type ServerMetrics, type ZombieRow } from './api'
+import { serverApi, type ProcessRow, type ServerMetrics, type ZombieGroup } from './api'
 import { fmtBytes, pctColor } from '../../utils/format'
 
 const siteStore = useSiteStore()
@@ -122,10 +123,11 @@ watch(() => siteStore.currentSiteId, () => {
 })
 watch(serverId, () => load(false))
 
-// ---- 僵尸进程：卡片计数 → 点击弹窗列表 → 逐行终止 ----
+// ---- 僵尸进程：卡片计数 → 点击弹窗（按父进程分组）→ 终止父进程让系统回收僵尸 ----
 const ZOMBIE_RED = '#e5484d'
 const showZombies = ref(false)
-const zombies = ref<ZombieRow[]>([])
+const zombies = ref<ZombieGroup[]>([])
+const zombieTotal = ref(0)
 const zombieLoading = ref(false)
 const zombieCount = computed(() => metrics.value?.zombie_count ?? null)
 
@@ -133,7 +135,9 @@ async function loadZombies() {
   if (!siteStore.currentSiteId || !serverId.value) return
   zombieLoading.value = true
   try {
-    zombies.value = await serverApi.zombies(siteStore.currentSiteId, serverId.value)
+    const res = await serverApi.zombies(siteStore.currentSiteId, serverId.value)
+    zombies.value = res.groups
+    zombieTotal.value = res.total
   } catch (e) {
     message.error((e as Error).message)
   } finally {
@@ -144,10 +148,20 @@ async function loadZombies() {
 // 弹窗打开即拉取列表（kill 后也复用此函数刷新）
 watch(showZombies, (v) => { if (v) loadZombies() })
 
-async function killZombie(z: ZombieRow) {
+// 复制父进程完整命令（弹窗省略号单元格 tooltip 内的复制按钮，同 DeviceView 自定义字段）
+async function copyText(s: string) {
+  try {
+    await navigator.clipboard.writeText(s)
+    message.success(t('common.copied'))
+  } catch (e) {
+    message.error(String(e))
+  }
+}
+
+async function killZombie(z: ZombieGroup) {
   if (!siteStore.currentSiteId || !serverId.value) return
   try {
-    await serverApi.killZombie(siteStore.currentSiteId, serverId.value, z.pid, z.comm)
+    await serverApi.killZombie(siteStore.currentSiteId, serverId.value, z.ppid, z.cmd)
     message.success(t('server.zombieKilled'))
     await loadZombies()
     load(true) // 静默刷新卡片上的计数
@@ -426,39 +440,48 @@ const diskColumns = computed<DataTableColumns<DiskRow>>(() => [
       <span style="color: #999">{{ $t('server.noServers') }}</span>
     </n-card>
 
-    <!-- 僵尸进程明细弹窗：PID/PPID/STAT/CMD + 逐行终止（kill -9，后端记 oplog） -->
+    <!-- 僵尸进程明细弹窗：按父进程分组（父进程 PID/僵尸数/父进程命令），kill 的是父进程 -->
     <n-modal
       v-model:show="showZombies"
       preset="card"
       :mask-closable="false"
       :close-on-esc="false"
-      :title="`${$t('server.zombieList')} (${zombies.length})`"
-      style="width: 720px"
+      :title="`${$t('server.zombies')} (${zombieTotal})`"
+      style="width: 860px"
     >
       <n-spin :show="zombieLoading">
         <empty-state v-if="!zombieLoading && !zombies.length" :title="$t('server.zombieEmpty')" />
         <n-table v-else :single-line="false" size="small">
           <thead>
             <tr>
-              <th>PID</th>
-              <th>PPID</th>
-              <th>STAT</th>
-              <th>CMD</th>
+              <th>{{ $t('server.zParentPid') }}</th>
+              <th>{{ $t('server.zCount') }}</th>
+              <th>{{ $t('server.zCmd') }}</th>
               <th></th>
             </tr>
           </thead>
           <tbody>
-            <tr v-for="z in zombies" :key="z.pid">
-              <td class="mono">{{ z.pid }}</td>
+            <tr v-for="z in zombies" :key="z.ppid">
               <td class="mono">{{ z.ppid }}</td>
-              <td class="mono">{{ z.stat }}</td>
-              <td class="cmd" :title="z.comm">{{ z.comm }}</td>
+              <td class="mono">{{ z.count }}</td>
+              <td>
+                <!-- 省略号 + 悬停 tooltip 展示完整命令 + 复制（同 DeviceView 自定义字段列） -->
+                <n-tooltip :disabled="!z.cmd" style="max-width: 380px">
+                  <template #trigger>
+                    <div class="cmd z-cmd">{{ z.cmd || '-' }}</div>
+                  </template>
+                  <div class="z-cmd-tip">
+                    <span class="z-cmd-tip-text">{{ z.cmd }}</span>
+                    <n-button size="tiny" @click="copyText(z.cmd)">{{ $t('common.copy') }}</n-button>
+                  </div>
+                </n-tooltip>
+              </td>
               <td>
                 <n-popconfirm @positive-click="killZombie(z)">
                   <template #trigger>
                     <n-button size="tiny" type="error">{{ $t('server.killZombie') }}</n-button>
                   </template>
-                  kill -9 {{ z.pid }} ?
+                  {{ $t('server.killZombieConfirm', { pid: z.ppid }) }}
                 </n-popconfirm>
               </td>
             </tr>
@@ -547,6 +570,20 @@ const diskColumns = computed<DataTableColumns<DiskRow>>(() => [
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+/* 僵尸弹窗父进程命令列：比共享 .cmd 窄一档，全文走 tooltip（可复制） */
+.z-cmd {
+  max-width: 380px;
+}
+.z-cmd-tip {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.z-cmd-tip-text {
+  word-break: break-all;
+  max-height: 200px;
+  overflow: auto;
 }
 /* NDataTable usage 列：进度条 + 数字并排 */
 .usage-cell {

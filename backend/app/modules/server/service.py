@@ -83,8 +83,8 @@ async def get_processes(site_id: str, server_id: str) -> list[dict[str, Any]]:
     return await _with_cache(site_id, server_id, "processes", provider.get_processes)
 
 
-async def get_zombies(site_id: str, server_id: str) -> list[dict[str, Any]]:
-    """僵尸进程明细列表。不走缓存：kill 后立即重读，避免 3s 旧值里还躺着已终止的进程。"""
+async def get_zombies(site_id: str, server_id: str) -> dict[str, Any]:
+    """僵尸进程明细（按父进程分组 {total, groups}）。不走缓存：kill 后立即重读，避免 3s 旧值里还躺着已终止的进程。"""
     config = await _require_server_config(site_id, server_id)
     provider = _build_provider(config)
     async with get_semaphore("ssh"):

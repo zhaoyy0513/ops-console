@@ -26,8 +26,9 @@ COMMANDS: dict[str, str] = {
     # top -bn2 第二帧才是瞬时 CPU%（ps aux 的 %CPU 是进程生命周期平均，基本不动）
     # -c 显示完整命令行（默认会截断）
     "processes": "LC_ALL=C top -bn2 -c -w 512",
-    # 僵尸进程：STAT（第 3 列）含 Z 即僵尸；comm 为可执行名（完整命令行见 processes）
-    "zombies": "LC_ALL=C ps -eo pid,ppid,stat,comm | awk '$3 ~ /Z/'",
+    # 僵尸采集：全量 ps，Python 解析过滤（awk 已弃）。僵尸自身 cmdline 为空，
+    # 完整命令行取自未收尸的父进程（同份输出内解析）
+    "zombies": "LC_ALL=C ps -eo pid,ppid,stat,args",
 }
 
 
@@ -132,7 +133,10 @@ def parse_network(text: str) -> dict[str, int]:
 
 
 def parse_zombies(text: str) -> list[dict[str, Any]]:
-    """ps 僵尸行（awk 已过滤）-> [{pid, ppid, stat, comm}]，comm 可含空格故只切 3 刀。"""
+    """ps -eo pid,ppid,stat,args 全量输出 -> [{pid, ppid, stat, args}]。
+
+    args 可含空格故只切 3 刀；表头等非数字行跳过，不让单条解析拖垮整体。
+    """
     rows: list[dict[str, Any]] = []
     for line in text.splitlines():
         parts = line.split(None, 3)
@@ -144,12 +148,32 @@ def parse_zombies(text: str) -> list[dict[str, Any]]:
                     "pid": int(parts[0]),
                     "ppid": int(parts[1]),
                     "stat": parts[2],
-                    "comm": parts[3],
+                    "args": parts[3],
                 }
             )
-        except ValueError:
+        except ValueError:  # 表头行（PID PPID STAT ARGS）
             continue
     return rows
+
+
+def group_zombies(text: str) -> dict[str, Any]:
+    """stat 以 Z 开头的行视为僵尸，按 ppid 分组 -> {total, groups: [{ppid, count, cmd}]}。
+
+    count 降序（同数按 ppid 升序保证稳定）。cmd = 同一 ps 输出中父进程的 args
+    （父进程存活才有僵尸；若父进程已不在输出中则 cmd 为 ''）。
+    """
+    rows = parse_zombies(text)
+    args_by_pid = {r["pid"]: r["args"] for r in rows}
+    counts: dict[int, int] = {}
+    for r in rows:
+        if r["stat"].startswith("Z"):
+            counts[r["ppid"]] = counts.get(r["ppid"], 0) + 1
+    groups = [
+        {"ppid": ppid, "count": n, "cmd": args_by_pid.get(ppid, "")}
+        for ppid, n in counts.items()
+    ]
+    groups.sort(key=lambda g: (-g["count"], g["ppid"]))
+    return {"total": sum(counts.values()), "groups": groups}
 
 
 def parse_processes(text: str) -> list[dict[str, Any]]:
@@ -266,14 +290,14 @@ class SSHServerMetricsProvider(ServerMetricsProvider):
             ["cpu", "load", "cores", "memory", "network", "disk_usage", "disk_inode", "zombies"]
         )
         cores_raw = out.get("cores", "")
-        zombies = parse_zombies(out["zombies"])
+        zombie_rows = parse_zombies(out["zombies"])
         return {
             "cpu": {**parse_cpu(out["cpu"]), "cores": int(cores_raw) if cores_raw.strip().isdigit() else None},
             "load": parse_load(out["load"]),
             "memory": parse_memory(out["memory"]),
             "network": parse_network(out["network"]),
             "disk": merge_disk(parse_df(out["disk_usage"]), parse_df(out["disk_inode"])),
-            "zombie_count": len(zombies),
+            "zombie_count": sum(1 for r in zombie_rows if r["stat"].startswith("Z")),
         }
 
     async def run_test(self) -> str:
@@ -311,9 +335,9 @@ class SSHServerMetricsProvider(ServerMetricsProvider):
         out = await self._collect(["processes"])
         return parse_processes(out["processes"])
 
-    async def get_zombies(self) -> list[dict[str, Any]]:
+    async def get_zombies(self) -> dict[str, Any]:
         out = await self._collect(["zombies"])
-        return parse_zombies(out["zombies"])
+        return group_zombies(out["zombies"])
 
     async def kill_zombie(self, pid: int) -> None:
         """kill -9 指定进程：本模块唯一写命令。pid 已在上层正则校验为纯数字，

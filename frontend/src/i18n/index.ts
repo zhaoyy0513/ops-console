@@ -153,6 +153,10 @@ const messages = {
       zombieList: '僵尸进程列表',
       zombieEmpty: '没有僵尸进程',
       zombieKilled: '已发送终止信号',
+      zParentPid: '父进程 PID',
+      zCount: '僵尸数',
+      zCmd: '父进程命令',
+      killZombieConfirm: 'kill -9 {pid}（终止父进程后其僵尸子进程将由系统回收）',
     },
     mq: {
       broker: 'Broker',
@@ -613,6 +617,10 @@ const messages = {
       zombieList: 'Zombie process list',
       zombieEmpty: 'No zombie processes',
       zombieKilled: 'Kill signal sent',
+      zParentPid: 'Parent PID',
+      zCount: 'Zombies',
+      zCmd: 'Parent command',
+      killZombieConfirm: 'kill -9 {pid} (its zombie children are reaped by the system once the parent dies)',
     },
     mq: {
       broker: 'Broker',

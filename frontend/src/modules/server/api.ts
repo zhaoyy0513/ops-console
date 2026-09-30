@@ -44,11 +44,11 @@ export interface ProcessRow {
   command: string
 }
 
-export interface ZombieRow {
-  pid: number
+export interface ZombieGroup {
+  /** 父进程 PID（僵尸自身 cmdline 为空，有用信息是未收尸的父进程，故按父进程分组） */
   ppid: number
-  stat: string
-  comm: string
+  count: number
+  cmd: string
 }
 
 export const serverApi = {
@@ -57,7 +57,7 @@ export const serverApi = {
   processes: (siteId: string, serverId: string) =>
     api.get<ProcessRow[]>(`/sites/${siteId}/servers/${serverId}/processes`),
   zombies: (siteId: string, serverId: string) =>
-    api.get<ZombieRow[]>(`/sites/${siteId}/servers/${serverId}/zombies`),
+    api.get<{ total: number; groups: ZombieGroup[] }>(`/sites/${siteId}/servers/${serverId}/zombies`),
   killZombie: (siteId: string, serverId: string, pid: number, comm?: string) =>
     // comm 仅作 oplog 展示用，走 query 参数
     api.post<{ killed: boolean }>(

@@ -6,8 +6,16 @@ from httpx import ASGITransport, AsyncClient
 from backend.app.core import oplog
 from backend.app.main import app
 
-# 两条僵尸行：第二条 comm 含空格，验证解析器只切 3 刀
-ZOMBIE_PS = " 4242  1001 Z+  chrome_crash\n 5252  1001 Zs  python2 defunct\n"
+# 全量 ps 假输出：表头（应被跳过）+ 存活父进程行 + 两个父进程下的僵尸 + 父进程已退出的孤儿僵尸
+ZOMBIE_PS = (
+    "  PID  PPID  STAT  ARGS\n"
+    " 1001     1 Ss    /usr/sbin/sshd -D\n"
+    " 2002     1 S     /usr/bin/python2 app.py --worker\n"
+    " 4242  1001 Z+    [chrome_crash] <defunct>\n"
+    " 4243  1001 Z     [chrome_crash] <defunct>\n"
+    " 5252  2002 Zs    [python2] <defunct>\n"
+    " 6363  9999 Z+    [orphan] <defunct>\n"
+)
 
 
 @pytest.fixture
@@ -50,23 +58,27 @@ async def env(fake_platform_redis, monkeypatch):
         yield c, executed
 
 
-async def test_zombie_list_parsed(env):
+async def test_zombies_grouped_by_parent(env):
+    """僵尸按父进程分组：count 降序，cmd = 同份 ps 输出中父进程 args；父进程已退出则 ''。"""
     client, _ = env
     r = await client.get("/api/sites/sz/servers/srv1/zombies")
     assert r.status_code == 200
-    rows = r.json()
-    assert rows == [
-        {"pid": 4242, "ppid": 1001, "stat": "Z+", "comm": "chrome_crash"},
-        {"pid": 5252, "ppid": 1001, "stat": "Zs", "comm": "python2 defunct"},
+    data = r.json()
+    assert data["total"] == 4
+    assert data["groups"] == [
+        {"ppid": 1001, "count": 2, "cmd": "/usr/sbin/sshd -D"},
+        # count 并列 1 时按 ppid 升序保证稳定；9999 不在 ps 输出 -> cmd 为空
+        {"ppid": 2002, "count": 1, "cmd": "/usr/bin/python2 app.py --worker"},
+        {"ppid": 9999, "count": 1, "cmd": ""},
     ]
 
 
 async def test_metrics_include_zombie_count(env):
-    """metrics 与僵尸统计同一条 SSH 会话：响应直接带 zombie_count。"""
+    """metrics 与僵尸统计同一条 SSH 会话：响应直接带 zombie_count（全量 ps 输出中 stat 以 Z 开头的行数）。"""
     client, executed = env
     r = await client.get("/api/sites/sz/servers/srv1/metrics")
     assert r.status_code == 200
-    assert r.json()["zombie_count"] == 2
+    assert r.json()["zombie_count"] == 4
     assert any("ps -eo" in c for c in executed)  # 僵尸命令并入 metrics 同一 SSH 会话
 
 
