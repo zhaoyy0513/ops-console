@@ -63,9 +63,17 @@ async def get_queues(site_id: str, mq_id: str) -> list[dict[str, Any]]:
 
     async def factory():
         async with get_semaphore("mq"):
-            return await provider.get_queues()
+            queues = await provider.get_queues()
+            # 富化放进缓存工厂：采样读写在真实拉取时只做一次（~5s 最坏），
+            # 缓存命中（3s 轮询）直接复用富化结果，不重复打平台 Redis
+            await _enrich_queues(site_id, mq_id, queues)
+            return queues
 
-    queues = await cached(f"ops:cache:mq:{mq_id}:queues", CACHE_TTL, with_retry(factory))
+    return await cached(f"ops:cache:mq:{mq_id}:queues", CACHE_TTL, with_retry(factory))
+
+
+async def _enrich_queues(site_id: str, mq_id: str, queues: list[dict[str, Any]]) -> None:
+    """就地补趋势字段（backlog_5m_ago / growth_5m / added_*）+ 逐队列诊断，并记录新样本。"""
     series = {q.get("name") or "": _series_key(site_id, mq_id, q.get("name") or "") for q in queues}
     pairs = [(series[q.get("name") or ""], s) for q in queues for s in ("backlog", "added")]
     olds = await sampling.values_minutes_ago(pairs, minutes=5)  # 先读旧值，再写新样本
@@ -87,7 +95,6 @@ async def get_queues(site_id: str, mq_id: str) -> list[dict[str, Any]]:
         q["added_1m"] = max(added - old_added_1m, 0) if (old_added_1m is not None and isinstance(added, (int, float))) else None
         q["diagnosis"] = diagnose_queue(q)
     await sampling.push_samples(pushes)
-    return queues
 
 
 def _series_key(site_id: str, mq_id: str, queue_name: str) -> str:

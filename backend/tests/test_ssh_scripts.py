@@ -43,6 +43,8 @@ async def client(fake_platform_redis, monkeypatch):
             return FakeResult()
 
         async def create_process(self, cmd, env=None):
+            # GNU timeout 进程组前缀 + bash -s 保留（子进程树超时可清）
+            assert cmd.startswith("timeout -k 5 ") and cmd.endswith(" bash -s")
             return FakeProc()
 
         async def __aenter__(self):
@@ -237,6 +239,38 @@ async def test_run_stream_sse_stdout_and_stderr(client, monkeypatch):
     assert '"kind": "meta"' in text
     # meta 的 payload 是嵌套 JSON，内层引号被转义
     assert '\\"timed_out\\": false' in text
+
+
+async def test_run_acquires_ssh_run_and_host_semaphores(client, monkeypatch):
+    """回归：执行路径必须套 ssh_run 独立池 + 按主机信号量（双层级流）。
+
+    ssh_run 与 "ssh"/8 池分离：流式执行合法持锁 60s，不得挤占 3s 指标轮询；
+    按主机限流挡住 N 用户同打一台机的进程堆积。
+    """
+    from backend.app.modules.ssh import service as svc
+
+    acquired = []
+
+    class FakeSem:
+        def __init__(self, tag):
+            self.tag = tag
+
+        async def __aenter__(self):
+            acquired.append(self.tag)
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+    monkeypatch.setattr(svc, "get_semaphore", lambda name, limit=8: FakeSem(f"{name}:{limit}"))
+    monkeypatch.setattr(svc, "get_host_semaphore", lambda host: FakeSem(f"host:{host}"))
+
+    # 走 fixture 里 seed 好的 srv1（host=10.10.1.10，fake_connect 断言该 host）
+    r = await client.post("/api/sites/sz/ssh_scripts/run-adhoc",
+                          json={"server_id": "srv1", "content": "echo hi"})
+    assert r.status_code == 200
+    # 先拿全局 ssh_run 池，再拿主机池（嵌套次序固定）
+    assert acquired == ["ssh_run:4", "host:10.10.1.10"]
 
 
 async def test_oplog_resource_and_target_readable(client):

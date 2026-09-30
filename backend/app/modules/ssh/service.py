@@ -21,9 +21,20 @@ from backend.app.core.config import settings
 from backend.app.modules.sites.service import NotFound
 from backend.app.modules.sites.service import get_resource_raw
 from backend.app.core.redis import get_platform_redis
+from backend.app.shared.concurrency import get_host_semaphore, get_semaphore
 
 SCRIPTS_KEY = "ops:site:{site_id}:ssh_scripts"
 RUN_TIMEOUT = 60
+
+
+def _bash_cmd() -> str:
+    """远端命令统一加 GNU timeout 前缀：超时信号发至整个进程组——
+
+    本地 kill 只能杀 bash -s，其子进程（top、tail -f）会被 reparent 存活
+    （无 pty 不吃 SIGHUP）；timeout 默认信号打给子进程所在进程组，能全树清掉。
+    远端 预算-5s TERM + 5s KILL，本地 wait_for（预算全额）仍是兜底。
+    """
+    return f"timeout -k 5 {settings.ssh_command_timeout * 6 - 5} bash -s"
 
 
 def _key(site_id: str) -> str:
@@ -98,46 +109,50 @@ async def _execute(server_cfg: dict[str, Any], content: str, *,
     stdout = ""
     stderr = ""
     proc = None
-    try:
-        async with asyncssh.connect(
-            server_cfg["host"],
-            port=int(server_cfg.get("port") or 22),
-            username=server_cfg.get("username") or None,
-            password=server_cfg.get("password") or None,
-            known_hosts=None,
-            connect_timeout=settings.ssh_connect_timeout,
-        ) as conn:
-            proc = await conn.create_process("bash -s", env={"TERM": "xterm"})
-            proc.stdin.write(content)
-            proc.stdin.write_eof()
-            try:
-                stdout, stderr = await asyncio.wait_for(
-                    proc.communicate(), settings.ssh_command_timeout * 6)
-                stdout, stderr = stdout or "", stderr or ""
-            except (asyncio.TimeoutError, TimeoutError):
-                timed_out = True
-                # 超时：kill 进程，尽力回收已产出输出（top 类命令此时已有画面）
+    # 双层级流：ssh_run 独立池（流式执行合法持锁 60s，不得挤占 "ssh"/8 池上的
+    # 3s 指标轮询）+ 按主机限流（同一台机并发脚本堆积有上界）。
+    # 手动/adhoc/cron/双 SSE 流全部经由此函数或 stream_execute，覆盖全部入口。
+    async with get_semaphore("ssh_run", 4), get_host_semaphore(server_cfg["host"]):
+        try:
+            async with asyncssh.connect(
+                server_cfg["host"],
+                port=int(server_cfg.get("port") or 22),
+                username=server_cfg.get("username") or None,
+                password=server_cfg.get("password") or None,
+                known_hosts=None,
+                connect_timeout=settings.ssh_connect_timeout,
+            ) as conn:
+                proc = await conn.create_process(_bash_cmd(), env={"TERM": "xterm"})
+                proc.stdin.write(content)
+                proc.stdin.write_eof()
                 try:
-                    proc.kill()
-                except (ProcessLookupError, asyncssh.Error):
-                    pass
-                try:
-                    stdout, stderr = await asyncio.wait_for(proc.communicate(), 2)
+                    stdout, stderr = await asyncio.wait_for(
+                        proc.communicate(), settings.ssh_command_timeout * 6)
                     stdout, stderr = stdout or "", stderr or ""
-                except Exception:  # noqa: BLE001 - 回收失败不影响超时路径
+                except (asyncio.TimeoutError, TimeoutError):
+                    timed_out = True
+                    # 超时：kill 进程，尽力回收已产出输出（top 类命令此时已有画面）
+                    try:
+                        proc.kill()
+                    except (ProcessLookupError, asyncssh.Error):
+                        pass
+                    try:
+                        stdout, stderr = await asyncio.wait_for(proc.communicate(), 2)
+                        stdout, stderr = stdout or "", stderr or ""
+                    except Exception:  # noqa: BLE001 - 回收失败不影响超时路径
+                        pass
+        except (OSError, asyncssh.Error) as e:
+            await oplog.record(site_id, log_resource, "SSH_SCRIPT_RUN",
+                               target=log_target,
+                               params={**(log_extra or {}), "server": server_cfg["host"], "triggered": triggered},
+                               result="FAILED", error=str(e)[:200])
+            raise NotFound(f"SSH 执行失败：{e}") from None
+        finally:
+            if proc is not None:
+                try:
+                    proc.close()  # 兜底清理（幂等）
+                except Exception:  # noqa: BLE001
                     pass
-    except (OSError, asyncssh.Error) as e:
-        await oplog.record(site_id, log_resource, "SSH_SCRIPT_RUN",
-                           target=log_target,
-                           params={**(log_extra or {}), "server": server_cfg["host"], "triggered": triggered},
-                           result="FAILED", error=str(e)[:200])
-        raise NotFound(f"SSH 执行失败：{e}") from None
-    finally:
-        if proc is not None:
-            try:
-                proc.close()  # 兜底清理（幂等）
-            except Exception:  # noqa: BLE001
-                pass
 
     await oplog.record(site_id, log_resource, "SSH_SCRIPT_RUN",
                        target=log_target,
@@ -199,76 +214,94 @@ async def stream_execute(server_cfg: dict[str, Any], content: str, *,
     timeout = settings.ssh_command_timeout * 6
     proc = None
     timed_out = False
-    try:
-        async with asyncssh.connect(
-            server_cfg["host"],
-            port=int(server_cfg.get("port") or 22),
-            username=server_cfg.get("username") or None,
-            password=server_cfg.get("password") or None,
-            known_hosts=None,
-            connect_timeout=settings.ssh_connect_timeout,
-        ) as conn:
-            proc = await conn.create_process("bash -s", env={"TERM": "xterm"})
-            proc.stdin.write(content)
-            proc.stdin.write_eof()
+    logged = False  # FAILED 分支已写 oplog，finally 不重复记
+    async with get_semaphore("ssh_run", 4), get_host_semaphore(server_cfg["host"]):
+        try:
+            async with asyncssh.connect(
+                server_cfg["host"],
+                port=int(server_cfg.get("port") or 22),
+                username=server_cfg.get("username") or None,
+                password=server_cfg.get("password") or None,
+                known_hosts=None,
+                connect_timeout=settings.ssh_connect_timeout,
+            ) as conn:
+                proc = await conn.create_process(_bash_cmd(), env={"TERM": "xterm"})
+                proc.stdin.write(content)
+                proc.stdin.write_eof()
 
-            queue: asyncio.Queue = asyncio.Queue()
+                # maxsize=1000：读端背压进 SSH channel 窗口，yes 类洪流
+                # 在 60s 预算内也撑不爆后端内存
+                queue: asyncio.Queue = asyncio.Queue(maxsize=1000)
 
-            async def reader(stream, kind):
-                try:
-                    while True:
-                        chunk = await stream.read(4096)
-                        if not chunk:
-                            return
-                        await queue.put((kind, chunk))
-                finally:
-                    await queue.put((None, None))  # 该流 EOF 的哨兵
-
-            tasks = [
-                asyncio.create_task(reader(proc.stdout, "stdout")),
-                asyncio.create_task(reader(proc.stderr, "stderr")),
-            ]
-            try:
-                deadline = time.monotonic() + timeout
-                eof = 0
-                while eof < 2:
-                    remaining = deadline - time.monotonic()
-                    if remaining <= 0:
-                        timed_out = True
-                        break
+                async def reader(stream, kind):
                     try:
-                        kind, chunk = await asyncio.wait_for(queue.get(), remaining)
-                    except (asyncio.TimeoutError, TimeoutError):
-                        timed_out = True
-                        break
-                    if kind is None:
-                        eof += 1
-                    else:
-                        yield kind, chunk
-            finally:
-                for t in tasks:
-                    t.cancel()
-    except (OSError, asyncssh.Error) as e:
-        await oplog.record(site_id, log_resource, "SSH_SCRIPT_RUN",
-                           target=log_target,
-                           params={**(log_extra or {}), "server": server_cfg["host"], "triggered": triggered},
-                           result="FAILED", error=str(e)[:200])
-        raise NotFound(f"SSH 执行失败：{e}") from None
-    finally:
-        if proc is not None:
-            try:
-                proc.kill()  # 幂等：正常退出后 kill 是 no-op；断开/超时则终止远端进程
-            except Exception:  # noqa: BLE001
-                pass
-            try:
-                proc.close()
-            except Exception:  # noqa: BLE001
-                pass
+                        while True:
+                            chunk = await stream.read(4096)
+                            if not chunk:
+                                return
+                            await queue.put((kind, chunk))
+                    finally:
+                        # 队列满时放弃哨兵：正常 EOF 时消费端在高速读、put 不会满；
+                        # 满载只发生在取消路径（消费端已不在，哨兵无人消费）或
+                        # 洪流场景（整体预算兜底），阻塞 put 反而会吊死已取消的任务
+                        try:
+                            queue.put_nowait((None, None))
+                        except asyncio.QueueFull:
+                            pass
 
-    await oplog.record(site_id, log_resource, "SSH_SCRIPT_RUN",
-                       target=log_target,
-                       params={**(log_extra or {}), "server": server_cfg["host"], "triggered": triggered,
-                               "timed_out": timed_out})
+                tasks = [
+                    asyncio.create_task(reader(proc.stdout, "stdout")),
+                    asyncio.create_task(reader(proc.stderr, "stderr")),
+                ]
+                try:
+                    deadline = time.monotonic() + timeout
+                    eof = 0
+                    while eof < 2:
+                        remaining = deadline - time.monotonic()
+                        if remaining <= 0:
+                            timed_out = True
+                            break
+                        try:
+                            kind, chunk = await asyncio.wait_for(queue.get(), remaining)
+                        except (asyncio.TimeoutError, TimeoutError):
+                            timed_out = True
+                            break
+                        if kind is None:
+                            eof += 1
+                        else:
+                            yield kind, chunk
+                finally:
+                    for t in tasks:
+                        t.cancel()
+        except (OSError, asyncssh.Error) as e:
+            logged = True
+            await oplog.record(site_id, log_resource, "SSH_SCRIPT_RUN",
+                               target=log_target,
+                               params={**(log_extra or {}), "server": server_cfg["host"], "triggered": triggered},
+                               result="FAILED", error=str(e)[:200])
+            raise NotFound(f"SSH 执行失败：{e}") from None
+        finally:
+            if proc is not None:
+                try:
+                    proc.kill()  # 幂等：正常退出后 kill 是 no-op；断开/超时则终止远端进程
+                except Exception:  # noqa: BLE001
+                    pass
+                try:
+                    proc.close()
+                except Exception:  # noqa: BLE001
+                    pass
+            # oplog 收尾放在 finally：客户端断开（GeneratorExit 穿过 yield 点）
+            # 也会走到这里，断开不再漏记；redis 故障吞掉，不掩盖 unwind
+            if not logged:
+                logged = True
+                try:
+                    await oplog.record(site_id, log_resource, "SSH_SCRIPT_RUN",
+                                       target=log_target,
+                                       params={**(log_extra or {}), "server": server_cfg["host"],
+                                               "triggered": triggered, "timed_out": timed_out})
+                except Exception:  # noqa: BLE001
+                    pass
+
     yield "meta", json.dumps({
         "timed_out": timed_out,
         "latency_ms": int((time.perf_counter() - started) * 1000),

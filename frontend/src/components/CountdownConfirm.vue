@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { NButton, NCard, NModal } from 'naive-ui'
 
@@ -37,6 +37,10 @@ watch(show, (v) => {
       }
     }, 1000)
   }
+})
+// 组件卸载时兜底清表（如倒计时中途路由切走）
+onBeforeUnmount(() => {
+  if (timer) clearInterval(timer)
 })
 </script>
 

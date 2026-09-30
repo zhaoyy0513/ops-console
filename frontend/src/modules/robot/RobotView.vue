@@ -47,15 +47,19 @@ async function loadInstances() {
   }
 }
 
-async function load() {
+let listWasOk = true
+async function load(silent = false) {
   const siteId = siteStore.currentSiteId
   if (!siteId || !instanceId.value) return
   loading.value = true
   try {
     robots.value = await robotApi.list(siteId, instanceId.value)
+    listWasOk = true
   } catch (e) {
     robots.value = []
-    message.error((e as Error).message)
+    // 轮询仅在 成功->失败 边缘提示一次（避免轮询 toast 轰炸）；手动刷新始终立即提示
+    if (!silent || listWasOk) message.error((e as Error).message)
+    listWasOk = false
   } finally {
     loading.value = false
   }
@@ -85,7 +89,7 @@ let pollTimer: number | null = null
 function startPolling() {
   if (pollTimer != null) return
   pollTimer = window.setInterval(() => {
-    if (instanceId.value && !document.hidden && !loading.value) load()
+    if (instanceId.value && !document.hidden && !loading.value) load(true)
   }, REFRESH_SECONDS * 1000)
 }
 function stopPolling() {
@@ -112,7 +116,7 @@ watch(() => siteStore.currentSiteId, () => {
   robots.value = []
   loadInstances()
 })
-watch(instanceId, load)
+watch(instanceId, () => load())
 </script>
 
 <template>
@@ -122,7 +126,7 @@ watch(instanceId, load)
         <span>{{ $t('robot.instance') }}</span>
         <n-select v-model:value="instanceId" size="small" style="width: 240px"
           :placeholder="$t('robot.selectInstance')" :options="instances" />
-        <n-button size="small" :loading="loading" @click="load">{{ $t('common.refresh') }}</n-button>
+        <n-button size="small" :loading="loading" @click="load()">{{ $t('common.refresh') }}</n-button>
         <tab-help topic="robot" />
         <span style="color: #999; font-size: 12px">{{ $t('robot.mappingHint') }}</span>
       </n-space>

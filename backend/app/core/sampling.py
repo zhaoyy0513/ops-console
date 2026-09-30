@@ -32,6 +32,7 @@ async def push_samples(items: list[tuple[str, str, float]]) -> None:
             key = sample_key(resource_id, series)
             pipe.lpush(key, json.dumps({"ts": now, "v": value}))
             pipe.ltrim(key, 0, SAMPLE_MAX - 1)
+            pipe.expire(key, 7200)  # 写入即续期：活跃序列常驻，孤儿序列末次推送 2h 后消亡
         await pipe.execute()
 
 

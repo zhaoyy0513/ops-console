@@ -1,5 +1,6 @@
 """Overview 模块服务层：后台健康检查 + 站点聚合视图（PRD §7/§16）。"""
 
+import asyncio
 import json
 import time
 from datetime import datetime, timezone
@@ -7,6 +8,7 @@ from typing import Any
 
 from backend.app.core import oplog
 from backend.app.core.redis import get_platform_redis
+from backend.app.shared.concurrency import get_semaphore
 
 
 def health_key(site_id: str) -> str:
@@ -20,8 +22,8 @@ def _now() -> str:
 async def check_site(site_id: str) -> int:
     """单站点全资源轻量检查，结果写平台 Redis hash。返回检查项数。
 
-    # ponytail: 串行逐资源检查，10 资源约 10s；30s 间隔内够用，
-    # 资源量大时换 asyncio.gather + 信号量
+    站点内逐资源串行；每次出网调用都过资源类型信号量，健康检查与
+    前台查询共享并发上限，避免 30s 批量检查挤占正常请求。
     """
     from backend.app.modules.mq.provider import ArtemisProvider
     from backend.app.modules.redis.provider import TargetRedisProvider
@@ -31,9 +33,10 @@ async def check_site(site_id: str) -> int:
 
     entries: dict[str, str] = {}
 
-    async def put(field: str, name: str, coro_factory, ok_status) -> None:
+    async def put(field: str, name: str, coro_factory, sem_type: str) -> None:
         try:
-            result = await coro_factory()
+            async with get_semaphore(sem_type):
+                result = await coro_factory()
         except Exception as e:  # noqa: BLE001 - 检查失败即 CRITICAL（不可达本身是异常）
             result = {"status": "CRITICAL", "message": str(e)[:120]}
         entries[field] = json.dumps(
@@ -45,7 +48,7 @@ async def check_site(site_id: str) -> int:
             continue
         provider = SSHServerMetricsProvider(cfg)
         # CPU/内存趋势采样在 server 模块真实读取时记录（前端 5s 轮询驱动）
-        await put(f"server:{cfg['id']}", cfg["name"], provider.health_check, None)
+        await put(f"server:{cfg['id']}", cfg["name"], provider.health_check, "ssh")
 
     for cfg in await sites_service.list_resources(site_id, "redis", include_password=True):
         if not cfg.get("enabled", True):
@@ -56,7 +59,7 @@ async def check_site(site_id: str) -> int:
             message = await provider.run_test()
             return {"status": "HEALTHY", "message": message}
 
-        await put(f"redis:{cfg['id']}", cfg["name"], redis_check, None)
+        await put(f"redis:{cfg['id']}", cfg["name"], redis_check, "target_redis")
 
     for cfg in await sites_service.list_resources(site_id, "mq", include_password=True):
         if not cfg.get("enabled", True):
@@ -68,7 +71,7 @@ async def check_site(site_id: str) -> int:
             status = "HEALTHY" if overview.get("status") == "STARTED" else "WARNING"
             return {"status": status, "message": f"{overview.get('status')} {overview.get('version')}"}
 
-        await put(f"mq:{cfg['id']}", cfg["name"], mq_check, None)
+        await put(f"mq:{cfg['id']}", cfg["name"], mq_check, "mq")
 
     for cfg in await sites_service.list_resources(site_id, "robots", include_password=True):
         if not cfg.get("enabled", True):
@@ -79,7 +82,7 @@ async def check_site(site_id: str) -> int:
             message = await provider.run_test()
             return {"status": "HEALTHY", "message": message}
 
-        await put(f"robot:{cfg['id']}", cfg["name"], robot_check, None)
+        await put(f"robot:{cfg['id']}", cfg["name"], robot_check, "robot")
 
     if entries:
         r = get_platform_redis()
@@ -91,12 +94,9 @@ async def check_site(site_id: str) -> int:
 async def check_all_sites() -> None:
     from backend.app.modules.sites import service as sites_service
 
-    for site in await sites_service.list_sites():
-        if site.get("enabled", True):
-            try:
-                await check_site(site["id"])
-            except Exception:  # noqa: BLE001 - 单站点失败不影响其他
-                continue
+    sites = [s for s in await sites_service.list_sites() if s.get("enabled", True)]
+    # 多站点并发检查；return_exceptions 保证单站点失败不影响其余（hash 仍逐站点各自写）
+    await asyncio.gather(*(check_site(s["id"]) for s in sites), return_exceptions=True)
 
 
 async def get_overview(site_id: str) -> dict[str, Any]:

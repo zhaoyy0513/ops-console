@@ -1,5 +1,7 @@
 """MQ 模块：Jolokia provider + 诊断 + backlog 趋势采样（PRD §9）。"""
 
+import asyncio
+
 from fastapi import FastAPI
 
 from . import service
@@ -12,17 +14,28 @@ _scheduler: AsyncIOScheduler | None = None
 
 
 async def _sample_backlogs() -> None:
-    """周期采样全部站点的 MQ 队列 backlog（get_queues 内部自动 push_sample）。"""
+    """周期采样全部站点的 MQ 队列 backlog（get_queues 内部自动 push_sample）。
+
+    并发采样 + 跳过停用站点：串行下一个挂死 broker（2 次重试 × 10s 连接超时）
+    就能拖穿 60s 周期，健康实例采样出现空洞；并发扇出由 get_queues 内部
+    的全局 mq 信号量（8）兜底。
+    """
     from backend.app.modules.sites import service as sites_service
 
-    for site in await sites_service.list_sites():
-        for mq in await sites_service.list_resources(site["id"], "mq"):
-            if not mq.get("enabled", True):
-                continue
-            try:
-                await service.get_queues(site["id"], mq["id"])
-            except Exception:  # noqa: BLE001 - 单个实例失败不影响其他采样
-                continue
+    async def one(site: dict, mq: dict) -> None:
+        try:
+            await service.get_queues(site["id"], mq["id"])
+        except Exception:  # noqa: BLE001 - 单个实例失败不影响其他采样
+            pass
+
+    jobs = [
+        one(site, mq)
+        for site in await sites_service.list_sites()
+        if site.get("enabled", True)  # list_sites 不过滤 enabled，这里跳过停用站点
+        for mq in await sites_service.list_resources(site["id"], "mq")
+        if mq.get("enabled", True)
+    ]
+    await asyncio.gather(*jobs, return_exceptions=True)
 
 
 def register_module(app: FastAPI) -> None:

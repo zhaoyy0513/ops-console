@@ -18,5 +18,7 @@ def get_platform_redis() -> redis.Redis:
             socket_connect_timeout=settings.redis_connect_timeout,
             socket_timeout=settings.redis_connect_timeout,
             decode_responses=True,
+            max_connections=32,  # 连接池上限，防峰值打满平台 Redis
+            health_check_interval=30,  # 空闲连接存活探测，剔除被服务端断开的死连接
         )
     return _client

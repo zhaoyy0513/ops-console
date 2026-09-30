@@ -1,11 +1,13 @@
 """Server 模块服务层：provider 构建、缓存合并、连接测试。"""
 
+import json
 import re
 import time
 from typing import Any
 
 from backend.app.core import oplog, sampling
 from backend.app.core.cache import cached
+from backend.app.core.redis import get_platform_redis
 from backend.app.modules.server.provider import SSHServerMetricsProvider
 from backend.app.modules.sites.service import NotFound
 from backend.app.shared import testconn
@@ -33,9 +35,14 @@ async def _require_server_config(site_id: str, server_id: str) -> dict[str, Any]
 
 
 async def _with_cache(site_id: str, server_id: str, kind: str, factory) -> Any:
+    key = f"ops:cache:server:{server_id}:{kind}"  # 与 cached() 内部 key 一致
+    # 缓存命中不占信号量（死服务器风暴时 3s 读不会挤占慢路径）
+    raw = await get_platform_redis().get(key)
+    if raw is not None:
+        return json.loads(raw)
     async with get_semaphore("ssh"):
         # 读路径套连接级有限重试（PRD §26）；写路径无此资源
-        return await cached(f"ops:cache:server:{server_id}:{kind}", CACHE_TTL, with_retry(factory))
+        return await cached(key, CACHE_TTL, with_retry(factory))
 
 
 async def get_metrics(site_id: str, server_id: str) -> dict[str, Any]:

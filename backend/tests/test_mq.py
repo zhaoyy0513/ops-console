@@ -107,6 +107,8 @@ async def test_sampling_batch_push_and_read(fake_platform_redis):
 
     await sampling.push_samples([])  # 空输入不炸
     await sampling.push_samples([("r1", "backlog", 7), ("r1", "added", 42)])
+    # 每次写入续 2h TTL：活跃序列不过期，孤儿序列末次推送后自然消亡
+    assert (await fake_platform_redis.ttl(sampling.sample_key("r1", "backlog"))) > 0
     pairs = [("r1", "backlog"), ("r1", "added"), ("r2", "backlog")]
     out = await sampling.values_minutes_ago(pairs, minutes=5)
     assert out == {("r1", "backlog"): None, ("r1", "added"): None, ("r2", "backlog"): None}

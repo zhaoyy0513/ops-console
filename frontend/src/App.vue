@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, provide } from 'vue'
 import { useDark, useToggle } from '@vueuse/core'
 import {
   NConfigProvider,
@@ -18,10 +18,8 @@ import MainLayout from './layouts/MainLayout.vue'
 
 const isDark = useDark()
 const toggleDark = useToggle(isDark)
-// 供 MainLayout 顶栏按钮使用（provide 避免再引一次 useDark）
-import { provide, ref } from 'vue'
-const darkRef = ref(isDark.value)
-provide('opsDark', { isDark: darkRef, toggle: () => { toggleDark(); darkRef.value = !darkRef.value } })
+// 供 MainLayout 顶栏按钮使用（provide 避免再引一次 useDark）；isDark 本身随系统偏好自动响应
+provide('opsDark', { isDark, toggle: toggleDark })
 
 /** 令牌同源的主题覆盖（§3.2：色值来自 tokens.css 的同一组常量） */
 const themeOverrides = computed<GlobalThemeOverrides>(() => ({

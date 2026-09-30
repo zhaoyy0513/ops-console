@@ -7,6 +7,9 @@ from backend.app.core.redis import get_platform_redis
 
 SITES_KEY = "ops:sites"  # Set: 全部站点 id（PRD §6.2）
 RESOURCE_TYPES = ("servers", "redis", "mq", "robots")
+# 删除站点时一并清理的附属 key：overview 健康 hash、ssh 脚本 hash（字面量直写，避免跨模块循环导入）
+HEALTH_KEY = "ops:health:{site_id}"  # overview/service.py health_key 同格式
+SSH_SCRIPTS_KEY = "ops:site:{site_id}:ssh_scripts"  # ssh/service.py _key 同格式
 
 
 def site_key(site_id: str) -> str:
@@ -99,7 +102,14 @@ async def delete_site(site_id: str) -> bool:
     row = await r.hgetall(site_key(site_id))
     if not row:
         return False
-    keys = [site_key(site_id)] + [resource_key(site_id, t) for t in RESOURCE_TYPES]
+    # 定时脚本随站点删除：先停调度再删配置（晚了 hash 没了就找不到 job，cron 泄漏）
+    from backend.app.modules.ssh import scheduling  # 延迟导入避免循环依赖
+
+    for script_id in await r.hkeys(SSH_SCRIPTS_KEY.format(site_id=site_id)):
+        scheduling.unschedule(site_id, script_id)
+    keys = [site_key(site_id), SSH_SCRIPTS_KEY.format(site_id=site_id),
+            HEALTH_KEY.format(site_id=site_id)]
+    keys += [resource_key(site_id, t) for t in RESOURCE_TYPES]
     await r.delete(*keys)
     await r.srem(SITES_KEY, site_id)
     await oplog.record(site_id, "site-config", "SITE_DELETED",

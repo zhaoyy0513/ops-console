@@ -5,6 +5,7 @@
 """
 
 import re
+import time
 from typing import Any
 
 import asyncssh
@@ -219,20 +220,31 @@ class SSHServerMetricsProvider(ServerMetricsProvider):
             kwargs["password"] = self._password
         try:
             return await asyncssh.connect(**kwargs)
+        except asyncssh.PermissionDenied as e:
+            # 认证失败不可重试（AUTH_FAILED 不在 RETRYABLE_CODES）：重试只会
+            # 翻倍认证尝试，纯喂 fail2ban；连接拒绝/超时仍走可重试分支
+            raise OpsError("AUTH_FAILED", f"SSH auth failed: {e}", self._host) from None
         except (asyncssh.Error, OSError) as e:
             raise OpsError(
                 "REMOTE_CONNECTION_FAILED", f"SSH connect failed: {e}", self._host
             ) from None
 
     async def _run(self, commands: list[str]) -> list[str]:
-        """一次连接内顺序执行命令，查完即关（PRD §8.4）。"""
+        """一次连接内顺序执行命令，查完即关（PRD §8.4）。
+
+        整体预算 = 单命令超时 × 命令数：一条挂死命令（如 NFS 上的 df）
+        不再各自耗满 10s×N 条，后续命令只分到剩余预算，整次采集有界，
+        上层重试也因此有界。
+        """
         conn = await self._connect()
         try:
             out: list[str] = []
+            deadline = time.monotonic() + settings.ssh_command_timeout * max(1, len(commands))
             for cmd in commands:
+                remaining = max(deadline - time.monotonic(), 0)
                 result = await with_timeout(
                     conn.run(cmd, check=False),
-                    settings.ssh_command_timeout,
+                    remaining,
                     resource=self._host,
                 )
                 out.append(result.stdout or "")

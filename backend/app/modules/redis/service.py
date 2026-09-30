@@ -165,17 +165,20 @@ async def get_key(site_id: str, redis_id: str, *, db: int = 0, key: str) -> dict
 
 
 async def _read_value(c, key: str, ktype: str) -> Any:
-    # ponytail: LIST/SET/ZSET 全量读取，超大 key 前端截断展示；V1 不做分片读取
+    # 展示用截断（V1 不做分片读取，超大集合仅取前 1000）：前端本就只展示截断视图，
+    # 5s 轮询全量读取只会反复搬运大 value
     if ktype == "string":
         return await c.get(key)
     if ktype == "hash":
-        return await c.hgetall(key)
+        _, fields = await c.hscan(key, cursor=0, count=1000)  # 首批即用，游标丢弃
+        return dict(fields)
     if ktype == "list":
-        return await c.lrange(key, 0, -1)
+        return await c.lrange(key, 0, 999)
     if ktype == "set":
-        return sorted(await c.smembers(key))
+        _, members = await c.sscan(key, cursor=0, count=1000)  # 首批即用，游标丢弃
+        return sorted(members)
     if ktype == "zset":
-        return [[score, member] for member, score in await c.zrange(key, 0, -1, withscores=True)]
+        return [[score, member] for member, score in await c.zrange(key, 0, 999, withscores=True)]
     return None
 
 
