@@ -1,75 +1,18 @@
-"""MQ 模块：Jolokia provider + 诊断 + backlog 趋势采样（PRD §9）。"""
+"""MQ 模块：Jolokia provider + 诊断 + backlog 趋势采样（PRD §9）。
 
-import asyncio
+采样语义（2026-09-30 调整）：不再有后台定时采样——趋势样本随 get_queues
+的真实拉取产生（MQ 页面 3s 轮询 / 手动刷新驱动），与 Server 趋势
+"页面在场才采样"同语义。无人查看时无写入，遗留采样 key 靠写时 2h TTL
+自然消亡。历史背景：曾有 60s 全量后台采样，24h 空转写 ~5800 序列、
+95% 样本（100 点保留 vs 1m/5m 窗口）无读者，已删。
+"""
 
 from fastapi import FastAPI
 
 from . import service
 from .api import router
 
-# ponytail: 采样 job 由模块自启，单实例假设；多实例部署需分布式锁防重复采样
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
-
-_scheduler: AsyncIOScheduler | None = None
-
-
-async def _sample_backlogs() -> None:
-    """周期采样全部站点的 MQ 队列 backlog（get_queues 内部自动 push_sample）。
-
-    并发采样 + 跳过停用站点：串行下一个挂死 broker（2 次重试 × 10s 连接超时）
-    就能拖穿 60s 周期，健康实例采样出现空洞；并发扇出由 get_queues 内部
-    的全局 mq 信号量（8）兜底。
-    """
-    from backend.app.modules.sites import service as sites_service
-
-    async def one(site: dict, mq: dict) -> None:
-        try:
-            await service.get_queues(site["id"], mq["id"])
-        except Exception:  # noqa: BLE001 - 单个实例失败不影响其他采样
-            pass
-
-    jobs = [
-        one(site, mq)
-        for site in await sites_service.list_sites()
-        if site.get("enabled", True)  # list_sites 不过滤 enabled，这里跳过停用站点
-        for mq in await sites_service.list_resources(site["id"], "mq")
-        if mq.get("enabled", True)
-    ]
-    await asyncio.gather(*jobs, return_exceptions=True)
-
 
 def register_module(app: FastAPI) -> None:
     app.include_router(router, prefix="/api")
     service.register_tester()
-    global _scheduler
-    if _scheduler is None:
-        _scheduler = AsyncIOScheduler()
-        _scheduler.add_job(_sample_backlogs, "interval", seconds=60, id="mq-backlog-sampling")
-        # AsyncIOScheduler 需要 running loop，挂到应用生命周期启动（仍在模块内，不改 main.py）
-        app.router.lifespan_context = _lifespan_with_scheduler(app.router.lifespan_context)
-
-
-def _lifespan_with_scheduler(inner):
-    """包装应用原 lifespan：启动时开采样调度器，关闭时停掉。"""
-    from contextlib import asynccontextmanager
-
-    @asynccontextmanager
-    async def ctx(app):
-        async with inner(app):
-            await _start_scheduler()
-            try:
-                yield
-            finally:
-                await _stop_scheduler()
-
-    return ctx
-
-
-async def _start_scheduler() -> None:
-    if _scheduler is not None:
-        _scheduler.start()
-
-
-async def _stop_scheduler() -> None:
-    if _scheduler is not None and _scheduler.running:
-        _scheduler.shutdown(wait=False)
