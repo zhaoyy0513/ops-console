@@ -181,6 +181,7 @@ async function save() {
           v-else-if="f.kind === 'name-select'"
           v-model:value="form[f.key]"
           :options="props.target?.nameOptions ?? []"
+          :filter="() => true"
           :input-props="{ autocomplete: 'off' }"
           :placeholder="$t('sites.nameSelectPh')"
         />
@@ -190,6 +191,7 @@ async function save() {
           v-else-if="f.kind === 'host-select'"
           v-model:value="form[f.key]"
           :options="props.target?.hostOptions ?? []"
+          :filter="() => true"
           :input-props="{ autocomplete: 'off' }"
           :placeholder="(props.target?.hostOptions ?? []).length ? $t('sites.hostSelectPh') : $t('sites.hostInputAddr')"
         />
