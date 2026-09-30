@@ -1,14 +1,17 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { NButton, NCard, NModal, NProgress, NSelect, NSpace, NTable, NTag, useMessage } from 'naive-ui'
+import { useI18n } from 'vue-i18n'
+import { NButton, NCard, NModal, NProgress, NSelect, NSpace, NTable, NTag, NTooltip, useMessage } from 'naive-ui'
 import { useSiteStore } from '../../stores/site'
+import { locale } from '../../i18n'
 import { DEVICE_FIELDS } from './fields'
 import TabHelp from '../../components/TabHelp.vue'
 import CodeJsonEditor from '../../components/CodeJsonEditor.vue'
-import { deviceApi, type DeviceRow } from './api'
+import { deviceApi, type DeviceCustomField, type DeviceRow } from './api'
 
 const siteStore = useSiteStore()
 const message = useMessage()
+const { t } = useI18n()
 
 const REFRESH_SECONDS = 30
 
@@ -21,12 +24,35 @@ function statusTagType(r: DeviceRow): 'success' | 'warning' | 'error' | 'default
   return 'default'
 }
 
-const instances = ref<Array<{ label: string; value: string }>>([])
+const instances = ref<Array<{ label: string; value: string; custom_fields: DeviceCustomField[] }>>([])
 const instanceId = ref<string | null>(null)
 const devices = ref<DeviceRow[]>([])
 const loading = ref(false)
 const detail = ref<DeviceRow | null>(null)
 const detailShow = ref(false)
+
+// 当前实例的自定义字段（列配置来自实例配置，随下拉切换）
+const currentCustomFields = computed(() => instances.value.find((i) => i.value === instanceId.value)?.custom_fields ?? [])
+
+/** 自定义字段标题：随语言取中/英文名，一种为空回退另一种 */
+function cfLabel(cf: DeviceCustomField): string {
+  const v = locale.value === 'zh' ? cf.label_zh : cf.label_en
+  return v || cf.label_zh || cf.label_en
+}
+
+function cfVal(r: DeviceRow, key: string): string {
+  return r[key] == null ? '' : String(r[key])
+}
+
+/** 复制自定义字段全文（表格省略号 / 详情弹窗共用） */
+async function copyText(s: string) {
+  try {
+    await navigator.clipboard.writeText(s)
+    message.success(t('common.copied'))
+  } catch (e) {
+    message.error(String(e))
+  }
+}
 
 async function loadInstances() {
   const siteId = siteStore.currentSiteId
@@ -35,7 +61,11 @@ async function loadInstances() {
   try {
     const { sitesApi } = await import('../sites/api')
     const list = await sitesApi.listResources(siteId, 'devices')
-    instances.value = list.map((r) => ({ label: r.name, value: r.id }))
+    instances.value = list.map((r) => ({
+      label: r.name,
+      value: r.id,
+      custom_fields: ((r.custom_fields as DeviceCustomField[] | null) ?? []),
+    }))
     if (!instanceId.value || !list.some((r) => r.id === instanceId.value)) {
       instanceId.value = list[0]?.id ?? null
     }
@@ -136,8 +166,10 @@ watch(instanceId, () => load())
       <n-table :single-line="false" size="small">
         <thead>
           <tr>
-            <!-- 表头由 device/fields.ts 公用定义驱动（与字段映射配置同源），文案随语言切换 -->
+            <!-- 表头由 device/fields.ts 公用定义驱动（与字段映射配置同源），文案随语言切换；
+                 自定义字段列取实例配置的双语展示名（随语言回退） -->
             <th v-for="f in DEVICE_FIELDS" :key="f.key">{{ $t(`device.fields.${f.key}`) }}</th>
+            <th v-for="cf in currentCustomFields" :key="cf.key" style="min-width: 120px">{{ cfLabel(cf) }}</th>
             <th style="width: 80px">{{ $t('device.action') }}</th>
           </tr>
         </thead>
@@ -162,12 +194,24 @@ watch(instanceId, () => load())
                 </div>
                 <span v-else>-</span>
               </template>
-              <template v-else>{{ (r as any)[f.key] ?? '-' }}</template>
+              <template v-else>{{ r[f.key] ?? '-' }}</template>
+            </td>
+            <!-- 自定义字段列：长内容省略号，悬停 tooltip 展示全文 + 复制 -->
+            <td v-for="cf in currentCustomFields" :key="cf.key">
+              <n-tooltip :disabled="!cfVal(r, cf.key)" style="max-width: 380px">
+                <template #trigger>
+                  <div class="cf-cell">{{ cfVal(r, cf.key) || '-' }}</div>
+                </template>
+                <div class="cf-tip">
+                  <span class="cf-tip-text">{{ cfVal(r, cf.key) }}</span>
+                  <n-button size="tiny" @click="copyText(cfVal(r, cf.key))">{{ $t('common.copy') }}</n-button>
+                </div>
+              </n-tooltip>
             </td>
             <td><n-button size="tiny" @click="openDetail(r)">{{ $t('device.detail') }}</n-button></td>
           </tr>
           <tr v-if="!devices.length && !loading">
-            <td :colspan="DEVICE_FIELDS.length + 1" style="text-align: center; color: #999">
+            <td :colspan="DEVICE_FIELDS.length + currentCustomFields.length + 1" style="text-align: center; color: #999">
               {{ instanceId ? $t('device.emptyInstance') : $t('device.emptyNone') }}
             </td>
           </tr>
@@ -186,6 +230,21 @@ watch(instanceId, () => load())
             <tr><th>{{ $t('device.battery') }}</th><td>{{ detail.battery ?? '-' }}{{ detail.battery != null ? '%' : '' }}</td></tr>
             <tr><th>{{ $t('device.position') }}</th><td>{{ detail.station ?? '-' }}</td></tr>
             <tr><th>{{ $t('device.lastUpdate') }}</th><td>{{ fmtTime(detail.last_update) }}</td></tr>
+            <!-- 自定义字段：标题随语言，长内容省略号 + tooltip 全文 + 复制 -->
+            <tr v-for="cf in currentCustomFields" :key="cf.key">
+              <th>{{ cfLabel(cf) }}</th>
+              <td>
+                <n-tooltip :disabled="!cfVal(detail, cf.key)" style="max-width: 380px">
+                  <template #trigger>
+                    <div class="cf-cell">{{ cfVal(detail, cf.key) || '-' }}</div>
+                  </template>
+                  <div class="cf-tip">
+                    <span class="cf-tip-text">{{ cfVal(detail, cf.key) }}</span>
+                    <n-button size="tiny" @click="copyText(cfVal(detail, cf.key))">{{ $t('common.copy') }}</n-button>
+                  </div>
+                </n-tooltip>
+              </td>
+            </tr>
           </tbody>
         </n-table>
         <div style="margin: 14px 0 6px; color: var(--ops-text-2); font-size: 13px">{{ $t('device.rawJson') }}</div>
@@ -205,5 +264,23 @@ watch(instanceId, () => load())
   font-family: var(--ops-font-mono);
   font-variant-numeric: tabular-nums;
   font-size: 12px;
+}
+/* 自定义字段单元格：n-table 默认自动布局（仅 SshView 自带 fixed），
+   内层 div 需定宽上限才能触发省略号；列本身 min-width 120px 自然拉伸 */
+.cf-cell {
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cf-tip {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.cf-tip-text {
+  word-break: break-all;
+  max-height: 200px;
+  overflow: auto;
 }
 </style>

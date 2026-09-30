@@ -129,7 +129,7 @@ export const helpContent: Record<HelpLang, Record<string, HelpSection>> = {
     device: {
       title: 'Instructions · Device',
       lines: [
-        'Devices are ingested per HTTP endpoint instance showing device code, name, status, battery, position, lift and shelf code; the list auto-refreshes every 30s, or refresh manually.',
+        'Devices are ingested per HTTP endpoint instance showing device code, name, status, battery and position (per-instance custom columns supported); the list auto-refreshes every 30s, or refresh manually.',
         'Each instance can configure field mapping and value mapping (Sites → Resources → Device → Field mapping): field mapping resolves API field-name differences; value mapping translates status enums to readable text (e.g. 1=CREATE).',
         'Badge colours: green=running/online (running/working/active/online), amber=idle/charging/paused (idle/charging/standby/paused), red=fault/offline (error/fault/offline/down); unrecognised states show grey with the raw value.',
         'Battery <20% is shown in red as a charging reminder.',

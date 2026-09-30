@@ -1,5 +1,7 @@
+from typing import Annotated
+
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, create_model
+from pydantic import BaseModel, Field, create_model, field_validator, model_validator
 
 from . import service
 
@@ -52,6 +54,37 @@ class MqConfig(ResourceBase):
     password: str = ""
 
 
+class DeviceCustomField(BaseModel):
+    """Device 自定义展示字段：key 前端生成一次且稳定（cf_+5hex）；
+    bind/template 语义与 field_map 相同（模板优先），value_map 为该字段
+    独立的值->展示映射。轻校验：key 必填、展示名至少一种语言；
+    未声明的字段在此被剥离（pydantic 默认忽略 extra）。
+    校验放在本模型上（而非 DeviceConfig 的 field_validator），
+    这样经 create_model 派生的 update 模型同样生效。"""
+
+    key: str = Field(min_length=1)
+    label_zh: str = ""
+    label_en: str = ""
+    bind: str | None = None
+    template: str | None = None
+    value_map: dict[str, str] | None = None
+
+    @field_validator("label_zh", "label_en")
+    @classmethod
+    def _strip_label(cls, v: str) -> str:
+        return v.strip()
+
+    @model_validator(mode="after")
+    def _need_one_label(self) -> "DeviceCustomField":
+        if not (self.label_zh or self.label_en):
+            raise ValueError("custom field requires label_zh or label_en")
+        return self
+
+
+# ≤10 上限用 Annotated 约束表达（随注解复制到 update 模型，两路同样生效）
+_MAX_CUSTOM_FIELDS = Field(max_length=10)
+
+
 class DeviceConfig(ResourceBase):
     base_url: str  # 完整 API 地址（可含路径，如 http://host:19030/mission/robot/info/active——上游真实路径，保持原样）
     list_path: str = ""  # 留空 = 直接请求 base_url；地址与路径分离的场景才填（如 /mission/agent/list）
@@ -63,6 +96,8 @@ class DeviceConfig(ResourceBase):
     # 实例级值->展示映射（枚举翻译），作用于字段映射后的最终值。
     # 例：{"status": {"1": "CREATE", "2": "Free"}}；每个实例独立，未命中显示原值
     value_map: dict[str, dict[str, str]] | None = None
+    # 自定义展示字段（最多 10 个），产出在各项稳定 key 下
+    custom_fields: Annotated[list[DeviceCustomField], _MAX_CUSTOM_FIELDS] | None = None
 
 
 def _update_model(model: type[BaseModel]) -> type[BaseModel]:

@@ -30,6 +30,7 @@ async def list_device_mappings() -> list[dict]:
                 "device_name": inst["name"],
                 "field_map": inst.get("field_map"),
                 "value_map": inst.get("value_map"),
+                "custom_fields": inst.get("custom_fields"),  # 克隆需连同自定义字段一起复制
             })
     return out
 

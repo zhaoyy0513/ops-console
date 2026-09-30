@@ -18,6 +18,4 @@ export const DEVICE_FIELDS: DeviceFieldDef[] = [
   { key: 'status', label: 'Status' },
   { key: 'battery', label: 'Battery' },
   { key: 'station', label: 'Position' },
-  { key: 'lift', label: 'Lift' },
-  { key: 'shelf_code', label: 'ShelfCode' },
 ]

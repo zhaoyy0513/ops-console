@@ -149,6 +149,47 @@ def test_value_map_independent_per_instance():
     assert normalize_device({"id": "c", "status": 1})["status"] == 1
 
 
+# ---------- 自定义字段（custom_fields） ----------
+
+
+def test_normalize_custom_fields():
+    """自定义字段与内置同规则：bind/模板取值（模板优先）-> 值映射，产出在稳定 key 下。"""
+    cfs = [
+        {"key": "cf_t1", "label_zh": "任务", "label_en": "Task", "bind": "currentTask"},
+        {"key": "cf_p1", "label_zh": "坐标", "label_en": "Pos", "template": "({x},{y})"},
+        {"key": "cf_s1", "label_zh": "状态", "label_en": "St", "bind": "st",
+         "value_map": {"1": "ON"}},
+    ]
+    r = normalize_device(
+        {"id": "R1", "currentTask": "deliver", "x": 3, "y": 7, "st": 1}, None, None, cfs)
+    assert r["cf_t1"] == "deliver"
+    assert r["cf_p1"] == "(3,7)"
+    assert r["cf_s1"] == "ON"  # 数字值与字符串键互通
+    assert "cf_t1" not in normalize_device({"id": "R1"})  # 未配置不产出
+
+
+async def test_custom_field_in_list_response(client, fake_platform_redis, monkeypatch):
+    """自定义字段配置经存储 -> normalize -> 列表响应带映射值。"""
+    class CfProvider(StubProvider):
+        def __init__(self, config):
+            self._cf = config.get("custom_fields")
+
+        async def get_device_list(self):
+            return [normalize_device(
+                {"id": "R001", "name": "alpha", "status": "running", "task": "deliver"},
+                None, None, self._cf)]
+
+    monkeypatch.setattr(service, "_build_provider", lambda config: CfProvider(config))
+    r = await client.put("/api/sites/sz/device-instances/rc1", json={
+        "custom_fields": [{"key": "cf_t1", "label_zh": "任务", "label_en": "Task", "bind": "task"}]})
+    assert r.status_code == 200
+    saved = r.json()["custom_fields"]
+    assert saved[0]["key"] == "cf_t1" and "bind" in saved[0]  # 未知字段已剥离
+    r = await client.get("/api/sites/sz/devices?instance=rc1")
+    assert r.status_code == 200
+    assert r.json()[0]["cf_t1"] == "deliver"
+
+
 async def test_device_mappings_global_listing(client, fake_platform_redis, monkeypatch):
     """克隆数据源：/devices/mappings 列出全部站点实例的映射配置（不分站点）。"""
     monkeypatch.setattr(service, "_build_provider", lambda config: StubProvider(config))

@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { NButton, NDrawer, NDrawerContent, NInput, NModal, NRadio, NSelect, NSpace, NSpin, NTable, useMessage } from 'naive-ui'
 import { DEVICE_FIELDS } from '../device/fields'
+import type { DeviceCustomField } from '../device/api'
 
 const props = defineProps<{
   show: boolean
@@ -12,12 +13,15 @@ const props = defineProps<{
     name: string
     field_map?: Record<string, string> | null
     value_map?: Record<string, Record<string, string>> | null
+    custom_fields?: DeviceCustomField[] | null
   } | null
 }>()
 const emit = defineEmits<{ (e: 'update:show', v: boolean): void; (e: 'saved'): void }>()
 
 // 业务字段列表由 device/fields.ts 公用定义驱动（与 Device 页表头同源）
 const BIZ_FIELDS = DEVICE_FIELDS
+// 自定义字段上限（后端同校验）
+const MAX_CUSTOM = 10
 
 const message = useMessage()
 const { t } = useI18n()
@@ -30,8 +34,27 @@ const bindings = ref<Record<string, string | null>>({})
 const templates = ref<Record<string, string>>({})
 // 值->展示映射（枚举翻译），紧凑格式 "1=CREATE, 2=Free"；每实例独立
 const valueMaps = ref<Record<string, string>>({})
+// 自定义展示字段：key 生成一次后稳定（cf_+5hex），bind/template/value_map
+// 复用上面三张以 key 为索引的表 —— 编辑/预览逻辑与内置字段完全同构
+const customFields = ref<DeviceCustomField[]>([])
+// 统一行模型：内置字段（标题走 i18n，不可删改）+ 自定义字段（双语名可编辑、可删）
+const rows = computed<Array<{ key: string; cf?: DeviceCustomField }>>(() => [
+  ...BIZ_FIELDS.map((f) => ({ key: f.key })),
+  ...customFields.value.map((cf) => ({ key: cf.key, cf })),
+])
 // 当前编辑实例标识：控件 key 绑定它，切换 Device 时销毁重建（修复 textarea 高度残留）
 const deviceKey = ref('')
+
+/** 新增自定义字段：稳定 key 一次性生成（保存前可删，不占用后端校验） */
+function addCustom() {
+  if (customFields.value.length >= MAX_CUSTOM) return
+  const key = `cf_${Math.random().toString(16).slice(2, 7).padEnd(5, '0')}`
+  customFields.value.push({ key, label_zh: '', label_en: '' })
+}
+
+function removeCustom(key: string) {
+  customFields.value = customFields.value.filter((cf) => cf.key !== key)
+}
 
 /** 解析值映射：换行或逗号分隔的 k=v（支持中英文逗号）；非法片段忽略 */
 function parseValueMap(s: string | undefined): Record<string, string> {
@@ -86,8 +109,8 @@ async function fetchSample() {
     const result = await deviceApi.sampleFields(props.siteId, props.device.id)
     jsonFields.value = result.fields
     sample.value = result.sample
-    // 已有映射回填（模板归模板列，其余归绑定列）
-    applyMapping(props.device.field_map, props.device.value_map)
+    // 已有映射回填（模板归模板列，其余归绑定列；自定义字段一并回填）
+    applyMapping(props.device.field_map, props.device.value_map, props.device.custom_fields)
   } catch (e) {
     message.error((e as Error).message)
   } finally {
@@ -104,6 +127,7 @@ const cloneShow = ref(false)
 const cloneList = ref<Array<{
   site_id: string; site_name: string; device_id: string; device_name: string
   field_map: Record<string, string> | null; value_map: Record<string, Record<string, string>> | null
+  custom_fields?: DeviceCustomField[] | null
 }>>([])
 const cloneLoading = ref(false)
 const cloneSelected = ref<string | null>(null)
@@ -132,7 +156,7 @@ function applyClone() {
     message.warning(t('fieldmap.pickSource'))
     return
   }
-  applyMapping(src.field_map, src.value_map)
+  applyMapping(src.field_map, src.value_map, src.custom_fields)
   deviceKey.value = `${deviceKey.value}#clone`  // 强制重建控件，确保覆盖/清空立即生效
   cloneShow.value = false
   message.success(t('fieldmap.cloned', { site: src.site_name, device: src.device_name }))
@@ -142,6 +166,7 @@ function applyClone() {
 function applyMapping(
   fieldMap?: Record<string, string> | null,
   valueMap?: Record<string, Record<string, string>> | null,
+  customs?: DeviceCustomField[] | null,
 ) {
   const b: Record<string, string | null> = {}
   const t: Record<string, string> = {}
@@ -156,6 +181,8 @@ function applyMapping(
     vm[k] = serializeValueMap(m)
   }
   valueMaps.value = vm
+  // 克隆（快照副本）避免直接改到来源对象
+  customFields.value = (customs ?? []).map((c) => ({ ...c }))
 }
 
 async function save() {
@@ -174,11 +201,26 @@ async function save() {
     const m = parseValueMap(valueMaps.value[f.key])
     if (Object.keys(m).length) vClean[f.key] = m
   }
+  // 自定义字段：同一套 模板>绑定 + 值映射 规则；key 稳定，随保存写入实例配置
+  const customs = customFields.value.map((cf) => {
+    const tpl = templates.value[cf.key]?.trim()
+    const bind = bindings.value[cf.key]?.trim()
+    const m = parseValueMap(valueMaps.value[cf.key])
+    return {
+      key: cf.key,
+      label_zh: cf.label_zh.trim(),
+      label_en: cf.label_en.trim(),
+      template: tpl || null,
+      bind: tpl ? null : (bind || null),
+      value_map: Object.keys(m).length ? m : null,
+    }
+  })
   const { sitesApi } = await import('./api')
   try {
     await sitesApi.updateResource(props.siteId, 'devices', props.device.id, {
       field_map: Object.keys(clean).length ? clean : null,
       value_map: Object.keys(vClean).length ? vClean : null,
+      custom_fields: customs.length ? customs : null,
     })
     message.success(t('fieldmap.mappingSaved'))
     emit('update:show', false)
@@ -194,19 +236,39 @@ async function save() {
     @update:show="emit('update:show', $event)">
     <n-drawer-content :title="$t('fieldmap.title', { name: props.device?.name ?? '' })" closable>
       <n-spin :show="loading">
-        <p style="margin-bottom: 12px; color: #666; font-size: 13px">
-          {{ $t('fieldmap.intro') }}
-        </p>
+        <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 12px">
+          <p style="flex: 1; margin: 0; color: #666; font-size: 13px">
+            {{ $t('fieldmap.intro') }}
+          </p>
+          <span v-if="customFields.length >= MAX_CUSTOM" style="color: #f0a020; font-size: 12px; white-space: nowrap">
+            {{ $t('device.customMax') }}
+          </span>
+          <n-button size="small" type="primary" ghost :disabled="customFields.length >= MAX_CUSTOM" @click="addCustom">
+            + {{ $t('device.addCustom') }}
+          </n-button>
+        </div>
         <div class="field-groups">
-          <div v-for="f in BIZ_FIELDS" :key="f.key" class="field-group">
-            <div class="field-title">{{ $t(`device.fields.${f.key}`) }}</div>
+          <div v-for="row in rows" :key="row.key" class="field-group">
+            <div class="field-title" :class="{ 'field-title-edit': !!row.cf }">
+              <template v-if="row.cf">
+                <!-- 自定义字段：双语展示名可编辑；内置字段名固定不可改 -->
+                <n-input v-model:value="row.cf.label_zh" size="small"
+                  :placeholder="$t('device.customNameZh')" style="width: 170px" />
+                <n-input v-model:value="row.cf.label_en" size="small"
+                  :placeholder="$t('device.customNameEn')" style="width: 170px" />
+                <n-button size="tiny" type="error" ghost @click="removeCustom(row.key)">
+                  {{ $t('common.delete') }}
+                </n-button>
+              </template>
+              <template v-else>{{ $t(`device.fields.${row.key}`) }}</template>
+            </div>
             <div class="field-controls">
               <div class="f-item">
                 <div class="f-label">{{ $t('fieldmap.bindLabel') }}</div>
                 <!-- key 绑定 deviceKey：切换实例时销毁重建，杜绝上一个 Device 的内容/高度残留 -->
                 <n-select
-                  :key="`b-${deviceKey}-${f.key}`"
-                  v-model:value="bindings[f.key]"
+                  :key="`b-${deviceKey}-${row.key}`"
+                  v-model:value="bindings[row.key]"
                   size="small"
                   clearable
                   filterable
@@ -218,8 +280,8 @@ async function save() {
               <div class="f-item">
                 <div class="f-label">{{ $t('fieldmap.tplLabel') }}</div>
                 <n-input
-                  :key="`t-${deviceKey}-${f.key}`"
-                  v-model:value="templates[f.key]"
+                  :key="`t-${deviceKey}-${row.key}`"
+                  v-model:value="templates[row.key]"
                   size="small"
                   :placeholder="$t('fieldmap.tplPh')"
                 />
@@ -227,8 +289,8 @@ async function save() {
               <div class="f-item">
                 <div class="f-label">{{ $t('fieldmap.vmLabel') }}</div>
                 <n-input
-                  :key="`v-${deviceKey}-${f.key}`"
-                  v-model:value="valueMaps[f.key]"
+                  :key="`v-${deviceKey}-${row.key}`"
+                  v-model:value="valueMaps[row.key]"
                   type="textarea"
                   :rows="1"
                   :placeholder="$t('fieldmap.vmPh')"
@@ -236,7 +298,7 @@ async function save() {
               </div>
               <div class="f-item">
                 <div class="f-label">{{ $t('fieldmap.previewLabel') }}</div>
-                <div class="preview mono">{{ preview(f.key) }}</div>
+                <div class="preview mono">{{ preview(row.key) }}</div>
               </div>
             </div>
           </div>
@@ -303,6 +365,11 @@ async function save() {
   font-weight: 600;
   font-size: 13px;
   margin-bottom: 8px;
+}
+.field-title-edit {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 .field-controls {
   display: flex;

@@ -1,16 +1,26 @@
 import api from '../../api'
 
+/** 自定义展示字段（与后端 DeviceCustomField 同构）；key 生成一次后稳定 */
+export interface DeviceCustomField {
+  key: string
+  label_zh: string
+  label_en: string
+  bind?: string | null
+  template?: string | null
+  value_map?: Record<string, string> | null
+}
+
 export interface DeviceRow {
   id: string | null
   name: string | null
   status: string | null
   battery: number | string | null
   station: string | null
-  lift: number | string | null
-  shelf_code: string | null
   error: string | null
   last_update: string | null
   instance?: string
+  /** 自定义字段的取值由后端 normalize 写入各项稳定 key（cf_xxxxx）下 */
+  [key: string]: unknown
 }
 
 export const deviceApi = {
@@ -35,5 +45,6 @@ export const deviceApi = {
       device_name: string
       field_map: Record<string, string> | null
       value_map: Record<string, Record<string, string>> | null
+      custom_fields?: DeviceCustomField[] | null
     }>>('/devices/mappings'),
 }

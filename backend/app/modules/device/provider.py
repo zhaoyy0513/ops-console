@@ -72,10 +72,19 @@ def _last_update(raw: dict[str, Any]) -> Any:
     return None
 
 
+def _apply_vm(v: Any, vm: dict[str, str] | None) -> Any:
+    """值->展示映射（枚举翻译）：字符串化匹配（数字 1 与 "1" 互通），
+    未命中返回原值。作用于字段映射求值之后的最终值。"""
+    if vm and v is not None:
+        return vm.get(str(v), v)
+    return v
+
+
 def normalize_device(
     raw: dict[str, Any],
     field_map: dict[str, str] | None = None,
     value_map: dict[str, dict[str, str]] | None = None,
+    custom_fields: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """原始 API 字典 -> PRD §12.1 统一结构（纯函数）。
 
@@ -87,7 +96,10 @@ def normalize_device(
 
     value_map（实例级配置）为值->展示映射：{"status": {"1": "CREATE"}}，
     作用于字段取值/模板求值之后，字符串化匹配，未命中保留原值。
-    """
+
+    custom_fields（实例级自定义展示字段）：每项 {key, label_zh, label_en,
+    bind, template, value_map}，取值规则与内置字段相同（模板优先于绑定），
+    计算结果写入行内该项的稳定 key（cf_xxxxx）下。"""
     import re
 
     def eval_value(upstream: str) -> Any:
@@ -147,27 +159,27 @@ def normalize_device(
         return None
 
     def apply_value_map(v: Any, field: str) -> Any:
-        """值->展示映射（枚举翻译）：字符串化匹配（数字 1 与 "1" 互通），
-        未命中返回原值。作用于字段映射求值之后的最终值。"""
-        vm = value_map.get(field) if value_map else None
-        if vm and v is not None:
-            return vm.get(str(v), v)
-        return v
+        return _apply_vm(v, value_map.get(field) if value_map else None)
 
-    return {
+    out: dict[str, Any] = {
         "id": apply_value_map(pick("id"), "id"),
         "name": apply_value_map(pick("name"), "name"),
         "status": apply_value_map(online_to_status(), "status"),
         "battery": apply_value_map(pick("battery"), "battery"),
         "station": apply_value_map(station(), "station"),
-        "lift": apply_value_map(raw.get("lift"), "lift"),
-        "shelf_code": apply_value_map(
-            raw.get("shelfCode") or raw.get("shelf_code"), "shelf_code"),
         "error": apply_value_map(pick("error"), "error"),
         "last_update": last_update(),
         "x": raw.get("x"),
         "y": raw.get("y"),
     }
+    # 自定义字段：与内置字段同规则（模板优先于绑定 -> 值映射），产出在稳定 key 下
+    for cf in custom_fields or []:
+        key = cf.get("key")
+        if not key:
+            continue
+        v = eval_value(cf.get("template") or cf.get("bind") or "")
+        out[key] = _apply_vm(v if v != "" else None, cf.get("value_map"))
+    return out
 
 
 class DeviceProvider:
@@ -195,6 +207,8 @@ class HttpDeviceProvider(DeviceProvider):
         # 实例级字段映射（业务字段 -> 上游字段名），应对不同环境的响应结构差异
         self._field_map: dict[str, str] | None = config.get("field_map") or None
         self._value_map: dict[str, dict[str, str]] | None = config.get("value_map") or None
+        # 实例级自定义展示字段（key 稳定，取值规则同 field_map/value_map）
+        self._custom_fields: list[dict[str, Any]] | None = config.get("custom_fields") or None
 
     def _client(self) -> httpx.AsyncClient:
         return httpx.AsyncClient(
@@ -248,7 +262,7 @@ class HttpDeviceProvider(DeviceProvider):
             data = await self._get(c, self._list_request_path())
         out = []
         for raw in self._unwrap_list(data):
-            item = normalize_device(raw, self._field_map, self._value_map)
+            item = normalize_device(raw, self._field_map, self._value_map, self._custom_fields)
             item["_raw"] = raw  # 原始完整 JSON，详情弹窗展示用
             out.append(item)
         return out

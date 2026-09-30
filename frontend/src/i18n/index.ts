@@ -39,7 +39,7 @@ const messages = {
       device: {
         title: '说明',
         lines: [
-          '按实例接入设备 HTTP 接口，展示设备编码、名称、状态、电量、位置、举升与货架编码。',
+          '按实例接入设备 HTTP 接口，展示设备编码、名称、状态、电量与位置（可按实例增加自定义字段列）。',
           '每个实例可配置字段映射与值映射（站点管理 → 资源 → 设备 → 字段映射）：字段映射解决接口字段名差异，值映射把状态枚举翻译为可读文本（如 1=CREATE）。',
           '状态徽标颜色：绿=运行/在线，黄=空闲/充电，红=故障/离线；无法识别的状态显示为灰色并保留原始值。',
           '数据每 30 秒自动刷新；详情弹窗内的 Raw JSON 是接口返回的原始完整数据。',
@@ -80,6 +80,8 @@ const messages = {
       add: '新增',
       close: '关闭',
       nameRequired: '名称必填',
+      copy: '复制',
+      copied: '已复制',
     },
     // 资源连接字段列头/表单 label（资源表格与编辑弹窗共用）
     fields: {
@@ -223,14 +225,17 @@ const messages = {
       position: '位置',
       lastUpdate: '最后更新',
       rawJson: 'Raw JSON',
+      // 自定义字段（字段映射弹窗 + Device 页列头）
+      addCustom: '自定义',
+      customNameZh: '展示名称(中文)',
+      customNameEn: '展示名称(English)',
+      customMax: '最多 10 个自定义字段',
       fields: {
         id: '设备编码',
         name: '设备名称',
         status: '状态',
         battery: '电量',
         station: '位置',
-        lift: '举升',
-        shelf_code: '货架编码',
       },
     },
     redis: {
@@ -491,7 +496,7 @@ const messages = {
       device: {
         title: 'Instructions',
         lines: [
-          'Devices are ingested per HTTP endpoint instance showing code, name, status, battery, position, lift and shelf code.',
+          'Devices are ingested per HTTP endpoint instance showing code, name, status, battery and position (per-instance custom columns supported).',
           'Each instance can configure field mapping and value mapping (Sites → Resources → Device → Field mapping): field mapping resolves API field-name differences; value mapping translates status enums to readable text (e.g. 1=CREATE).',
           'Badge colours: green=running/online, amber=idle/charging, red=fault/offline; unrecognised states show grey with the raw value.',
           'Data auto-refreshes every 30s; Raw JSON in the detail modal is the exact API payload.',
@@ -532,6 +537,8 @@ const messages = {
       add: 'Add',
       close: 'Close',
       nameRequired: 'Name is required',
+      copy: 'Copy',
+      copied: 'Copied',
     },
     fields: {
       name: 'Name',
@@ -673,14 +680,17 @@ const messages = {
       position: 'Position',
       lastUpdate: 'Last Update',
       rawJson: 'Raw JSON',
+      // Custom fields (field mapping dialog + Device page column headers)
+      addCustom: 'Add custom',
+      customNameZh: 'Display name (zh)',
+      customNameEn: 'Display name (en)',
+      customMax: 'Up to 10 custom fields',
       fields: {
         id: 'DeviceCode',
         name: 'DeviceName',
         status: 'Status',
         battery: 'Battery',
         station: 'Position',
-        lift: 'Lift',
-        shelf_code: 'ShelfCode',
       },
     },
     redis: {
