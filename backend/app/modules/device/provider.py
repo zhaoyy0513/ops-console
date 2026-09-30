@@ -103,8 +103,14 @@ def normalize_device(
     import re
 
     def eval_value(upstream: str) -> Any:
-        if re.search(r"\{\w+\}", upstream):
-            return re.sub(r"\{(\w+)\}", lambda m: str(raw.get(m.group(1), "")), upstream)
+        # {field} 单字段、{f1,f2} 多字段（值用逗号连接）均为占位符；
+        # 整串不含合法占位符时按字段名直取
+        if re.search(r"\{[\w,]+\}", upstream):
+            return re.sub(
+                r"\{([\w,]+)\}",
+                lambda m: ",".join(str(raw.get(f, "")) for f in m.group(1).split(",")),
+                upstream,
+            )
         return raw.get(upstream)
 
     def mapped(field: str) -> Any:

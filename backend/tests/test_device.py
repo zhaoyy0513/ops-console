@@ -59,6 +59,22 @@ def test_normalize_device_camel_case():
 def test_normalize_device_snake_case_and_missing():
     r = normalize_device({"id": "R2", "status": "idle", "battery_level": 50})
     assert r["battery"] == 50 and r["error"] is None
+
+
+def test_template_multi_field_braces():
+    """模板占位符：{f} 单字段；{f1,f2} 多字段逗号连接；缺失字段空串。"""
+    raw = {"mapId": 1, "areaId": 2, "name": "dev"}
+    r = normalize_device(raw, field_map={
+        "station": "({mapId},{areaId})",          # 每个字段各占一个花括号
+        "name": "{mapId,areaId}",                  # 多字段合一个花括号
+    })
+    assert r["station"] == "(1,2)"
+    assert r["name"] == "1,2"
+    # 缺失字段替换为空串；无花括号整串按字段名直取
+    r2 = normalize_device(raw, field_map={"station": "{mapId},{missing}"})
+    assert r2["station"] == "1,"
+    r3 = normalize_device(raw, field_map={"station": "mapId"})
+    assert r3["station"] == 1
     assert normalize_device({})["id"] is None
 
 

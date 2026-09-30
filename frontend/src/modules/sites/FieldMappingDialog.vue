@@ -85,7 +85,9 @@ function rawValue(key: string): string {
   if (modes.value[key] === 'template') {
     const tpl = templates.value[key]?.trim()
     if (!tpl) return '-'
-    return tpl.replace(/\{(\w+)\}/g, (_, f) => String(sample.value?.[f] ?? ''))
+    // 与后端 eval_value 同规则：{field} 单字段；{f1,f2} 多字段逗号连接
+    return tpl.replace(/\{([\w,]+)\}/g, (_, names: string) =>
+      names.split(',').map((f: string) => String((sample.value as Record<string, unknown>)?.[f] ?? '')).join(','))
   }
   const b = bindings.value[key]
   if (!b) return '-'
@@ -107,6 +109,12 @@ function preview(key: string): string {
 
 function setMode(key: string, v: string | number | boolean) {
   modes.value[key] = v as FieldMode
+}
+
+/** 模板校验：花括号内只能是字段名（逗号分隔可多个）；空括号/空格/嵌套等非法 */
+function tplInvalid(tpl: string | undefined): boolean {
+  if (!tpl) return false
+  return /\{\s*\}|\{[^}]*[^\w,}][^}]*\}/.test(tpl) || /\{[^}]*$/.test(tpl)
 }
 
 async function fetchSample() {
@@ -320,8 +328,12 @@ async function save() {
                   :key="`t-${deviceKey}-${row.key}`"
                   v-model:value="templates[row.key]"
                   size="small"
-                  :placeholder="'({mapId},{areaId})'"
+                  :status="tplInvalid(templates[row.key]) ? 'error' : undefined"
+                  :placeholder="'({mapId},{areaId}) 或 ({mapId,areaId})'"
                 />
+                <div v-if="tplInvalid(templates[row.key])" class="tpl-hint">
+                  {{ $t('fieldmap.tplInvalid') }}
+                </div>
               </div>
               <div class="c-raw mono">{{ rawValue(row.key) }}</div>
               <div class="c-vm">
@@ -429,6 +441,12 @@ async function save() {
 .c-value {
   flex: 1.2;
   min-width: 170px;
+}
+.tpl-hint {
+  color: #d03050;
+  font-size: 11px;
+  line-height: 1.4;
+  margin-top: 2px;
 }
 .c-raw {
   width: 120px;
