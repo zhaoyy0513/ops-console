@@ -1,17 +1,16 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { useI18n } from 'vue-i18n'
-import { NButton, NCard, NModal, NProgress, NSelect, NSpace, NTable, NTag, NTooltip, useMessage } from 'naive-ui'
+import { NButton, NCard, NModal, NProgress, NSelect, NSpace, NTable, NTag, useMessage } from 'naive-ui'
 import { useSiteStore } from '../../stores/site'
 import { locale } from '../../i18n'
 import { DEVICE_FIELDS } from './fields'
 import TabHelp from '../../components/TabHelp.vue'
 import CodeJsonEditor from '../../components/CodeJsonEditor.vue'
+import TipCopy from '../../components/TipCopy.vue'
 import { deviceApi, type DeviceCustomField, type DeviceRow } from './api'
 
 const siteStore = useSiteStore()
 const message = useMessage()
-const { t } = useI18n()
 
 const REFRESH_SECONDS = 30
 
@@ -42,16 +41,6 @@ function cfLabel(cf: DeviceCustomField): string {
 
 function cfVal(r: DeviceRow, key: string): string {
   return r[key] == null ? '' : String(r[key])
-}
-
-/** 复制自定义字段全文（表格省略号 / 详情弹窗共用） */
-async function copyText(s: string) {
-  try {
-    await navigator.clipboard.writeText(s)
-    message.success(t('common.copied'))
-  } catch (e) {
-    message.error(String(e))
-  }
 }
 
 async function loadInstances() {
@@ -198,15 +187,7 @@ watch(instanceId, () => load())
             </td>
             <!-- 自定义字段列：长内容省略号，悬停 tooltip 展示全文 + 复制 -->
             <td v-for="cf in currentCustomFields" :key="cf.key">
-              <n-tooltip :disabled="!cfVal(r, cf.key)" style="max-width: 380px">
-                <template #trigger>
-                  <div class="cf-cell">{{ cfVal(r, cf.key) || '-' }}</div>
-                </template>
-                <div class="cf-tip">
-                  <span class="cf-tip-text">{{ cfVal(r, cf.key) }}</span>
-                  <n-button size="tiny" @click="copyText(cfVal(r, cf.key))">{{ $t('common.copy') }}</n-button>
-                </div>
-              </n-tooltip>
+              <tip-copy :text="cfVal(r, cf.key)" />
             </td>
             <td><n-button size="tiny" @click="openDetail(r)">{{ $t('device.detail') }}</n-button></td>
           </tr>
@@ -233,17 +214,7 @@ watch(instanceId, () => load())
             <!-- 自定义字段：标题随语言，长内容省略号 + tooltip 全文 + 复制 -->
             <tr v-for="cf in currentCustomFields" :key="cf.key">
               <th>{{ cfLabel(cf) }}</th>
-              <td>
-                <n-tooltip :disabled="!cfVal(detail, cf.key)" style="max-width: 380px">
-                  <template #trigger>
-                    <div class="cf-cell">{{ cfVal(detail, cf.key) || '-' }}</div>
-                  </template>
-                  <div class="cf-tip">
-                    <span class="cf-tip-text">{{ cfVal(detail, cf.key) }}</span>
-                    <n-button size="tiny" @click="copyText(cfVal(detail, cf.key))">{{ $t('common.copy') }}</n-button>
-                  </div>
-                </n-tooltip>
-              </td>
+              <td><tip-copy :text="cfVal(detail, cf.key)" /></td>
             </tr>
           </tbody>
         </n-table>
@@ -264,23 +235,5 @@ watch(instanceId, () => load())
   font-family: var(--ops-font-mono);
   font-variant-numeric: tabular-nums;
   font-size: 12px;
-}
-/* 自定义字段单元格：n-table 默认自动布局（仅 SshView 自带 fixed），
-   内层 div 需定宽上限才能触发省略号；列本身 min-width 120px 自然拉伸 */
-.cf-cell {
-  max-width: 200px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.cf-tip {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-}
-.cf-tip-text {
-  word-break: break-all;
-  max-height: 200px;
-  overflow: auto;
 }
 </style>

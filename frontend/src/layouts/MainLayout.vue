@@ -138,7 +138,7 @@ function onSiteSelect(id: string) {
           <button class="collapse-btn" :title="collapsed ? $t('layout.expand') : $t('layout.collapse')" @click="collapsed = !collapsed">
             <n-icon :component="collapsed ? ChevronForwardOutline : ChevronBackOutline" :size="16" />
           </button>
-          <span v-if="!collapsed" class="build-stamp">b1007-0923</span>
+          <span v-if="!collapsed" class="build-stamp">b1007-0945</span>
         </div>
       </aside>
       <main class="app-main">

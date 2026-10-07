@@ -12,7 +12,6 @@ import {
   NSpace,
   NSpin,
   NTable,
-  NTooltip,
   useMessage,
   type DataTableColumns,
 } from 'naive-ui'
@@ -21,6 +20,7 @@ import TabHelp from '../../components/TabHelp.vue'
 import StatusBadge from '../../components/StatusBadge.vue'
 import MetricCard from '../../components/MetricCard.vue'
 import EmptyState from '../../components/EmptyState.vue'
+import TipCopy from '../../components/TipCopy.vue'
 import CountUp from '../../components/bits/CountUp.vue'
 import { useSiteStore } from '../../stores/site'
 import { getSamples, type SamplePoint } from '../overview/api'
@@ -147,16 +147,6 @@ async function loadZombies() {
 
 // 弹窗打开即拉取列表（kill 后也复用此函数刷新）
 watch(showZombies, (v) => { if (v) loadZombies() })
-
-// 复制父进程完整命令（弹窗省略号单元格 tooltip 内的复制按钮，同 DeviceView 自定义字段）
-async function copyText(s: string) {
-  try {
-    await navigator.clipboard.writeText(s)
-    message.success(t('common.copied'))
-  } catch (e) {
-    message.error(String(e))
-  }
-}
 
 async function killZombie(z: ZombieGroup) {
   if (!siteStore.currentSiteId || !serverId.value) return
@@ -465,17 +455,8 @@ const diskColumns = computed<DataTableColumns<DiskRow>>(() => [
               <td class="mono">{{ z.ppid }}</td>
               <td class="mono">{{ z.count }}</td>
               <td>
-                <!-- 省略号 + 悬停 tooltip 展示完整命令 + 复制（同 DeviceView 自定义字段列） -->
-                <n-tooltip :disabled="!z.cmd" style="max-width: 380px">
-                  <template #trigger>
-                    <div class="cmd z-cmd">{{ z.cmd || '-' }}</div>
-                  </template>
-                  <div class="z-cmd-tip">
-                    <span class="z-cmd-tip-text">{{ z.cmd }}</span>
-                    <!-- quaternary 无边框：默认按钮的描边/焦点环在深色 popover 底上是突兀的黑圈 -->
-                    <n-button size="tiny" quaternary :bordered="false" @click="copyText(z.cmd)">{{ $t('common.copy') }}</n-button>
-                  </div>
-                </n-tooltip>
+                <!-- 省略号 + 悬停 tooltip 展示完整命令 + 复制（共享 TipCopy） -->
+                <tip-copy :text="z.cmd" :max="380" />
               </td>
               <td>
                 <n-popconfirm @positive-click="killZombie(z)">
@@ -571,32 +552,6 @@ const diskColumns = computed<DataTableColumns<DiskRow>>(() => [
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-/* 僵尸弹窗父进程命令列：比共享 .cmd 窄一档，全文走 tooltip（可复制） */
-.z-cmd {
-  max-width: 380px;
-}
-.z-cmd-tip {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-}
-.z-cmd-tip-text {
-  word-break: break-all;
-  max-height: 200px;
-  overflow: auto;
-}
-/* tooltip 内容挂在 body 下的 popover 里：文字色用中性 token（浅/深色各自取值），
-   !important 压过 naive 内联主题变量；去焦点环，quaternary 无描边无底色 */
-.z-cmd-tip :deep(.n-button) {
-  --n-text-color: var(--ops-text-2) !important;
-  --n-text-color-hover: var(--ops-text-1) !important;
-  --n-text-color-pressed: var(--ops-text-1) !important;
-  --n-text-color-focus: var(--ops-text-1) !important;
-  outline: none;
-}
-.z-cmd-tip :deep(.n-button:focus-visible) {
-  outline: none;
 }
 /* NDataTable usage 列：进度条 + 数字并排 */
 .usage-cell {

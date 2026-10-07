@@ -12,3 +12,4 @@ frontend/dist/
 .env
 .idea/
 logs/
+layout/

@@ -617,7 +617,7 @@ const INFO_METRICS = computed(() => {
               <b class="mono">{{ m.value }}</b>
             </span>
           </template>
-          {{ m.tip }}
+          <span class="info-tip">{{ m.tip }}</span>
         </n-tooltip>
       </n-space>
     </n-card>
@@ -869,6 +869,10 @@ const INFO_METRICS = computed(() => {
 }
 .metric b {
   color: var(--ops-text-1);
+}
+/* info 指标 tooltip 正文：i18n 文案可带 \n 分行（碎片率 tip 用），其余单行不受影响 */
+.info-tip {
+  white-space: pre-line;
 }
 .metric .mono {
   font-family: var(--ops-font-mono);
