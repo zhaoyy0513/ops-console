@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, inject, onBeforeUnmount, onMounted, ref, watch, type Ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { NButton, NCard, NInput, NSelect, NSpace, NSpin, NTable, NTooltip, useMessage } from 'naive-ui'
+import { NButton, NCard, NInput, NModal, NSelect, NSpace, NSpin, NTable, NTooltip, useMessage } from 'naive-ui'
 import CountdownConfirm from '../../components/CountdownConfirm.vue'
 import EmptyState from '../../components/EmptyState.vue'
 import BaseChart from '../../components/BaseChart.vue'
@@ -115,6 +115,7 @@ onMounted(() => {
 })
 onBeforeUnmount(() => {
   stopPolling()
+  if (flashTimer != null) clearTimeout(flashTimer)
   document.removeEventListener('visibilitychange', onVisibility)
 })
 
@@ -283,6 +284,33 @@ const worstQueueStatus = computed(() => {
   return worst || 'HEALTHY'
 })
 
+/** 地址分布（与队列表同源）：客户端按 address 聚合，而非 broker 的 AddressCount
+ *  （后者含无队列地址，导致与表格条数对不上的观感） */
+const addrCount = computed(() => new Set(queues.value.map((q) => q.address).filter(Boolean)).size)
+const addrBreakdown = computed(() => {
+  const map = new Map<string, { address: string; count: number; msgs: number }>()
+  for (const q of queues.value) {
+    if (!q.address) continue
+    const row = map.get(q.address) ?? { address: q.address, count: 0, msgs: 0 }
+    row.count += 1
+    row.msgs += q.message_count ?? 0
+    map.set(q.address, row)
+  }
+  return [...map.values()].sort((a, b) => b.msgs - a.msgs)
+})
+const showAddrModal = ref(false)
+
+/** 队列数卡片点击 → 平滑滚动到队列表并闪一圈主色边框（1s 后移除） */
+const queueCardRef = ref<InstanceType<typeof NCard> | null>(null)
+const queueFlash = ref(false)
+let flashTimer: number | null = null
+function scrollToQueues() {
+  ;(queueCardRef.value?.$el as HTMLElement | undefined)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  queueFlash.value = true
+  if (flashTimer != null) clearTimeout(flashTimer)
+  flashTimer = window.setTimeout(() => (queueFlash.value = false), 1000)
+}
+
 /** 新增（吞吐）着色：有流量蓝、无流量灰 */
 function addedColor(added: number | null): string {
   return added != null && added > 0 ? '#2080f0' : 'var(--ops-text-3)'
@@ -336,10 +364,13 @@ function addedColor(added: number | null): string {
           <div class="mc-grid">
             <metric-card :title="$t('mq.connectionsCol')" :value="overview.connections" />
             <!-- Artemis 2.19 不上报 SessionCount（恒 null 只能显示 ?），
-                 换队列数：与下方队列表同源同值（3s 轮询） -->
-            <metric-card :title="$t('mq.queuesCount')" :value="queues.length" />
+                 换队列数：与下方队列表同源同值（3s 轮询）；点击滚动到队列表 -->
+            <metric-card class="tile-click" hoverable :title="$t('mq.queuesCount')" :value="queues.length"
+              @click="scrollToQueues" />
             <metric-card :title="$t('mq.consumersCol')" :value="overview.consumers" />
-            <metric-card :title="$t('mq.addressesCol')" :value="overview.addresses" />
+            <!-- 地址数：按队列表去重地址统计（非 broker AddressCount）；点击查看地址分布 -->
+            <metric-card class="tile-click" hoverable :title="$t('mq.addressesCol')" :value="addrCount"
+              @click="showAddrModal = true" />
           </div>
           <div class="kv">
             <span>{{ $t('mq.versionCol') }} <b>{{ overview.version ?? '-' }}</b></span>
@@ -363,7 +394,7 @@ function addedColor(added: number | null): string {
         </n-card>
       </div>
 
-      <n-card size="small" :title="$t('mq.queues')">
+      <n-card ref="queueCardRef" size="small" :title="$t('mq.queues')" :class="{ 'flash-ring': queueFlash }">
         <template #header-extra>
           <n-input v-model:value="queueFilter" size="small" style="width: 240px"
             :placeholder="$t('mq.search')" />
@@ -421,6 +452,35 @@ function addedColor(added: number | null): string {
         </n-table>
         </div>
       </n-card>
+
+      <!-- 地址分布弹窗：客户端按队列 address 聚合，按消息合计降序 -->
+      <n-modal v-model:show="showAddrModal" preset="card" :title="$t('mq.addrBreakdown')"
+        style="width: 640px; max-width: 94vw" :mask-closable="false" :close-on-esc="false">
+        <div v-if="addrBreakdown.length" class="table-scroll">
+          <n-table :single-line="false" size="small">
+            <thead>
+              <tr>
+                <th>{{ $t('mq.addrCol') }}</th>
+                <th style="width: 90px">{{ $t('mq.addrQueueCount') }}</th>
+                <th style="width: 110px">{{ $t('mq.addrMsgSum') }}</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="row in addrBreakdown" :key="row.address">
+                <td class="mono" :title="row.address">{{ row.address }}</td>
+                <td>{{ row.count }}</td>
+                <td>{{ row.msgs }}</td>
+              </tr>
+            </tbody>
+          </n-table>
+        </div>
+        <EmptyState v-else :title="$t('mq.noMatch')" />
+        <template #footer>
+          <n-space justify="end">
+            <n-button size="small" @click="showAddrModal = false">{{ $t('common.close') }}</n-button>
+          </n-space>
+        </template>
+      </n-modal>
     </template>
 
     <n-card v-else-if="!loading" size="small">
@@ -522,5 +582,15 @@ function addedColor(added: number | null): string {
   color: #d03050;
   font-size: 12px;
   margin-bottom: 8px;
+}
+/* 可点击 MetricCard（队列数/地址数）：与 Server 页僵尸卡同款 */
+.tile-click {
+  cursor: pointer;
+}
+/* 队列数卡片点击后队列表的 1s 主色描边 */
+.flash-ring {
+  border-color: var(--ops-primary);
+  box-shadow: 0 0 0 2px var(--ops-primary);
+  transition: box-shadow 160ms ease;
 }
 </style>

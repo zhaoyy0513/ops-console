@@ -472,7 +472,8 @@ const diskColumns = computed<DataTableColumns<DiskRow>>(() => [
                   </template>
                   <div class="z-cmd-tip">
                     <span class="z-cmd-tip-text">{{ z.cmd }}</span>
-                    <n-button size="tiny" @click="copyText(z.cmd)">{{ $t('common.copy') }}</n-button>
+                    <!-- quaternary 无边框：默认按钮的描边/焦点环在深色 popover 底上是突兀的黑圈 -->
+                    <n-button size="tiny" quaternary :bordered="false" @click="copyText(z.cmd)">{{ $t('common.copy') }}</n-button>
                   </div>
                 </n-tooltip>
               </td>
@@ -584,6 +585,18 @@ const diskColumns = computed<DataTableColumns<DiskRow>>(() => [
   word-break: break-all;
   max-height: 200px;
   overflow: auto;
+}
+/* tooltip 内容挂在 body 下的 popover 里：文字色用中性 token（浅/深色各自取值），
+   !important 压过 naive 内联主题变量；去焦点环，quaternary 无描边无底色 */
+.z-cmd-tip :deep(.n-button) {
+  --n-text-color: var(--ops-text-2) !important;
+  --n-text-color-hover: var(--ops-text-1) !important;
+  --n-text-color-pressed: var(--ops-text-1) !important;
+  --n-text-color-focus: var(--ops-text-1) !important;
+  outline: none;
+}
+.z-cmd-tip :deep(.n-button:focus-visible) {
+  outline: none;
 }
 /* NDataTable usage 列：进度条 + 数字并排 */
 .usage-cell {

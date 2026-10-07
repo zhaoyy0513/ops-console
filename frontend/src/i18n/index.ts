@@ -209,6 +209,10 @@ const messages = {
       topQueueTip: '{name}<br/>{address}<br/>{count} 条',
       purge: '清空',
       noMatch: '无匹配队列',
+      addrBreakdown: '地址分布',
+      addrCol: '地址',
+      addrQueueCount: '队列数',
+      addrMsgSum: '消息合计',
       noGlobalMaxNote: '该 Broker 未报告 global-max-size',
       addrMemUsed: '地址内存',
       heapUsed: '已用',
@@ -394,7 +398,6 @@ const messages = {
     },
     database: {
       title: 'Database（扩展性 Demo）',
-      line1: '本模块仅通过「新增目录 + 一行注册」接入（PRD §20.4 / §24.2，验收 17/18）。',
       line2: 'V2 将在此实现 PostgreSQL / MySQL 监控。',
     },
     sites: {
@@ -673,6 +676,10 @@ const messages = {
       topQueueTip: '{name}<br/>{address}<br/>{count} msgs',
       purge: 'Purge',
       noMatch: 'No matching queues',
+      addrBreakdown: 'Address breakdown',
+      addrCol: 'Address',
+      addrQueueCount: 'Queues',
+      addrMsgSum: 'Total messages',
       addrMemUsed: 'Address memory',
       heapUsed: 'Used',
     },
@@ -857,7 +864,6 @@ const messages = {
     },
     database: {
       title: 'Database (extensibility demo)',
-      line1: 'This module is plugged in via "new folder + one-line registration" (PRD §20.4 / §24.2, acceptance 17/18).',
       line2: 'V2 will add PostgreSQL / MySQL monitoring here.',
     },
     sites: {

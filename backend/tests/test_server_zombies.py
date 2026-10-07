@@ -22,11 +22,13 @@ ZOMBIE_PS = (
 async def env(fake_platform_redis, monkeypatch):
     """patch asyncssh.connect（server provider 是 await connect 后 conn.run）：按命令返回假 stdout。
 
-    yields (client, executed)：executed 记录实际下发的命令，供 kill 用例断言。
+    yields (client, executed, kill_stdout)：executed 记录实际下发的命令，供 kill 用例断言；
+    kill_stdout 是单元素列表（默认成功 marker），用例可改写以模拟远端 kill 失败。
     """
     import asyncssh
 
     executed: list[str] = []
+    kill_stdout = ["__KILL_OK__"]  # kill -9 ... && echo __KILL_OK__：默认成功，可被用例改写
 
     class FakeResult:
         def __init__(self, stdout: str):
@@ -37,7 +39,9 @@ async def env(fake_platform_redis, monkeypatch):
             executed.append(cmd)
             if "ps -eo" in cmd:  # 僵尸采集命令带 LC_ALL=C 前缀，按子串识别
                 return FakeResult(ZOMBIE_PS)
-            return FakeResult("")  # kill / 其余白名单命令：无输出即成功
+            if cmd.startswith("kill "):
+                return FakeResult(kill_stdout[0])
+            return FakeResult("")  # 其余白名单命令：无输出即成功
 
         def close(self):
             pass
@@ -55,12 +59,12 @@ async def env(fake_platform_redis, monkeypatch):
         await c.post("/api/sites/sz/servers",
                      json={"id": "srv1", "name": "srv", "host": "10.10.1.10",
                            "username": "u", "password": "p"})
-        yield c, executed
+        yield c, executed, kill_stdout
 
 
 async def test_zombies_grouped_by_parent(env):
     """僵尸按父进程分组：count 降序，cmd = 同份 ps 输出中父进程 args；父进程已退出则 ''。"""
-    client, _ = env
+    client, _, _ = env
     r = await client.get("/api/sites/sz/servers/srv1/zombies")
     assert r.status_code == 200
     data = r.json()
@@ -75,7 +79,7 @@ async def test_zombies_grouped_by_parent(env):
 
 async def test_metrics_include_zombie_count(env):
     """metrics 与僵尸统计同一条 SSH 会话：响应直接带 zombie_count（全量 ps 输出中 stat 以 Z 开头的行数）。"""
-    client, executed = env
+    client, executed, _ = env
     r = await client.get("/api/sites/sz/servers/srv1/metrics")
     assert r.status_code == 200
     assert r.json()["zombie_count"] == 4
@@ -84,7 +88,7 @@ async def test_metrics_include_zombie_count(env):
 
 async def test_kill_rejects_non_numeric_pid(env):
     """pid 必须纯数字：非法值 400，且不触达 SSH（防命令注入）。"""
-    client, executed = env
+    client, executed, _ = env
     for bad in ("abc", "4242;reboot"):
         r = await client.post(f"/api/sites/sz/servers/srv1/zombies/{bad}/kill")
         assert r.status_code == 400
@@ -93,13 +97,33 @@ async def test_kill_rejects_non_numeric_pid(env):
 
 
 async def test_kill_success_records_oplog(env):
-    client, executed = env
+    client, executed, _ = env
     r = await client.post("/api/sites/sz/servers/srv1/zombies/4242/kill?comm=chrome_crash")
     assert r.status_code == 200
     assert r.json() == {"killed": True}
-    assert "kill -9 4242" in executed
+    assert any(c.startswith("kill -9 4242") for c in executed)
 
     entry = next(e for e in await oplog.read_recent(5) if e["operation"] == "SERVER_KILL_ZOMBIE")
     assert entry["target"] == "4242 chrome_crash"
     assert entry["params"]["pid"] == 4242
     assert entry["result"] == "SUCCESS"
+
+
+async def test_kill_remote_failure_oplog_failed(env):
+    """远端 kill 失败（如非 root 杀 root 进程）：marker 缺失 -> 4xx 错误包络 + oplog FAILED。
+
+    这是真实用户报告的 bug：旧实现吞掉远端 stderr，oplog 记 SUCCESS，僵尸原样还在。
+    """
+    client, executed, kill_stdout = env
+    kill_stdout[0] = "kill: failed to kill process 765709: Operation not permitted\n"
+    r = await client.post("/api/sites/sz/servers/srv1/zombies/765709/kill")
+    assert r.status_code == 400
+    body = r.json()
+    assert body["error_code"] == "REMOTE_KILL_FAILED"
+    assert "Operation not permitted" in body["message"]
+    assert any(c.startswith("kill -9 765709") for c in executed)  # 命令确实下发了
+
+    entry = next(e for e in await oplog.read_recent(5) if e["operation"] == "SERVER_KILL_ZOMBIE")
+    assert entry["result"] == "FAILED"
+    assert "Operation not permitted" in entry["error"]
+    assert entry["params"]["pid"] == 765709

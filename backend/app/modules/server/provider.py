@@ -341,8 +341,18 @@ class SSHServerMetricsProvider(ServerMetricsProvider):
 
     async def kill_zombie(self, pid: int) -> None:
         """kill -9 指定进程：本模块唯一写命令。pid 已在上层正则校验为纯数字，
-        用户无法借 path 参数注入任意命令（保持"前端不感知命令"的白名单原则）。"""
-        await self._run([f"kill -9 {pid}"])
+        用户无法借 path 参数注入任意命令（保持"前端不感知命令"的白名单原则）。
+
+        `2>&1 && echo __KILL_OK__`：kill 失败（如 SSH 用户非 root 杀不动 root
+        进程的 Operation not permitted）时 marker 不会输出 -> 报 REMOTE_KILL_FAILED
+        并携带远端 stderr，而不是静默吞掉、oplog 记 SUCCESS。
+        """
+        (out,) = await self._run([f"kill -9 {pid} 2>&1 && echo __KILL_OK__"])
+        if "__KILL_OK__" not in out:
+            raise OpsError(
+                "REMOTE_KILL_FAILED", f"remote kill failed: {out.strip() or 'no output'}",
+                status_code=400,
+            )
 
     async def get_disk(self) -> list[dict[str, Any]]:
         out = await self._collect(["disk_usage", "disk_inode"])

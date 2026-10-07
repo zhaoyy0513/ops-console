@@ -98,7 +98,17 @@ async def kill_zombie(site_id: str, server_id: str, pid: str, comm: str | None =
     config = await _require_server_config(site_id, server_id)
     provider = _build_provider(config)
     async with get_semaphore("ssh"):
-        await provider.kill_zombie(int(pid))
+        try:
+            await provider.kill_zombie(int(pid))
+        except OpsError as e:
+            # 失败也留痕（PRD §17）：先记 FAILED 再原样抛给统一错误包络
+            await oplog.record(
+                site_id, f"server/{config.get('name') or server_id}", "SERVER_KILL_ZOMBIE",
+                target=f"{pid} {comm}" if comm else pid,
+                params={"pid": int(pid), "comm": comm, "host": config.get("host")},
+                result="FAILED", error=str(e)[:200],
+            )
+            raise
     # oplog 可读性：resource 用 Server 名（内部 id 移入 params，oplog.record docstring 约定）
     await oplog.record(
         site_id, f"server/{config.get('name') or server_id}", "SERVER_KILL_ZOMBIE",
