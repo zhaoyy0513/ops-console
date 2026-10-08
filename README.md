@@ -63,6 +63,25 @@ docker compose up -d --build
 - 访问 `http://<host>:${OPS_PORT:-8090}`
 - `nginx.conf` 的 `/api` 读超时为 300s（SSH 执行预算 60s、SSE 流式执行需要长连接）
 
+### 端口说明（常见困惑）
+
+| 端口 | 出现场景 | 说明 |
+|---|---|---|
+| `5173` | 仅本地开发 | vite 开发服务器（`/api` 代理到本机 `127.0.0.1:8000`）；**部署时不存在** |
+| `8000` | 仅容器内部 | uvicorn 监听容器内端口；ops-nginx 经 **docker 内网**以服务名 `http://backend:8000` 访问，**与宿主机端口映射无关** |
+| `OPS_PORT` | 唯一公网端口 | 浏览器只访问它：nginx 返回前端页面并把 `/api` 反代给 backend |
+
+要点：**前端不是独立部署的服务**——它与 nginx 打包为同一镜像（ops-nginx）。backend 无需任何宿主机端口映射（Portainer 里映射 8000 纯属多余，还会把 API 绕过 nginx 直接暴露）。
+
+### 用 Portainer 部署
+
+Portainer 本质是 compose 的 UI，不要单独起 backend 容器：
+
+1. Stacks → Add stack → 粘贴本仓库 `compose.yaml`
+2. Environment variables 填入 `.env` 各项（`OPS_REDIS_URL` 必填、`OPS_PORT` 按需）
+3. Deploy the stack——backend 与 ops-nginx 自动同内网，`backend:8000` 服务名解析成立
+4. 访问 `http://<host>:OPS_PORT`
+
 ## 注意事项
 
 - **Windows 开发机不要给 uvicorn 加 `--reload`**：仓库被 IDE 触碰时 StatReload 会卡死（监听端口消失、Ctrl+C 失效），直接不带 `--reload` 运行
