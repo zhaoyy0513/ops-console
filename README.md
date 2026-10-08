@@ -73,6 +73,19 @@ docker compose up -d --build
 
 要点：**前端不是独立部署的服务**——它与 nginx 打包为同一镜像（ops-nginx）。backend 无需任何宿主机端口映射（Portainer 里映射 8000 纯属多余，还会把 API 绕过 nginx 直接暴露）。
 
+### CI/CD（Jenkins 等）部署注意
+
+compose 的 `.env` 自动读取只认**运行命令的目录**；`.env` 不入库，所以 CI 检出的工作区里没有它，`${OPS_REDIS_URL}` 会插值成空串（用 `docker compose config | grep OPS_REDIS_URL` 可验证）。解法任选：
+
+1. **凭据注入（推荐）**——插值优先级是 shell 环境变量 > `.env`，Jenkins pipeline 里：
+   ```groovy
+   withCredentials([string(credentialsId: 'ops-redis-url', variable: 'OPS_REDIS_URL')]) {
+     sh 'docker compose up -d --build'
+   }
+   ```
+   必填的只有 `OPS_REDIS_URL`，其余变量均有默认值。
+2. **固定路径**：`.env` 手工放部署机固定位置（如 `/srv/ops/.env`），命令改 `docker compose --env-file /srv/ops/.env up -d --build`。
+
 ### 用 Portainer 部署
 
 Portainer 本质是 compose 的 UI，不要单独起 backend 容器：
