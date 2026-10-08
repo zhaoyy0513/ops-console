@@ -1,6 +1,6 @@
 # Ops Console（PRD §25.1）：不包含 Redis（复用现有容器），不占用宿主机 80
 services:
-  backend:
+  ops-backend:
     build:
       context: .
       dockerfile: backend/Dockerfile
@@ -30,7 +30,7 @@ services:
     ports:
       - "${OPS_PORT:-8090}:80"
     depends_on:
-      - backend
+      - ops-backend
 
 volumes:
   backend-logs:

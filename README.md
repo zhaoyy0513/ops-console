@@ -58,7 +58,7 @@ uv run --env-file .env python scripts/e2e_live.py   # 真实资源 E2E（先起 
 docker compose up -d --build
 ```
 
-- 构建两个镜像：`backend`（uv 装依赖 + uvicorn:8000）与 `ops-nginx`（Node 构建前端 dist → nginx 托管 + `/api` 反代到 backend）
+- 构建两个镜像：`ops-backend`（uv 装依赖 + uvicorn:8000）与 `ops-nginx`（Node 构建前端 dist → nginx 托管 + `/api` 反代到 ops-backend）
 - **Redis 不在 compose 内**——复用现场现有 Redis，通过 `.env` 的 `OPS_REDIS_URL` 接入
 - 访问 `http://<host>:${OPS_PORT:-8090}`
 - `nginx.conf` 的 `/api` 读超时为 300s（SSH 执行预算 60s、SSE 流式执行需要长连接）
@@ -68,7 +68,7 @@ docker compose up -d --build
 | 端口 | 出现场景 | 说明 |
 |---|---|---|
 | `5173` | 仅本地开发 | vite 开发服务器（`/api` 代理到本机 `127.0.0.1:8000`）；**部署时不存在** |
-| `8000` | 仅容器内部 | uvicorn 监听容器内端口；ops-nginx 经 **docker 内网**以服务名 `http://backend:8000` 访问，**与宿主机端口映射无关** |
+| `8000` | 仅容器内部 | uvicorn 监听容器内端口；ops-nginx 经 **docker 内网**以服务名 `http://ops-backend:8000` 访问，**与宿主机端口映射无关** |
 | `OPS_PORT` | 唯一公网端口 | 浏览器只访问它：nginx 返回前端页面并把 `/api` 反代给 backend |
 
 要点：**前端不是独立部署的服务**——它与 nginx 打包为同一镜像（ops-nginx）。backend 无需任何宿主机端口映射（Portainer 里映射 8000 纯属多余，还会把 API 绕过 nginx 直接暴露）。
