@@ -7,6 +7,8 @@ import { DEVICE_FIELDS } from './fields'
 import TabHelp from '../../components/TabHelp.vue'
 import CodeJsonEditor from '../../components/CodeJsonEditor.vue'
 import TipCopy from '../../components/TipCopy.vue'
+import SortTh from '../../components/SortTh.vue'
+import { useTableSort } from '../../composables/useTableSort'
 import { deviceApi, type DeviceCustomField, type DeviceRow } from './api'
 
 const siteStore = useSiteStore()
@@ -32,6 +34,14 @@ const detailShow = ref(false)
 
 // 当前实例的自定义字段（列配置来自实例配置，随下拉切换）
 const currentCustomFields = computed(() => instances.value.find((i) => i.value === instanceId.value)?.custom_fields ?? [])
+
+// 业务字段列当前页排序（编码/名称/状态/电量/位置；自定义列与操作列不排）
+const {
+  sortKey: dSortKey,
+  sortDir: dSortDir,
+  sortedRows: sortedDevices,
+  toggleSort: toggleDeviceSort,
+} = useTableSort<DeviceRow>(devices, (r, k) => r[k])
 
 /** 自定义字段标题：随语言取中/英文名，一种为空回退另一种 */
 function cfLabel(cf: DeviceCustomField): string {
@@ -155,15 +165,19 @@ watch(instanceId, () => load())
       <n-table :single-line="false" size="small">
         <thead>
           <tr>
-            <!-- 表头由 device/fields.ts 公用定义驱动（与字段映射配置同源），文案随语言切换；
+            <!-- 表头由 device/fields.ts 公用定义驱动（与字段映射配置同源），文案随语言切换，业务字段列可排序；
                  自定义字段列取实例配置的双语展示名（随语言回退） -->
-            <th v-for="f in DEVICE_FIELDS" :key="f.key">{{ $t(`device.fields.${f.key}`) }}</th>
+            <sort-th v-for="f in DEVICE_FIELDS" :key="f.key"
+              :label="$t(`device.fields.${f.key}`)"
+              :active="dSortKey === f.key" :dir="dSortKey === f.key ? dSortDir : null"
+              @sort="toggleDeviceSort(f.key)"
+            />
             <th v-for="cf in currentCustomFields" :key="cf.key" style="min-width: 120px">{{ cfLabel(cf) }}</th>
             <th style="width: 80px">{{ $t('device.action') }}</th>
           </tr>
         </thead>
         <tbody>
-          <tr v-for="r in devices" :key="r.id ?? ''">
+          <tr v-for="r in sortedDevices" :key="r.id ?? ''">
             <td v-for="f in DEVICE_FIELDS" :key="f.key" :class="{ mono: f.key === 'id' }">
               <template v-if="f.key === 'status'">
                 <n-tag :type="statusTagType(r)" size="small" :bordered="false">{{ r.status ?? '-' }}</n-tag>

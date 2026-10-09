@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, h, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { NCard, NDataTable, NPagination, NSpace, NTag } from 'naive-ui'
+import { NCard, NDataTable, NPagination, NSpace, NTag, type DataTableColumns } from 'naive-ui'
 import { auditApi, type AuditPage } from './api'
 
 const { t } = useI18n()
@@ -27,19 +27,21 @@ function changePage(p: number) {
 
 type Row = NonNullable<AuditPage['items'][number]>
 
-const columns = computed(() => [
+const columns = computed<DataTableColumns<Row>>(() => [
   // 时间列固定宽 + 禁止换行：'2026-09-29 16:20:33'（19 字符 mono）@12-14px 实测约 172-180px，170 会折行，195 稳妥
-  { title: t('audit.colTime'), key: 'time', width: 195, className: 'mono nowrap', render: (row: Row) => (row.time ?? '').replace('T', ' ').slice(0, 19) },
-  { title: t('audit.colSite'), key: 'site', width: 120 },
-  { title: t('audit.colResource'), key: 'resource', width: 170, className: 'mono', ellipsis: { tooltip: true } },
+  // sorter 走原始值（row.time ISO 串字典序 = 时间序）；服务端分页下仅当前页内排序
+  { title: t('audit.colTime'), key: 'time', width: 195, className: 'mono nowrap', sorter: 'default', render: (row: Row) => (row.time ?? '').replace('T', ' ').slice(0, 19) },
+  { title: t('audit.colSite'), key: 'site', width: 120, sorter: 'default' },
+  { title: t('audit.colResource'), key: 'resource', width: 170, className: 'mono', ellipsis: { tooltip: true }, sorter: 'default' },
   // 220px：最长操作 RESOURCE_CONFIG_DELETED（23 字符大写）单行约 208px，180 会折行
-  { title: t('audit.colOperation'), key: 'operation', width: 220, className: 'nowrap' },
+  { title: t('audit.colOperation'), key: 'operation', width: 220, className: 'nowrap', sorter: 'default' },
   {
     title: t('audit.colTarget'),
     key: 'target',
     minWidth: 100,
     className: 'mono',
     ellipsis: { tooltip: true },
+    sorter: 'default',
     render: (row: Row) => row.target ?? '-',
   },
   {

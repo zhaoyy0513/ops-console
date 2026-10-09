@@ -21,7 +21,9 @@ import StatusBadge from '../../components/StatusBadge.vue'
 import MetricCard from '../../components/MetricCard.vue'
 import EmptyState from '../../components/EmptyState.vue'
 import TipCopy from '../../components/TipCopy.vue'
+import SortTh from '../../components/SortTh.vue'
 import CountUp from '../../components/bits/CountUp.vue'
+import { useTableSort } from '../../composables/useTableSort'
 import { useSiteStore } from '../../stores/site'
 import { getSamples, type SamplePoint } from '../overview/api'
 import { serverApi, type ProcessRow, type ServerMetrics, type ZombieGroup } from './api'
@@ -235,16 +237,26 @@ const topDisk = computed(() => {
   return rows.reduce((a, b) => (b.use_percent > a.use_percent ? b : a))
 })
 
+// Top 进程表（只展示前 10）：排序作用于当前可见行（先截断再排，不改变 top10 的入选）
+const topProcesses = computed(() => processes.value.slice(0, 10))
+const {
+  sortKey: pSortKey,
+  sortDir: pSortDir,
+  sortedRows: sortedProcesses,
+  toggleSort: toggleProcessSort,
+} = useTableSort<ProcessRow>(topProcesses, (p, k) => p[k as keyof ProcessRow])
+
 // 磁盘表（NDataTable）：usage 列内联进度条，阈值变色
 type DiskRow = NonNullable<ServerMetrics['disk']>[number]
 const diskColumns = computed<DataTableColumns<DiskRow>>(() => [
-  { title: t('server.mount'), key: 'mount' },
-  { title: t('server.size'), key: 'size' },
+  { title: t('server.mount'), key: 'mount', sorter: 'default' },
+  { title: t('server.size'), key: 'size', sorter: 'default' },
   { title: t('server.usedCol'), key: 'used' },
   { title: t('server.availCol'), key: 'avail' },
   {
     title: t('server.usage'),
     key: 'use_percent',
+    sorter: (a, b) => a.use_percent - b.use_percent,
     render: (row) =>
       h('div', { class: 'usage-cell' }, [
         h(NProgress, {
@@ -263,6 +275,7 @@ const diskColumns = computed<DataTableColumns<DiskRow>>(() => [
   {
     title: t('server.inode'),
     key: 'inode_percent',
+    sorter: (a, b) => (a.inode_percent ?? 0) - (b.inode_percent ?? 0),
     render: (row) => `${row.inode_percent ?? '-'}%`,
   },
 ])
@@ -397,14 +410,14 @@ const diskColumns = computed<DataTableColumns<DiskRow>>(() => [
           <n-table :single-line="false" size="small">
           <thead>
             <tr>
-              <th>{{ $t('server.pid') }}</th>
-              <th>{{ $t('server.cpuCol') }}</th>
-              <th>{{ $t('server.memCol') }}</th>
-              <th>{{ $t('server.command') }}</th>
+              <sort-th :label="$t('server.pid')" :active="pSortKey === 'pid'" :dir="pSortKey === 'pid' ? pSortDir : null" @sort="toggleProcessSort('pid')" />
+              <sort-th :label="$t('server.cpuCol')" :active="pSortKey === 'cpu_percent'" :dir="pSortKey === 'cpu_percent' ? pSortDir : null" @sort="toggleProcessSort('cpu_percent')" />
+              <sort-th :label="$t('server.memCol')" :active="pSortKey === 'mem_percent'" :dir="pSortKey === 'mem_percent' ? pSortDir : null" @sort="toggleProcessSort('mem_percent')" />
+              <sort-th :label="$t('server.command')" :active="pSortKey === 'command'" :dir="pSortKey === 'command' ? pSortDir : null" @sort="toggleProcessSort('command')" />
             </tr>
           </thead>
           <tbody>
-            <tr v-for="p in processes.slice(0, 10)" :key="p.pid">
+            <tr v-for="p in sortedProcesses" :key="p.pid">
               <td>{{ p.pid }}</td>
               <td :style="{ color: pctColor(p.cpu_percent) }">{{ p.cpu_percent }}</td>
               <td>{{ p.mem_percent }}</td>

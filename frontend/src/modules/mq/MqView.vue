@@ -8,6 +8,8 @@ import BaseChart from '../../components/BaseChart.vue'
 import TabHelp from '../../components/TabHelp.vue'
 import StatusBadge from '../../components/StatusBadge.vue'
 import MetricCard from '../../components/MetricCard.vue'
+import SortTh from '../../components/SortTh.vue'
+import { useTableSort } from '../../composables/useTableSort'
 import { useSiteStore } from '../../stores/site'
 import { getSamples } from '../overview/api'
 import { mqApi, type MqOverview, type QueueRow } from './api'
@@ -137,6 +139,14 @@ const filteredQueues = computed(() => {
       (q.address ?? '').toLowerCase().includes(needle),
   )
 })
+
+// ---------- 队列表当前页排序（名称/消息数/1m新增/累计新增/消费者；地址与状态列不排） ----------
+const {
+  sortKey: qSortKey,
+  sortDir: qSortDir,
+  sortedRows: sortedQueues,
+  toggleSort: toggleQueueSort,
+} = useTableSort<QueueRow>(filteredQueues, (q, k) => (q as unknown as Record<string, unknown>)[k])
 
 // ---------- 图表 ----------
 const opsDark = inject<{ isDark: Ref<boolean> }>('opsDark')!
@@ -404,12 +414,17 @@ function addedColor(added: number | null): string {
           <n-table :single-line="false" size="small">
           <thead>
             <tr>
-              <th>{{ $t('mq.queueCol') }}</th><th>{{ $t('mq.addressCol') }}</th><th>{{ $t('mq.statusCol') }}</th><th>{{ $t('mq.messagesCol') }}</th><th style="width: 90px">{{ $t('mq.added1mCol') }}</th><th>{{ $t('mq.consumersCol') }}</th>
-              <th>{{ $t('mq.added') }}</th><th>{{ $t('common.actions') }}</th>
+              <sort-th :label="$t('mq.queueCol')" :active="qSortKey === 'name'" :dir="qSortKey === 'name' ? qSortDir : null" @sort="toggleQueueSort('name')" />
+              <th>{{ $t('mq.addressCol') }}</th><th>{{ $t('mq.statusCol') }}</th>
+              <sort-th :label="$t('mq.messagesCol')" :active="qSortKey === 'message_count'" :dir="qSortKey === 'message_count' ? qSortDir : null" @sort="toggleQueueSort('message_count')" />
+              <sort-th style="width: 90px" :label="$t('mq.added1mCol')" :active="qSortKey === 'added_1m'" :dir="qSortKey === 'added_1m' ? qSortDir : null" @sort="toggleQueueSort('added_1m')" />
+              <sort-th :label="$t('mq.consumersCol')" :active="qSortKey === 'consumer_count'" :dir="qSortKey === 'consumer_count' ? qSortDir : null" @sort="toggleQueueSort('consumer_count')" />
+              <sort-th :label="$t('mq.added')" :active="qSortKey === 'messages_added'" :dir="qSortKey === 'messages_added' ? qSortDir : null" @sort="toggleQueueSort('messages_added')" />
+              <th>{{ $t('common.actions') }}</th>
             </tr>
           </thead>
           <tbody>
-            <tr v-for="q in filteredQueues" :key="q.name">
+            <tr v-for="q in sortedQueues" :key="q.name">
               <td class="mono" :title="q.name">{{ q.name }}</td>
               <td class="mono" :title="q.address ?? ''">{{ q.address ?? '-' }}</td>
               <td>

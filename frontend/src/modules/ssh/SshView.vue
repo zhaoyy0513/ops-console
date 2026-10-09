@@ -21,7 +21,9 @@ import { ContractOutline, ExpandOutline } from '@vicons/ionicons5'
 import api from '../../api'
 import OpsSwitch from '../../components/OpsSwitch.vue'
 import EmptyState from '../../components/EmptyState.vue'
+import SortTh from '../../components/SortTh.vue'
 import ClickSpark from '../../components/bits/ClickSpark.vue'
+import { useTableSort } from '../../composables/useTableSort'
 import { sshApi, type SshScript } from './api'
 
 const siteStore = useSiteStore()
@@ -30,6 +32,14 @@ const { t } = useI18n()
 
 const scripts = ref<SshScript[]>([])
 const loading = ref(false)
+
+// 脚本表当前页排序（名称/cron；空 cron 恒末尾）
+const {
+  sortKey: sSortKey,
+  sortDir: sSortDir,
+  sortedRows: sortedScripts,
+  toggleSort: toggleScriptSort,
+} = useTableSort<SshScript>(scripts, (s, k) => (s as unknown as Record<string, unknown>)[k])
 
 // 编辑弹窗状态
 const editShow = ref(false)
@@ -348,11 +358,14 @@ function confirmRun() {
           <n-table :single-line="false" size="small">
           <thead>
             <tr>
-              <th>{{ $t('ssh.colName') }}</th><th style="width: 22%">{{ $t('ssh.colServer') }}</th><th style="width: 100px">{{ $t('ssh.colCron') }}</th><th style="width: 70px">{{ $t('ssh.colSched') }}</th><th>{{ $t('ssh.colContent') }}</th><th style="width: 210px">{{ $t('common.actions') }}</th>
+              <sort-th :label="$t('ssh.colName')" :active="sSortKey === 'name'" :dir="sSortKey === 'name' ? sSortDir : null" @sort="toggleScriptSort('name')" />
+              <th style="width: 22%">{{ $t('ssh.colServer') }}</th>
+              <sort-th style="width: 100px" :label="$t('ssh.colCron')" :active="sSortKey === 'cron'" :dir="sSortKey === 'cron' ? sSortDir : null" @sort="toggleScriptSort('cron')" />
+              <th style="width: 70px">{{ $t('ssh.colSched') }}</th><th>{{ $t('ssh.colContent') }}</th><th style="width: 210px">{{ $t('common.actions') }}</th>
             </tr>
           </thead>
           <tbody>
-            <tr v-for="item in scripts" :key="item.id">
+            <tr v-for="item in sortedScripts" :key="item.id">
               <td style="font-weight: 600">{{ item.name }}</td>
               <td>{{ serverName(item.server_id) }}</td>
               <td class="mono">{{ item.cron || '-' }}</td>

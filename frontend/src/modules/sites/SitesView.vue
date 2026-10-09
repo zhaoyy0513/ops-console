@@ -19,6 +19,8 @@ import { sitesApi, type Site } from './api'
 import { useSiteStore } from '../../stores/site'
 import SiteResourcesDrawer from './SiteResourcesDrawer.vue'
 import OpsSwitch from '../../components/OpsSwitch.vue'
+import SortTh from '../../components/SortTh.vue'
+import { useTableSort } from '../../composables/useTableSort'
 
 const router = useRouter()
 const message = useMessage()
@@ -33,6 +35,14 @@ const drawerShow = ref(false)
 
 // 站点列表存于共享 store（顶栏下拉同源），增删后 loadSites() 两处同步
 const sites = computed(() => siteStore.sites)
+
+// 列表当前页排序（ID/名称/描述；开关与操作列不排）
+const {
+  sortKey: siteSortKey,
+  sortDir: siteSortDir,
+  sortedRows: sortedSites,
+  toggleSort: toggleSiteSort,
+} = useTableSort<Site>(sites, (s, k) => (s as unknown as Record<string, unknown>)[k])
 
 async function load() {
   await siteStore.loadSites()
@@ -106,15 +116,15 @@ function goConsole(site: Site) {
     <n-table :bordered="false" :single-line="false" size="small">
       <thead>
         <tr>
-          <th>ID</th>
-          <th>{{ $t('common.name') }}</th>
-          <th>{{ $t('sites.desc') }}</th>
+          <sort-th label="ID" :active="siteSortKey === 'id'" :dir="siteSortKey === 'id' ? siteSortDir : null" @sort="toggleSiteSort('id')" />
+          <sort-th :label="$t('common.name')" :active="siteSortKey === 'name'" :dir="siteSortKey === 'name' ? siteSortDir : null" @sort="toggleSiteSort('name')" />
+          <sort-th :label="$t('sites.desc')" :active="siteSortKey === 'description'" :dir="siteSortKey === 'description' ? siteSortDir : null" @sort="toggleSiteSort('description')" />
           <th style="width: 90px">{{ $t('common.enabled') }}</th>
           <th style="width: 260px">{{ $t('common.actions') }}</th>
         </tr>
       </thead>
       <tbody>
-        <tr v-for="s in sites" :key="s.id">
+        <tr v-for="s in sortedSites" :key="s.id">
           <td><n-tag size="small" :bordered="false">{{ s.id }}</n-tag></td>
           <td>{{ s.name }}</td>
           <td>{{ s.description }}</td>
