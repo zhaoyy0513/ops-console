@@ -42,10 +42,15 @@ async def value_minutes_ago(resource_id: str, series: str, minutes: float = 5) -
 
 
 async def values_minutes_ago(items: list[tuple[str, str]], minutes: float = 5) -> dict[tuple[str, str], float | None]:
-    """批量读若干 (resource_id, series) 在 >= minutes 前的最近采样值（单次 pipeline）。"""
+    """返回最接近 minutes 前的采样值：取 ts ∈ [now-minutes*90s, now-minutes*60s] 的
+    最近一条。上限容差 1.5 倍窗口：采样稀疏时（如刚打开页面、序列刚建立）参考点
+    可能是几分钟前的旧样本，直接做差会把"跨多分钟的增量"误报成分钟增量——
+    宁可返回 None（前端显示 '-'）也不虚报。"""
     if not items:
         return {}
-    cutoff = time.time() - minutes * 60
+    now = time.time()
+    cutoff = now - minutes * 60
+    floor = now - minutes * 90
     async with get_platform_redis().pipeline(transaction=True) as pipe:
         for resource_id, series in items:
             pipe.lrange(sample_key(resource_id, series), 0, SAMPLE_MAX - 1)
@@ -55,7 +60,7 @@ async def values_minutes_ago(items: list[tuple[str, str]], minutes: float = 5) -
         found = None
         for entry in (json.loads(x) for x in raw):  # 新 -> 旧
             if entry["ts"] <= cutoff:
-                found = entry["v"]
+                found = entry["v"] if entry["ts"] >= floor else None
                 break
         out[item] = found
     return out

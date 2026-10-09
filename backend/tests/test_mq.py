@@ -220,6 +220,29 @@ async def test_queues_api_added_1m(client, fake_platform_redis):
     assert q2["added_1m"] is None  # 无 1 分钟历史（预热）
 
 
+async def test_values_minutes_ago_sparse_reference_returns_none(client, fake_platform_redis):
+    """窗口容差：参考样本老于 1.5 倍窗口时返回 None（不虚报跨窗口增量）。
+
+    回归守卫：刚打开页面/序列刚建立时采样稀疏，若拿几分钟前的旧样本做
+    60s 差值，会把跨多分钟的增量误报成 1m 新增（用户看到的"一直递增"）。
+    """
+    import time as _t
+    import json as _json
+
+    key = "res:under-test"
+    # 200s 前的唯一样本：超出 1m 窗口的 1.5 倍容差（90s）→ None
+    await fake_platform_redis.lpush(
+        sampling.sample_key(key, "added"), _json.dumps({"ts": int(_t.time() - 200), "v": 100}))
+    out = await sampling.values_minutes_ago([(key, "added")], minutes=1)
+    assert out[(key, "added")] is None
+
+    # 70s 前样本落在 [60s, 90s] 容差内 → 正常返回
+    await fake_platform_redis.lpush(
+        sampling.sample_key(key, "added"), _json.dumps({"ts": int(_t.time() - 70), "v": 160}))
+    out = await sampling.values_minutes_ago([(key, "added")], minutes=1)
+    assert out[(key, "added")] == 160
+
+
 async def test_mq_tester(client):
     r = await client.post("/api/test-connection", json={"type": "mq", "config": {"host": "target"}})
     assert r.status_code == 200
