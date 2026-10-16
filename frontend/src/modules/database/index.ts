@@ -4,7 +4,7 @@ import DatabaseView from './DatabaseView.vue'
 export default defineOpsModule({
   id: 'database',
   title: 'Database',
-  order: 7,
+  order: 8,
   icon: 'server-outline',
   routePath: 'database',
   view: DatabaseView,

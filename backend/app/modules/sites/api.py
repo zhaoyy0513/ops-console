@@ -100,6 +100,44 @@ class DeviceConfig(ResourceBase):
     custom_fields: Annotated[list[DeviceCustomField], _MAX_CUSTOM_FIELDS] | None = None
 
 
+class PageConfig(ResourceBase):
+    """页面资源：外部链接 或 内联 HTML 二选一（用户要求三个必填字段中的
+    "链接"可以是外链，也可以用上传/粘贴的单文件 HTML 替代）。
+    校验放在本模型上，经 create_model 派生的 update 模型同样生效。"""
+
+    description: str = Field(min_length=1)
+    url: str | None = None
+    html: str | None = None
+
+    @field_validator("url")
+    @classmethod
+    def _validate_url(cls, v: str | None) -> str | None:
+        if v is None or not v.strip():
+            return None
+        v = v.strip()
+        if not v.startswith(("http://", "https://")):
+            raise ValueError("url must start with http:// or https://")
+        return v
+
+    @field_validator("html")
+    @classmethod
+    def _validate_html(cls, v: str | None) -> str | None:
+        if v is None or not v.strip():
+            return None
+        v = v.strip()
+        # 明显不是 HTML 的（如粘贴了纯文本/JSON）直接拒，避免渲染出空白页
+        if len(v) < 20 or ("<" not in v and "&lt;" not in v):
+            raise ValueError("html must be an HTML document")
+        return v
+
+    @model_validator(mode="after")
+    def _need_url_or_html(self) -> "PageConfig":
+        # 只填了空串/空白的 url 与 html 等同于都没填
+        if not (self.url or self.html):
+            raise ValueError("page requires url or html")
+        return self
+
+
 def _update_model(model: type[BaseModel]) -> type[BaseModel]:
     """全字段可选的更新模型。"""
     return create_model(
@@ -112,6 +150,7 @@ RESOURCE_MODELS: dict[str, tuple[type[BaseModel], type[BaseModel]]] = {
     res_type: (model, _update_model(model))
     for res_type, model in {
         "servers": ServerConfig,
+        "pages": PageConfig,
         "redis": RedisConfig,
         "mq": MqConfig,
         "devices": DeviceConfig,

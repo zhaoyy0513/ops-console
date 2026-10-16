@@ -3,8 +3,8 @@ import { computed, h, inject, onMounted, ref, watch, type Component, type Ref } 
 import { useRoute, useRouter } from 'vue-router'
 import { NButton, NIcon, NMenu, NSelect, useLoadingBar } from 'naive-ui'
 import {
-  ChevronBackOutline, ChevronForwardOutline, CubeOutline, GridOutline,
-  HardwareChipOutline, LayersOutline, MoonOutline, PulseOutline,
+  ChevronBackOutline, ChevronForwardOutline, CubeOutline, DocumentTextOutline,
+  GridOutline, HardwareChipOutline, LayersOutline, MoonOutline, PulseOutline,
   ServerOutline, SunnyOutline, TerminalOutline,
 } from '@vicons/ionicons5'
 import { getModules } from '../modules'
@@ -25,6 +25,7 @@ const modules = getModules()
 const MODULE_ICONS: Record<string, Component> = {
   overview: GridOutline,
   server: ServerOutline,
+  page: DocumentTextOutline,
   redis: LayersOutline,
   mq: PulseOutline,
   device: HardwareChipOutline,
@@ -138,7 +139,7 @@ function onSiteSelect(id: string) {
           <button class="collapse-btn" :title="collapsed ? $t('layout.expand') : $t('layout.collapse')" @click="collapsed = !collapsed">
             <n-icon :component="collapsed ? ChevronForwardOutline : ChevronBackOutline" :size="16" />
           </button>
-          <span v-if="!collapsed" class="build-stamp">b1007-1726</span>
+          <span v-if="!collapsed" class="build-stamp">b1016-1829</span>
         </div>
       </aside>
       <main class="app-main">

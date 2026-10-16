@@ -6,7 +6,7 @@ from backend.app.core import oplog
 from backend.app.core.redis import get_platform_redis
 
 SITES_KEY = "ops:sites"  # Set: 全部站点 id（PRD §6.2）
-RESOURCE_TYPES = ("servers", "redis", "mq", "devices")
+RESOURCE_TYPES = ("servers", "pages", "redis", "mq", "devices")
 # 删除站点时一并清理的附属 key：overview 健康 hash、ssh 脚本 hash（字面量直写，避免跨模块循环导入）
 HEALTH_KEY = "ops:health:{site_id}"  # overview/service.py health_key 同格式
 SSH_SCRIPTS_KEY = "ops:site:{site_id}:ssh_scripts"  # ssh/service.py _key 同格式
@@ -145,14 +145,14 @@ async def list_resources(site_id: str, res_type: str, include_password: bool = T
     if not include_password:
         # ponytail: 兼容旧签名；当前全部调用方都用明文
         items = [{k: ("" if k == "password" else v) for k, v in c.items()} for c in items]
-    return sorted(items, key=lambda c: c["id"])
+    return sorted((_with_kind(res_type, c) for c in items), key=lambda c: c["id"])
 
 
 async def get_resource_raw(site_id: str, res_type: str, resource_id: str) -> dict | None:
     """读原始配置（含密码）。供各资源模块 provider 建连与前端展示共用。"""
     await _require_site(site_id)
     raw = await get_platform_redis().hget(resource_key(site_id, res_type), resource_id)
-    return json.loads(raw) if raw else None
+    return _with_kind(res_type, json.loads(raw)) if raw else None
 
 
 async def get_resource(site_id: str, res_type: str, resource_id: str) -> dict | None:
@@ -164,6 +164,17 @@ def _res_label(data: dict, resource_id: str) -> str:
     return str(data.get("name") or resource_id)
 
 
+def _with_kind(res_type: str, item: dict) -> dict:
+    """pages 资源的派生字段 kind：有 url 即链接型（url），否则 HTML 型（html）。
+
+    存储不落 kind（后端/前端都可能写配置），读取时按当前 url/html 派生——
+    老数据与手改数据同样得到正确分类，零迁移成本。其他资源类型原样返回。
+    """
+    if res_type == "pages":
+        item["kind"] = "url" if item.get("url") else ("html" if item.get("html") else None)
+    return item
+
+
 async def create_resource(site_id: str, res_type: str, data: dict) -> dict:
     await _require_site(site_id)
     r = get_platform_redis()
@@ -171,12 +182,13 @@ async def create_resource(site_id: str, res_type: str, data: dict) -> dict:
     resource_id = data.get("id") or uuid_hex()
     if await r.hexists(key, resource_id):
         raise DuplicateResource(resource_id)
-    data = {**data, "id": resource_id}
-    await r.hset(key, resource_id, json.dumps(data, ensure_ascii=False))
-    name = _res_label(data, resource_id)
+    data = {k: v for k, v in data.items() if k != "kind"}  # kind 是派生字段，不落存储
+    stored = {**data, "id": resource_id}
+    await r.hset(key, resource_id, json.dumps(stored, ensure_ascii=False))
+    name = _res_label(stored, resource_id)
     await oplog.record(site_id, f"{res_type}/{name}", "RESOURCE_CONFIG_CREATED",
                        target=name, params={"resource_id": resource_id})
-    return data
+    return _with_kind(res_type, dict(stored))
 
 
 async def update_resource(site_id: str, res_type: str, resource_id: str, data: dict) -> dict | None:
@@ -188,13 +200,13 @@ async def update_resource(site_id: str, res_type: str, resource_id: str, data: d
         return None
     old = json.loads(raw)
     # 提交什么存什么（exclude_unset 只带显式提交的字段）；明文策略下编辑即覆盖
-    old.update(data)
+    old.update({k: v for k, v in data.items() if k != "kind"})
     old["id"] = resource_id
     await r.hset(key, resource_id, json.dumps(old, ensure_ascii=False))
     name = _res_label(old, resource_id)
     await oplog.record(site_id, f"{res_type}/{name}", "RESOURCE_CONFIG_UPDATED",
                        target=name, params={"resource_id": resource_id})
-    return old
+    return _with_kind(res_type, dict(old))
 
 
 async def delete_resource(site_id: str, res_type: str, resource_id: str) -> bool:
@@ -262,6 +274,7 @@ async def import_all(sites: list[dict]) -> int:
         sid = s["id"]
         for t, items in resources.items():
             for item in items:
+                item.pop("kind", None)  # kind 是读取时派生的，不落存储
                 await r.hset(resource_key(sid, t), item["id"], json.dumps(item, ensure_ascii=False))
 
     await oplog.record("-", "site-config", "IMPORT_CONFIG", params={"sites": len(sites)})

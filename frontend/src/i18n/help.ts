@@ -56,6 +56,17 @@ export const helpContent: Record<HelpLang, Record<string, HelpSection>> = {
       ],
     },
 
+    page: {
+      title: '说明 · Page',
+      lines: [
+        '把常用系统入口（ Grafana 、 Kibana 、各业务后台）收拢成卡片墙：点击即达。',
+        '两种页面类型：外链（http/https，新开标签页）与 HTML 单文件（上传或直接粘贴，在站内预览）。两者二选一保存。',
+        'HTML 页面运行于浏览器隔离沙箱：脚本可以执行，但无法读取本平台的登录态与数据（嵌入不受信页面的安全底线）。',
+        '在「站点管理 → 资源 → Page」中新增：名称、描述、链接为必填项——链接可与 HTML 互相替代。',
+        '上传仅接受单个 .html 文件（不支持多文件或压缩包）。',
+      ],
+    },
+
     device: {
       title: '说明 · Device',
       lines: [
@@ -123,6 +134,17 @@ export const helpContent: Record<HelpLang, Record<string, HelpSection>> = {
         '"View" opens a read-only browser showing the first 20 messages in the queue — it does not consume them.',
         '"Purge" deletes ALL backlog in the queue and is irreversible: 10-second countdown confirmation, audit logged; only shown when the queue has messages.',
         'Queue reads retry automatically every 3s on failure; an unreachable MQ never affects other platform features.',
+      ],
+    },
+
+    page: {
+      title: 'Instructions · Page',
+      lines: [
+        'Collects frequently used system entries (Grafana, Kibana, ops backends) into a card wall — one click away.',
+        'Two page types: external link (http/https, opens in a new tab) and single-file HTML (uploaded or pasted, previewed inside the console). Save exactly one of the two.',
+        'HTML pages run in a browser sandbox: scripts execute, but they cannot read this platform’s session or data (the safe baseline for embedding untrusted pages).',
+        'Add pages in Sites → Resources → Page: name, description and URL are required — the URL and the HTML block can substitute for each other.',
+        'Upload accepts a single .html file only (no multi-file or archives).',
       ],
     },
 

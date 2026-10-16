@@ -26,6 +26,7 @@ const emit = defineEmits<{ (e: 'update:show', v: boolean): void; (e: 'changed'):
 
 const TYPES: Array<{ key: ResourceType; label: string }> = [
   { key: 'servers', label: 'Server' },
+  { key: 'pages', label: 'Page' },
   { key: 'redis', label: 'Redis' },
   { key: 'mq', label: 'ActiveMQ' },
   { key: 'devices', label: 'Device' },
@@ -38,6 +39,10 @@ const COLUMN_DEFS: Record<ResourceType, Array<{ key: string; label: string }>> =
     { key: 'port', label: 'Port' },
     { key: 'username', label: '用户名' },
     { key: 'password', label: '密码' },
+  ],
+  pages: [
+    { key: 'description', label: '描述' },
+    { key: 'url', label: '链接' },
   ],
   redis: [
     { key: 'host', label: 'Host' },

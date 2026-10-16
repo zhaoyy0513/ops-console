@@ -9,7 +9,9 @@ import {
   NInput,
   NInputNumber,
   NModal,
+  NUpload,
   useMessage,
+  type UploadFileInfo,
 } from 'naive-ui'
 import ResourceTestButton from '../../components/ResourceTestButton.vue'
 import OpsSwitch from '../../components/OpsSwitch.vue'
@@ -17,7 +19,7 @@ import OpsSwitch from '../../components/OpsSwitch.vue'
 export interface EditTarget {
   /** 编辑已有资源的 id；null = 新增 */
   id: string | null
-  type: 'servers' | 'redis' | 'mq' | 'devices'
+  type: 'servers' | 'pages' | 'redis' | 'mq' | 'devices'
   /** 编辑时的初始值（新增时传 {}） */
   item: Record<string, any>
   /** host 联想候选（redis/mq/devices 用） */
@@ -44,6 +46,7 @@ const TEST_TYPE: Record<string, string> = {
 
 const TYPES: Record<string, string> = {
   servers: 'Server',
+  pages: 'Page',
   redis: 'Redis',
   mq: 'ActiveMQ',
   devices: 'Device',
@@ -52,13 +55,19 @@ const TYPES: Record<string, string> = {
 /** 字段 label 文案在 i18n `fields.<key>`；ph 为各自占位 key（fieldmap/ph 见 sites 命名空间） */
 const FIELD_DEFS: Record<
   string,
-  Array<{ key: string; label: string; kind?: 'number' | 'host-input' | 'host-select' | 'name-select'; ph?: string; required?: boolean }>
+  Array<{ key: string; label: string; kind?: 'number' | 'host-input' | 'host-select' | 'name-select' | 'url-input'; ph?: string; required?: boolean }>
 > = {
   servers: [
     { key: 'host', label: 'Host', kind: 'host-input', required: true },
     { key: 'port', label: 'Port', kind: 'number' },
     { key: 'username', label: 'Username', required: true },
     { key: 'password', label: 'Password', required: true },
+  ],
+  // pages：名称/描述/链接 三项必填（用户要求）；HTML 上传块在模板另行渲染
+  pages: [
+    { key: 'name', label: 'Name', required: true },
+    { key: 'description', label: 'Description', required: true },
+    { key: 'url', label: 'URL', kind: 'url-input', required: false },
   ],
   redis: [
     { key: 'name', label: 'Name', kind: 'name-select', required: true },
@@ -82,6 +91,7 @@ const FIELD_DEFS: Record<
 
 const CREATE_DEFAULTS: Record<string, Record<string, unknown>> = {
   servers: { port: 22 },
+  pages: { url: '', html: '' },
   redis: { port: 6379 },
   mq: { port: 8161, username: 'prime_admin', password: 'hElloPr1me' },
   devices: {},
@@ -113,6 +123,31 @@ watch(
   { immediate: true },
 )
 
+/** .html 单文件上传：读文本进 form.html；非 .html 一律拒（扩展名 + MIME 双判）。
+ *  返回值 false = 不让文件进入 naive 的上传队列（内容已进表单，列表无意义）。 */
+async function onHtmlUpload(data: { file: UploadFileInfo }): Promise<boolean> {
+  const file = data.file
+  const name = (file.name ?? '').toLowerCase()
+  if (!name.endsWith('.html') && file.type !== 'text/html') {
+    message.error(t('page.invalidHtml'))
+    return false
+  }
+  try {
+    const raw = (file.file as File | undefined) ?? null
+    if (!raw) throw new Error('no file handle')
+    form.value.html = await raw.text()
+    message.success(t('page.htmlLoaded'))
+  } catch (e) {
+    message.error(t('page.htmlFailed', { msg: (e as Error).message }))
+  }
+  return false
+}
+
+function onHtmlRemove(): boolean {
+  form.value.html = ''
+  return true
+}
+
 async function save() {
   const target = props.target
   if (!target) return
@@ -121,13 +156,23 @@ async function save() {
     return
   }
   for (const f of fields.value) {
+    // url-input 是软必填：pages 允许用 HTML 替代链接，空值由下面的二选一校验裁决
+    if (f.kind === 'url-input') continue
     if (f.required && !String(form.value[f.key] ?? '').trim()) {
       message.warning(t('sites.fieldRequired', { label: t(`fields.${f.key}`) }))
       return
     }
   }
+  // pages：url 与 html 至少一个（与后端 PageConfig 同规则）
+  if (target.type === 'pages'
+    && !String(form.value.url ?? '').trim()
+    && !String(form.value.html ?? '').trim()) {
+    message.warning(t('page.needOne'))
+    return
+  }
   const data = Object.fromEntries(
-    Object.entries(form.value).filter(([, v]) => v !== null && v !== undefined),
+    Object.entries(form.value)
+      .filter(([k, v]) => v !== null && v !== undefined && !(k === 'html' && typeof v === 'string' && !v.trim())),
   )
   saving.value = true
   try {
@@ -195,12 +240,43 @@ async function save() {
           :input-props="{ autocomplete: 'off' }"
           :placeholder="(props.target?.hostOptions ?? []).length ? $t('sites.hostSelectPh') : $t('sites.hostInputAddr')"
         />
+        <!-- pages 链接：与 HTML 二选一，故 required=true 的字段用软校验（save 内判空） -->
+        <n-input v-else-if="f.kind === 'url-input'" v-model:value="form[f.key]"
+          :placeholder="$t('page.urlPh')" />
         <n-input v-else v-model:value="form[f.key]" />
         </n-form-item>
       </template>
-      <n-form-item label=" ">
+      <!-- pages 专属：HTML 上传 / 粘贴（与 url 二选一，上限单个 .html 文件） -->
+      <template v-if="props.target?.type === 'pages'">
+        <n-form-item :label="$t('page.htmlLabel')">
+          <div class="html-block">
+            <n-upload
+              :max="1"
+              accept=".html"
+              :show-file-list="false"
+              :on-before-upload="onHtmlUpload"
+              :on-remove="onHtmlRemove"
+            >
+              <n-button size="small">{{ $t('page.uploadBtn') }}</n-button>
+            </n-upload>
+            <span class="hint">{{ $t('page.uploadHint') }}</span>
+          </div>
+        </n-form-item>
+        <n-form-item label=" ">
+          <n-input
+            v-model:value="form.html"
+            type="textarea"
+            :rows="6"
+            class="mono"
+            :input-props="{ spellcheck: false }"
+            :placeholder="$t('page.htmlPh')"
+          />
+        </n-form-item>
+      </template>
+      <!-- 无连接测试的类型（pages：不需要连通性探测）不渲染 Test 行 -->
+      <n-form-item v-if="TEST_TYPE[props.target?.type ?? 'servers']" label=" ">
         <div class="form-test">
-          <resource-test-button :type="TEST_TYPE[props.target?.type ?? 'servers'] ?? 'server'" :config="form" />
+          <resource-test-button :type="TEST_TYPE[props.target?.type ?? 'servers']" :config="form" />
           <span v-if="props.target?.type === 'mq'" class="hint">
             {{ $t('sites.jolokiaHint') }}
           </span>
@@ -217,6 +293,16 @@ async function save() {
 </template>
 
 <style scoped>
+.html-block {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.html-block .hint {
+  color: var(--ops-text-3);
+  font-size: 12px;
+}
 .form-test {
   display: flex;
   align-items: center;
