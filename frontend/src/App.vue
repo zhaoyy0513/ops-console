@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, provide } from 'vue'
-import { useDark, useToggle } from '@vueuse/core'
+import { useColorMode } from '@vueuse/core'
 import {
   NConfigProvider,
   NDialogProvider,
@@ -16,9 +16,16 @@ import {
 import { naiveDateLocale, naiveLocale } from './i18n'
 import MainLayout from './layouts/MainLayout.vue'
 
-const isDark = useDark()
-const toggleDark = useToggle(isDark)
-// 供 MainLayout 顶栏按钮使用（provide 避免再引一次 useDark）；isDark 本身随系统偏好自动响应
+// 主题：useDark() 返回的是 useColorMode 的 state（computed），"auto" 时它跟随
+// 操作系统；useToggle(state) 的写回打在 computed 上会静默失败（Vue 对只读
+// computed 赋值不报错）——这就是"切一次没反应、再点又动了"的原因。
+// 正确做法：切换写 store（可写 ref），display 读 state。
+// storageKey 沿用默认的 vueuse-color-scheme：老用户的旧选择不会丢。
+const mode = useColorMode({ disableTransition: true })
+const { store, state: isDark } = mode
+// 写 store（可写），不写 state（computed，赋值静默失败）
+const toggleDark = () => { store.value = isDark.value ? 'light' : 'dark' }
+// 供 MainLayout 顶栏按钮使用；isDark 随 store / 系统偏好自动响应
 provide('opsDark', { isDark, toggle: toggleDark })
 
 /** 令牌同源的主题覆盖（§3.2：色值来自 tokens.css 的同一组常量） */
