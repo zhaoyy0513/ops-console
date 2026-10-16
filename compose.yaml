@@ -16,6 +16,10 @@ services:
       MQ_API_TIMEOUT: ${MQ_API_TIMEOUT:-10}
     volumes:
       - backend-logs:/app/logs
+    # pids 上限：asyncssh 建连的 DNS 线程池 + uvicorn 自身线程 + APScheduler，
+    # 默认宿主机 pids 上限过小（或宿主机 PID 耗尽）时 Python 抛
+    # "can't start new thread"（表现为所有 SSH 接口 500）。显式给足配额。
+    pids_limit: 256
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request;urllib.request.urlopen('http://127.0.0.1:8000/api/health')\""]
       interval: 30s
@@ -30,7 +34,7 @@ services:
     ports:
       - "${OPS_PORT:-8090}:80"
     depends_on:
-      - ops-backend
+      - backend
 
 volumes:
   backend-logs:

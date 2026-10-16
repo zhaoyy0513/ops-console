@@ -9,6 +9,45 @@ from backend.app.shared.errors import OpsError, ops_error_handler, unhandled_err
 
 setup_logging(settings.log_level)
 
+# 容器低 pids 上限防线：asyncssh 每次 connect 都经默认线程池做 DNS 解析，
+# 默认池上限 min(32, cpu+4)——容器 cgroup pids / ulimit -u 打满时 Python 抛
+# "can't start new thread"（线上表现为所有 SSH 接口 500）。包一层惰性池：只有
+# 真提交任务才起线程，且总量封顶在 OPS_THREADPOOL_MAX（默认 8，远小于
+# 32）——SSH 信号量已限并发 ≤8+4，8 足够；解析只在 connect 阶段（毫秒级）。
+import asyncio
+import concurrent.futures
+import functools
+import os
+
+_POOL = concurrent.futures.ThreadPoolExecutor(
+    max_workers=int(os.environ.get("OPS_THREADPOOL_MAX", "8")),
+    thread_name_prefix="opsio",
+)
+
+
+class _BoundedExecutor(concurrent.futures.Executor):
+    """run_in_executor 门面：把任务提交到上面的小池（替代 loop 默认池）。"""
+
+    def submit(self, fn, /, *args, **kwargs):
+        return _POOL.submit(fn, *args, **kwargs)
+
+
+_bounded_executor = _BoundedExecutor()
+_orig_run_in_executor = asyncio.BaseEventLoop.run_in_executor
+
+
+@functools.wraps(_orig_run_in_executor)
+async def _patched_run_in_executor(self, executor, func, *args):
+    # executor=None（默认池）或 ThreadPoolExecutor 实例 → 换成小池；
+    # 想用其他自定义 executor 的调用方保持原样
+    if executor is None or isinstance(executor, concurrent.futures.ThreadPoolExecutor):
+        return await _orig_run_in_executor(self, _bounded_executor, func, *args)
+    return await _orig_run_in_executor(self, executor, func, *args)
+
+
+asyncio.BaseEventLoop.run_in_executor = _patched_run_in_executor
+
+
 app = FastAPI()
 app.add_exception_handler(OpsError, ops_error_handler)
 app.add_exception_handler(Exception, unhandled_error_handler)
