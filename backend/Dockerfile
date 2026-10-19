@@ -1,5 +1,5 @@
 # 后端镜像：uv 管理依赖（PRD §25.1），构建上下文 = 仓库根目录
-FROM ghcr.io/astral-sh/uv:python3.13-bookworm-slim
+FROM python:3.13-slim-bookworm
 
 WORKDIR /app
 ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_PROJECT_ENVIRONMENT=/app/.venv
