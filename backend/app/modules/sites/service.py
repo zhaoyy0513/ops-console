@@ -175,6 +175,17 @@ def _with_kind(res_type: str, item: dict) -> dict:
     return item
 
 
+async def _check_name_unique(r, key: str, name: str, exclude_id: str | None = None) -> None:
+    """同站点同类型下 name 唯一（防快连创建重名）。exclude_id = 编辑时排除自身。"""
+    if not name:
+        return
+    for rid, raw in (await r.hgetall(key)).items():
+        if rid == exclude_id:
+            continue
+        if json.loads(raw).get("name") == name:
+            raise DuplicateResource(f"name already in use: {name}")
+
+
 async def create_resource(site_id: str, res_type: str, data: dict) -> dict:
     await _require_site(site_id)
     r = get_platform_redis()
@@ -182,12 +193,14 @@ async def create_resource(site_id: str, res_type: str, data: dict) -> dict:
     resource_id = data.get("id") or uuid_hex()
     if await r.hexists(key, resource_id):
         raise DuplicateResource(resource_id)
+    name = str(data.get("name") or "").strip()
+    await _check_name_unique(r, key, name)  # 同站点同类型 name 唯一
     data = {k: v for k, v in data.items() if k != "kind"}  # kind 是派生字段，不落存储
     stored = {**data, "id": resource_id}
     await r.hset(key, resource_id, json.dumps(stored, ensure_ascii=False))
-    name = _res_label(stored, resource_id)
-    await oplog.record(site_id, f"{res_type}/{name}", "RESOURCE_CONFIG_CREATED",
-                       target=name, params={"resource_id": resource_id})
+    label = _res_label(stored, resource_id)
+    await oplog.record(site_id, f"{res_type}/{label}", "RESOURCE_CONFIG_CREATED",
+                       target=label, params={"resource_id": resource_id})
     return _with_kind(res_type, dict(stored))
 
 
@@ -199,6 +212,9 @@ async def update_resource(site_id: str, res_type: str, resource_id: str, data: d
     if not raw:
         return None
     old = json.loads(raw)
+    # 改名时同样校验唯一（排除自身）
+    if "name" in data:
+        await _check_name_unique(r, key, str(data.get("name") or "").strip(), exclude_id=resource_id)
     # 提交什么存什么（exclude_unset 只带显式提交的字段）；明文策略下编辑即覆盖
     old.update({k: v for k, v in data.items() if k != "kind"})
     old["id"] = resource_id

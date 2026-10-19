@@ -41,7 +41,7 @@ uv run --env-file .env python -m uvicorn backend.app.main:app --host 0.0.0.0 --p
 
 cd frontend
 npm install
-npm run dev                              # http://localhost:5173，/api 代理到 :8000
+npm run dev -- --host                             # http://localhost:5173，/api 代理到 :8000
 ```
 
 测试：

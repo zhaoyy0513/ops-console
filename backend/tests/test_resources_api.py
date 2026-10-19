@@ -147,3 +147,32 @@ async def test_page_resource_url_or_html_and_kind(client):
     assert "kind" not in json.loads(raw)
     listed = (await client.get("/api/sites/sz-test/pages")).json()
     assert {p["id"]: p["kind"] for p in listed} == {"p-url": "url", "p-html": "url"}
+
+
+async def test_resource_name_must_be_unique_per_type(client):
+    """同站点同类型下 name 唯一：create 重名 409；update 改成他者之名 409。"""
+    await _make_site(client)
+
+    # 同 type 下重名创建 → 409
+    r = await client.post("/api/sites/sz-test/servers", json={
+        "id": "s1", "name": "SAME", "host": "10.0.0.1", "username": "u", "password": "p"})
+    assert r.status_code == 201
+    r = await client.post("/api/sites/sz-test/servers", json={
+        "id": "s2", "name": "SAME", "host": "10.0.0.2", "username": "u", "password": "p"})
+    assert r.status_code == 409  # 重名被拒（s2 未创建）
+
+    # 另建一个不同名资源，之后把它改名成已占用之名 → 409
+    r = await client.post("/api/sites/sz-test/servers", json={
+        "id": "s3", "name": "ALPHA", "host": "10.0.0.3", "username": "u", "password": "p"})
+    assert r.status_code == 201
+    r = await client.put("/api/sites/sz-test/servers/s3", json={"name": "SAME"})
+    assert r.status_code == 409
+
+    # 未改名（保存自身原名）应放行
+    r = await client.put("/api/sites/sz-test/servers/s3", json={"name": "ALPHA"})
+    assert r.status_code == 200
+
+    # 不同类型不互斥：pages 可叫 SAME
+    r = await client.post("/api/sites/sz-test/pages", json={
+        "id": "pg", "name": "SAME", "description": "", "url": "https://x.example"})
+    assert r.status_code == 201

@@ -222,6 +222,7 @@ const hasMapping = computed(() => activeType.value === 'devices')
   <resource-edit-modal
     v-model:show="editShow"
     :target="editTarget"
+    :existing-names="items.map((r) => r.name)"
     @saved="onSaved"
   />
 

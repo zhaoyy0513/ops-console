@@ -30,7 +30,12 @@ export interface EditTarget {
   siteId: string
 }
 
-const props = defineProps<{ show: boolean; target: EditTarget | null }>()
+const props = defineProps<{
+  show: boolean
+  target: EditTarget | null
+  /** 同站点同类型下的已有资源名（前端即时去重校验；后端另有权威校验） */
+  existingNames?: string[]
+}>()
 const emit = defineEmits<{
   (e: 'update:show', v: boolean): void
   (e: 'saved'): void
@@ -63,10 +68,10 @@ const FIELD_DEFS: Record<
     { key: 'username', label: 'Username', required: true },
     { key: 'password', label: 'Password', required: true },
   ],
-  // pages：名称/描述/链接 三项必填（用户要求）；HTML 上传块在模板另行渲染
+  // pages：名称必填、描述选填、链接必填（与 HTML 二选一时 URL 可空）
   pages: [
     { key: 'name', label: 'Name', required: true },
-    { key: 'description', label: 'Description', required: true },
+    { key: 'description', label: 'Description' },
     { key: 'url', label: 'URL', kind: 'url-input', required: false },
   ],
   redis: [
@@ -151,8 +156,16 @@ function onHtmlRemove(): boolean {
 async function save() {
   const target = props.target
   if (!target) return
-  if (!String(form.value.name ?? '').trim()) {
+  const name = String(form.value.name ?? '').trim()
+  if (!name) {
     message.warning(t('common.nameRequired'))
+    return
+  }
+  // 同站点同类型下 name 唯一：编辑时排除自身（原名放行）。后端亦作权威校验。
+  const originalName = isEdit.value ? String(props.target?.item?.name ?? '') : ''
+  const dup = (props.existingNames ?? []).some((n) => n === name && n !== originalName)
+  if (dup) {
+    message.error(t('sites.nameDuplicate', { name }))
     return
   }
   for (const f of fields.value) {

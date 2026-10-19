@@ -101,11 +101,10 @@ class DeviceConfig(ResourceBase):
 
 
 class PageConfig(ResourceBase):
-    """页面资源：外部链接 或 内联 HTML 二选一（用户要求三个必填字段中的
-    "链接"可以是外链，也可以用上传/粘贴的单文件 HTML 替代）。
-    校验放在本模型上，经 create_model 派生的 update 模型同样生效。"""
+    """页面资源：名称必填、描述选填、链接必填（与 HTML 二选一——
+    有 HTML 时 URL 可以不填）。"""
 
-    description: str = Field(min_length=1)
+    description: str = ""
     url: str | None = None
     html: str | None = None
 
@@ -191,6 +190,8 @@ def _add_resource_routes(res_type: str, url_segment: str, create_model_cls: type
             )
         except service.NotFound as e:
             raise not_found(str(e)) from None
+        except service.DuplicateResource as e:
+            raise HTTPException(status_code=409, detail=str(e)) from None
         if item is None:
             raise not_found(f"resource not found: {resource_id}")
         return item
