@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, h, inject, onMounted, ref, watch, type Component, type Ref } from 'vue'
+import { computed, h, inject, onMounted, ref, watch, type Component } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { NButton, NIcon, NMenu, NSelect, useLoadingBar } from 'naive-ui'
 import {
@@ -34,7 +34,7 @@ const MODULE_ICONS: Record<string, Component> = {
 }
 
 // 主题（App.vue provide 的暗色状态）
-const opsDark = inject<{ isDark: Ref<boolean>; toggle: () => void }>('opsDark')!
+const opsDark = inject<{ isDark: { value: boolean }; toggle: () => void }>('opsDark')!
 
 // 侧栏折叠（200px ↔ 56px，只藏文字不藏图标）
 const collapsed = ref(false)
@@ -139,7 +139,7 @@ function onSiteSelect(id: string) {
           <button class="collapse-btn" :title="collapsed ? $t('layout.expand') : $t('layout.collapse')" @click="collapsed = !collapsed">
             <n-icon :component="collapsed ? ChevronForwardOutline : ChevronBackOutline" :size="16" />
           </button>
-          <span v-if="!collapsed" class="build-stamp">b1016-1829</span>
+          <span v-if="!collapsed" class="build-stamp">b1019-0931</span>
         </div>
       </aside>
       <main class="app-main">

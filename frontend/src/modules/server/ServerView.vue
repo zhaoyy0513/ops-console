@@ -248,11 +248,23 @@ const {
 
 // 磁盘表（NDataTable）：usage 列内联进度条，阈值变色
 type DiskRow = NonNullable<ServerMetrics['disk']>[number]
+
+/** "1014M"/"31G"/"2.3T" -> 字节数（df -hP 的人类可读单位）。解析失败返回 -1 沉底。 */
+function sizeToBytes(s: string | null | undefined): number {
+  if (!s) return -1
+  const m = /^([\d.]+)\s*([KMGTPE]?)i?B?$/i.exec(s.trim())
+  if (!m) return -1
+  const units: Record<string, number> = { '': 1, K: 1024, M: 1024 ** 2, G: 1024 ** 3, T: 1024 ** 4, P: 1024 ** 5, E: 1024 ** 6 }
+  return parseFloat(m[1]) * (units[m[2].toUpperCase()] ?? 1)
+}
+const bySize = (key: 'size' | 'used' | 'avail') => (a: DiskRow, b: DiskRow) =>
+  sizeToBytes(a[key]) - sizeToBytes(b[key])
+
 const diskColumns = computed<DataTableColumns<DiskRow>>(() => [
   { title: t('server.mount'), key: 'mount', sorter: 'default' },
-  { title: t('server.size'), key: 'size', sorter: 'default' },
-  { title: t('server.usedCol'), key: 'used' },
-  { title: t('server.availCol'), key: 'avail' },
+  { title: t('server.size'), key: 'size', sorter: bySize('size') },
+  { title: t('server.usedCol'), key: 'used', sorter: bySize('used') },
+  { title: t('server.availCol'), key: 'avail', sorter: bySize('avail') },
   {
     title: t('server.usage'),
     key: 'use_percent',

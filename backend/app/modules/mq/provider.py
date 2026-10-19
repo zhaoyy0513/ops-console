@@ -94,9 +94,11 @@ class ArtemisProvider:
             return body.get("value")
 
     async def empty_queue(self, mbean: str) -> Any:
-        """清空队列积压消息。Artemis 2.19 QueueControl 没有 emptyQueue 操作，
-        用 removeMessages(null)（filter=None 匹配全部），返回删除条数。"""
-        return await self.exec_operation(mbean, "removeMessages", [None])
+        """清空队列积压消息。mbean 已精确到单队列（address+queue+routing-type），
+        removeAllMessages() 只作用于该队列。不用 removeMessages(null)：Jolokia 把
+        None 序列化为 JSON null，Artemis 解析 null filter 抛 IllegalArgumentException
+        （线上实测）。此探测确认该 broker 无 emptyQueue 操作。"""
+        return await self.exec_operation(mbean, "removeAllMessages")
 
     async def browse_queue(self, mbean: str, limit: int = 20) -> list[dict[str, Any]]:
         """浏览队列消息（Artemis 2.19 用 listMessages(filter)——没有 browse/getMessage）。
