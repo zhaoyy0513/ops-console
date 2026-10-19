@@ -1,7 +1,7 @@
 import axios from 'axios'
 
 /** 统一 axios 实例：所有模块经此调用后端（PRD §20.1 api/）。 */
-const instance = axios.create({ baseURL: '/api', timeout: 10000 })
+const instance = axios.create({ baseURL: '/api', timeout: 15000 })
 
 instance.interceptors.response.use(
   (resp) => resp.data,

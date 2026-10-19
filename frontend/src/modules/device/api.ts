@@ -24,14 +24,12 @@ export interface DeviceRow {
 }
 
 export const deviceApi = {
-  /** instance 指定单实例（页面下拉选择）；缺省聚合全部启用实例。
-   *  上游设备接口响应慢，表格/详情给 30s 超时（全局默认 10s 不够） */
+  /** instance 指定单实例（页面下拉选择）；缺省聚合全部启用实例（走全局 15s 超时） */
   list: (siteId: string, instance?: string) =>
-    api.get<DeviceRow[]>(`/sites/${siteId}/devices${instance ? `?instance=${encodeURIComponent(instance)}` : ''}`, { timeout: 30_000 }),
+    api.get<DeviceRow[]>(`/sites/${siteId}/devices${instance ? `?instance=${encodeURIComponent(instance)}` : ''}`),
   detail: (siteId: string, deviceId: string, instance?: string) =>
     api.get<DeviceRow>(
       `/sites/${siteId}/devices/${encodeURIComponent(deviceId)}${instance ? `?instance=${instance}` : ''}`,
-      { timeout: 30_000 },
     ),
   /** 获取一条原始 JSON 数据及其字段名列表（字段映射配置用） */
   sampleFields: (siteId: string, deviceId: string) =>
