@@ -4,6 +4,7 @@ from starlette.requests import Request
 from backend.app.core.config import settings
 from backend.app.core.logging import new_request_id, setup_logging
 from backend.app.core.redis import get_platform_redis
+from backend.app.core.request_info import set_caller
 from backend.app.modules import register_all
 from backend.app.shared.errors import OpsError, ops_error_handler, unhandled_error_handler
 
@@ -53,12 +54,23 @@ app.add_exception_handler(OpsError, ops_error_handler)
 app.add_exception_handler(Exception, unhandled_error_handler)
 
 
+def _caller_ip(request: Request) -> str:
+    """调用者 IP：ops-nginx 反代后 client.host 是容器 IP，真实来源在转发头里。
+    取 X-Forwarded-For 第一跳（客户端最初 IP），退 X-Real-IP，再退直连地址。"""
+    fwd = request.headers.get("x-forwarded-for")
+    if fwd:
+        return fwd.split(",")[0].strip()
+    return request.headers.get("x-real-ip") or (request.client.host if request.client else "-")
+
+
 @app.middleware("http")
 async def request_context(request: Request, call_next):
-    """请求级日志字段（PRD §29）：request_id 透传响应头，站点随路径。"""
+    """请求级日志字段（PRD §29）：request_id 透传响应头，站点随路径。
+    同时落调用者上下文（IP + 操作人别名），oplog 记录时自动读取。"""
     rid = new_request_id()
     path_parts = request.url.path.split("/")
     site_id = path_parts[3] if len(path_parts) > 3 and path_parts[1] == "api" and path_parts[2] == "sites" else "-"
+    set_caller(_caller_ip(request), request.headers.get("x-ops-user") or "-")
     import loguru
 
     with loguru.logger.contextualize(request_id=rid, site_id=site_id, resource_id="-"):

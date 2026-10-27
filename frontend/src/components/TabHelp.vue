@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { NModal } from 'naive-ui'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { useI18n } from 'vue-i18n'
 import { helpContent, type HelpSection } from '../i18n/help'
 
@@ -30,17 +30,19 @@ const section = computed<HelpSection>(() => {
     @keydown.enter="show = true"
   >?</span>
 
-  <n-modal :mask-closable="false" :close-on-esc="false" v-model:show="show" preset="card" :style="{ width: '560px', maxWidth: '92vw' }" :bordered="false">
-    <template #header>
-      <div class="help-modal-title">
-        <span class="accent-bar" aria-hidden="true"></span>
-        {{ section.title }}
-      </div>
-    </template>
-    <ol class="help-list">
-      <li v-for="(line, i) in section.lines" :key="i">{{ line }}</li>
-    </ol>
-  </n-modal>
+  <Dialog v-model:open="show">
+    <DialogContent class="w-[560px] max-w-[92vw]">
+      <DialogHeader>
+        <DialogTitle class="help-modal-title">
+          <span class="accent-bar" aria-hidden="true"></span>
+          {{ section.title }}
+        </DialogTitle>
+      </DialogHeader>
+      <ol class="help-list">
+        <li v-for="(line, i) in section.lines" :key="i">{{ line }}</li>
+      </ol>
+    </DialogContent>
+  </Dialog>
 </template>
 
 <style scoped>
@@ -72,9 +74,8 @@ const section = computed<HelpSection>(() => {
   display: flex;
   align-items: center;
   gap: 10px;
-  font-size: 15px;
   font-weight: 700;
-  color: #1f2329;
+  color: var(--ops-text-1);
 }
 .accent-bar {
   width: 4px;
@@ -98,7 +99,7 @@ const section = computed<HelpSection>(() => {
   margin-bottom: 12px;
   font-size: 13.5px;
   line-height: 1.7;
-  color: #333;
+  color: var(--ops-text-2);
 }
 .help-list li:last-child {
   margin-bottom: 0;
@@ -111,8 +112,8 @@ const section = computed<HelpSection>(() => {
   width: 20px;
   height: 20px;
   border-radius: 50%;
-  background: #e8f1fb;
-  color: #0b63ce;
+  background: color-mix(in srgb, var(--primary) 12%, transparent);
+  color: var(--primary);
   font-size: 12px;
   font-weight: 700;
   display: flex;

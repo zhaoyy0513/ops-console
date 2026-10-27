@@ -4,7 +4,7 @@ import { json, jsonParseLinter } from '@codemirror/lang-json'
 import { linter } from '@codemirror/lint'
 import { oneDark } from '@codemirror/theme-one-dark'
 import { MergeView } from '@codemirror/merge'
-import { inject, onBeforeUnmount, onMounted, ref, watch, type Ref } from 'vue'
+import { computed, inject, onBeforeUnmount, onMounted, ref, watch, type ComputedRef } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 // git-review 式左右对比：左 = Redis 当前值（只读），右 = 编辑侧（v-model），
@@ -20,7 +20,8 @@ const props = withDefaults(
 const emit = defineEmits<{ (e: 'update:modelValue', v: string): void }>()
 
 const { t } = useI18n()
-const opsDark = inject<{ isDark: Ref<boolean> }>('opsDark')!
+// 三态画风；编辑器只有亮/暗两套主题，mono/terminal 归暗
+const theme = inject<ComputedRef<'light' | 'dark'>>('opsTheme', computed(() => 'light'))
 
 const el = ref<HTMLDivElement>()
 let view: MergeView | null = null
@@ -32,15 +33,15 @@ const lightTheme = EditorView.theme({
   '.cm-activeLine': { background: 'rgba(37, 99, 235, 0.05)' },
 })
 
-function theme() {
-  return opsDark.isDark.value ? [oneDark] : [lightTheme]
+function themeExts() {
+  return theme.value === 'light' ? [lightTheme] : [oneDark]
 }
 
 function createView() {
   view = new MergeView({
     a: {
       doc: props.original,
-      extensions: [basicSetup, json(), EditorView.editable.of(false), ...theme()],
+      extensions: [basicSetup, json(), EditorView.editable.of(false), ...themeExts()],
     },
     b: {
       doc: props.modelValue,
@@ -49,7 +50,7 @@ function createView() {
         json(),
         // 行内红波浪线实时标出语法错误（行/列详情由外层横幅展示）
         linter(jsonParseLinter()),
-        ...theme(),
+        ...themeExts(),
         EditorView.updateListener.of((u) => {
           if (u.docChanged && !silent) emit('update:modelValue', u.state.doc.toString())
         }),
@@ -78,8 +79,9 @@ watch(() => props.modelValue, (v) => {
   }
 })
 
-// 暗色切换重建（同 CodeJsonEditor：重建比 Compartment 少代码）
-watch(() => opsDark.isDark.value, () => {
+// 画风切换重建（同 CodeJsonEditor：重建比 Compartment 少代码；
+// watch 映射后的主题名，mono/terminal 同为暗不重复重建）
+watch(() => (theme.value === 'light' ? 'light' : 'dark'), () => {
   view?.destroy()
   createView()
 })

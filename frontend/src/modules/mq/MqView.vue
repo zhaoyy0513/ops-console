@@ -1,22 +1,28 @@
 <script setup lang="ts">
-import { computed, inject, onBeforeUnmount, onMounted, ref, watch, type Ref } from 'vue'
+import { computed, h, inject, onBeforeUnmount, onMounted, ref, watch, type ComponentPublicInstance, type ComputedRef } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { NButton, NCard, NInput, NModal, NSelect, NSpace, NSpin, NTable, NTooltip, useMessage } from 'naive-ui'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/ui/select'
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { TooltipContent, TooltipRoot, TooltipTrigger } from '@/components/ui/tooltip'
+import { message } from '@/lib/message'
+import OpsDataTable from '../../components/OpsDataTable.vue'
+import LoadingDots from '../../components/LoadingDots.vue'
 import CountdownConfirm from '../../components/CountdownConfirm.vue'
 import EmptyState from '../../components/EmptyState.vue'
 import BaseChart from '../../components/BaseChart.vue'
 import TabHelp from '../../components/TabHelp.vue'
 import StatusBadge from '../../components/StatusBadge.vue'
 import MetricCard from '../../components/MetricCard.vue'
-import SortTh from '../../components/SortTh.vue'
-import { useTableSort } from '../../composables/useTableSort'
 import { useSiteStore } from '../../stores/site'
 import { getSamples } from '../overview/api'
 import { mqApi, type MqOverview, type QueueRow } from './api'
 import { fmtBytes, pctColor } from '../../utils/format'
 
 const siteStore = useSiteStore()
-const message = useMessage()
+const messageBus = message
 const { t } = useI18n()
 
 const instances = ref<Array<{ label: string; value: string }>>([])
@@ -41,7 +47,7 @@ async function loadLight(toastOnFail = false) {
   } catch (e) {
     overview.value = null
     loadError.value = (e as Error).message
-    if (toastOnFail) message.error(`Broker 读取失败：${loadError.value}`)
+    if (toastOnFail) messageBus.error(`Broker 读取失败：${loadError.value}`)
   }
 }
 
@@ -56,7 +62,7 @@ async function loadHeavy(silent = false) {
   } catch (e) {
     // 保留上一次成功的数据不清空；仅在 成功->失败 边缘提示一次（避免轮询 toast 轰炸）
     queuesError.value = (e as Error).message
-    if (!silent && queuesWereOk) message.error(`Queues 读取失败（显示的是上次数据）：${queuesError.value}`)
+    if (!silent && queuesWereOk) messageBus.error(`Queues 读取失败（显示的是上次数据）：${queuesError.value}`)
     queuesWereOk = false
   }
 }
@@ -74,7 +80,7 @@ async function loadInstances() {
     }
     if (instanceId.value) await load()
   } catch (e) {
-    message.error((e as Error).message)
+    messageBus.error((e as Error).message)
   } finally {
     loading.value = false
   }
@@ -140,18 +146,10 @@ const filteredQueues = computed(() => {
   )
 })
 
-// ---------- 队列表当前页排序（名称/消息数/1m新增/累计新增/消费者；地址与状态列不排） ----------
-const {
-  sortKey: qSortKey,
-  sortDir: qSortDir,
-  sortedRows: sortedQueues,
-  toggleSort: toggleQueueSort,
-} = useTableSort<QueueRow>(filteredQueues, (q, k) => (q as unknown as Record<string, unknown>)[k])
-
 // ---------- 图表 ----------
-const opsDark = inject<{ isDark: Ref<boolean> }>('opsDark')!
-/** donut 剩余段底色：随暗色切换（浅灰在黑底刺眼） */
-const freeColor = computed(() => (opsDark.isDark.value ? '#26262c' : '#c1c8d0'))
+const theme = inject<ComputedRef<'light' | 'dark'>>('opsTheme', computed(() => 'light'))
+/** donut 剩余段底色：随画风三态（浅灰在黑底刺眼） */
+const freeColor = computed(() => (theme.value === 'light' ? '#c1c8d0' : '#26262c'))
 
 const heapPct = computed(() => {
   const j = overview.value?.jvm
@@ -279,10 +277,10 @@ async function emptyQueue(q: QueueRow) {
   if (!siteId || !instanceId.value || !q._mbean) return
   try {
     await mqApi.emptyQueue(siteId, instanceId.value, q._mbean, q.name)
-    message.success(`已清空 ${q.name} 的积压消息`)
+    messageBus.success(`已清空 ${q.name} 的积压消息`)
     loadHeavy()
   } catch (e) {
-    message.error((e as Error).message)
+    messageBus.error((e as Error).message)
   }
 }
 
@@ -310,12 +308,121 @@ const addrBreakdown = computed(() => {
 })
 const showAddrModal = ref(false)
 
+// ---------- 队列表（TanStack duck-type 列；排序/空态由 OpsDataTable 承担） ----------
+const queueColumns = computed<any[]>(() => [
+  {
+    accessorKey: 'name',
+    header: t('mq.queueCol'),
+    cell: (ctx: any) => {
+      const q: QueueRow = ctx.row.original
+      return h('span', { class: 'block max-w-[320px] truncate font-mono', title: q.name }, q.name)
+    },
+  },
+  {
+    accessorKey: 'address',
+    header: t('mq.addressCol'),
+    enableSorting: false,
+    cell: (ctx: any) => {
+      const q: QueueRow = ctx.row.original
+      return h('span', { class: 'block max-w-[320px] truncate font-mono', title: q.address ?? '' }, q.address ?? '-')
+    },
+  },
+  {
+    accessorKey: 'diagnosis',
+    header: t('mq.statusCol'),
+    enableSorting: false,
+    cell: (ctx: any) => {
+      const diag = (ctx.row.original as QueueRow).diagnosis
+      const tipText = diag?.issues?.length ? diag.issues.map((i) => i.message).join('；') : '诊断正常'
+      return h(TooltipRoot, { delayDuration: 100 }, {
+        default: () => [
+          h(TooltipTrigger, { asChild: true }, {
+            default: () => h('span', { class: 'inline-flex cursor-help border-b border-dashed border-border pb-px' },
+              h(StatusBadge, { status: diag?.status })),
+          }),
+          h(TooltipContent, { class: 'max-w-80' }, { default: () => tipText }),
+        ],
+      })
+    },
+  },
+  {
+    accessorKey: 'message_count',
+    header: t('mq.messagesCol'),
+    cell: (ctx: any) => {
+      const v = (ctx.row.original as QueueRow).message_count
+      return h('span', { class: (v ?? 0) > 5000 ? 'font-bold' : undefined }, v ?? '-')
+    },
+  },
+  {
+    accessorKey: 'added_1m',
+    header: t('mq.added1mCol'),
+    cell: (ctx: any) => {
+      const q: QueueRow = ctx.row.original
+      const v = q.added_1m
+      return h('span', {
+        class: 'font-mono tabular-nums text-xs',
+        style: { color: addedColor(q.added_1m) },
+        title: t('mq.trendTip', { a1: q.added_1m ?? '-', a5: q.added_5m ?? '-' }),
+      }, v == null ? '-' : v > 0 ? `+${v}` : '0')
+    },
+  },
+  {
+    accessorKey: 'consumer_count',
+    header: t('mq.consumersCol'),
+    cell: (ctx: any) => (ctx.row.original as QueueRow).consumer_count ?? '-',
+  },
+  {
+    accessorKey: 'messages_added',
+    header: t('mq.added'),
+    cell: (ctx: any) => (ctx.row.original as QueueRow).messages_added ?? '-',
+  },
+  {
+    accessorKey: 'actions',
+    header: t('common.actions'),
+    enableSorting: false,
+    cell: (ctx: any) => {
+      const q: QueueRow = ctx.row.original
+      // 仅清空一个操作：只对可管理（_mbean）且有积压的队列渲染，否则灰色占位
+      if (q._mbean && (q.message_count ?? 0) > 0) {
+        return h(CountdownConfirm, {
+          label: t('mq.purge'),
+          confirmText: t('mq.purge'),
+          target: q.name,
+          seconds: 3,
+          width: '64px',
+          onConfirm: () => emptyQueue(q),
+        })
+      }
+      return h('span', { class: 'text-muted-foreground' }, '-')
+    },
+  },
+])
+
+/** 地址分布弹窗表（客户端按队列 address 聚合，按消息合计降序） */
+const addrColumns = computed<any[]>(() => [
+  {
+    accessorKey: 'address',
+    header: t('mq.addrCol'),
+    cell: (ctx: any) => {
+      const a = ctx.row.original.address as string
+      return h('span', { class: 'block max-w-[320px] truncate font-mono', title: a }, a)
+    },
+  },
+  { accessorKey: 'count', header: t('mq.addrQueueCount'), cell: (ctx: any) => ctx.row.original.count },
+  { accessorKey: 'msgs', header: t('mq.addrMsgSum'), cell: (ctx: any) => ctx.row.original.msgs },
+])
+
+// Esc / 遮罩点击不得关窗（对齐原 n-modal mask-closable=false / close-on-esc=false）
+function blockDismiss(e: Event) {
+  e.preventDefault()
+}
+
 /** 队列数卡片点击 → 平滑滚动到队列表并闪一圈主色边框（1s 后移除） */
-const queueCardRef = ref<InstanceType<typeof NCard> | null>(null)
+const queueCardRef = ref<ComponentPublicInstance | null>(null)
 const queueFlash = ref(false)
 let flashTimer: number | null = null
 function scrollToQueues() {
-  ;(queueCardRef.value?.$el as HTMLElement | undefined)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  ;((queueCardRef.value?.$el as HTMLElement | undefined))?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   queueFlash.value = true
   if (flashTimer != null) clearTimeout(flashTimer)
   flashTimer = window.setTimeout(() => (queueFlash.value = false), 1000)
@@ -328,184 +435,146 @@ function addedColor(added: number | null): string {
 </script>
 
 <template>
-  <n-space vertical :size="12">
-    <n-card size="small">
-      <n-space align="center" :size="12">
+  <div class="flex flex-col gap-3">
+    <Card>
+      <CardContent class="flex flex-wrap items-center gap-3">
         <span>{{ $t('mq.broker') }}</span>
-        <n-select v-model:value="instanceId" size="small" style="width: 220px"
-          :placeholder="$t('mq.instance')" :options="instances" />
-        <n-button size="small" @click="load">{{ $t("common.refresh") }}</n-button>
+        <div class="w-56">
+          <Select :model-value="instanceId ?? ''" @update:model-value="instanceId = String($event)">
+            <SelectTrigger :placeholder="$t('mq.instance')" />
+            <SelectContent>
+              <SelectItem v-for="opt in instances" :key="opt.value" :value="opt.value">{{ opt.label }}</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <Button variant="outline" size="sm" @click="load">{{ $t('common.refresh') }}</Button>
         <tab-help topic="mq" />
         <span class="poll-note">{{ $t('mq.refreshNote') }}</span>
         <span v-if="overview" class="badge-line">{{ $t('mq.brokerStatus') }} <status-badge :status="overview.status" /></span>
         <span v-if="queues.length" class="badge-line">{{ $t('mq.worstQueueCol') }} <status-badge :status="worstQueueStatus" /></span>
-      </n-space>
-    </n-card>
+      </CardContent>
+    </Card>
 
-    <!-- 加载态：转圈，不再白屏 -->
-    <n-card v-if="loading" size="small">
-      <n-spin size="medium" style="width: 100%; padding: 48px 0" />
-    </n-card>
+    <!-- 首载骨架：避免白屏，数据到达后整块替换 -->
+    <Card v-if="loading">
+      <CardContent class="flex justify-center py-12">
+        <loading-dots :text="$t('common.loading')" />
+      </CardContent>
+    </Card>
 
-    <n-card v-else-if="loadError && !overview" size="small">
-      <span style="color: #d03050">Broker 读取失败：{{ loadError }}</span>
-    </n-card>
+    <Card v-else-if="loadError && !overview">
+      <CardContent>
+        <span class="text-sm text-destructive">Broker 读取失败：{{ loadError }}</span>
+      </CardContent>
+    </Card>
 
     <template v-else-if="overview">
       <div class="row">
-        <n-card size="small" class="grow-1" :title="$t('mq.addrMemTitle')">
-          <base-chart v-if="addrMemPie" :option="addrMemPie" height="220px" />
-          <div v-else style="color: #999; font-size: 12px; padding: 40px 0; text-align: center">
-            {{ $t('mq.noGlobalMax') }}
-          </div>
-          <div style="text-align: center; color: #666; font-size: 13px; margin-top: 4px">
-            {{ $t('mq.addrMemLine', { used: fmtBytes(overview?.address_memory_usage), max: fmtBytes(overview?.global_max_size) }) }}
-            <b v-if="addrMemPct != null">（{{ addrMemPct }}%）</b>
-          </div>
-        </n-card>
-        <n-card size="small" class="grow-1" :title="$t('mq.heapDistTitle')">
-          <base-chart :option="heapPieOption" height="220px" />
-          <div style="text-align: center; color: #666; font-size: 13px; margin-top: 4px">
-            {{ $t('mq.heapLine', { used: fmtBytes(overview?.jvm?.heap_used), max: fmtBytes(overview?.jvm?.heap_max) }) }}
-            <b v-if="heapPct != null">（{{ heapPct }}%）</b>
-          </div>
-        </n-card>
-        <n-card size="small" class="grow-1" :title="$t('mq.broker')">
-          <div class="mc-grid">
-            <metric-card :title="$t('mq.connectionsCol')" :value="overview.connections" />
-            <!-- Artemis 2.19 不上报 SessionCount（恒 null 只能显示 ?），
-                 换队列数：与下方队列表同源同值（3s 轮询）；点击滚动到队列表 -->
-            <metric-card class="tile-click" hoverable :title="$t('mq.queuesCount')" :value="queues.length"
-              @click="scrollToQueues" />
-            <metric-card :title="$t('mq.consumersCol')" :value="overview.consumers" />
-            <!-- 地址数：按队列表去重地址统计（非 broker AddressCount）；点击查看地址分布 -->
-            <metric-card class="tile-click" hoverable :title="$t('mq.addressesCol')" :value="addrCount"
-              @click="showAddrModal = true" />
-          </div>
-          <div class="kv">
-            <span>{{ $t('mq.versionCol') }} <b>{{ overview.version ?? '-' }}</b></span>
-            <span>{{ $t('mq.uptimeCol') }} <b>{{ overview.uptime ?? '-' }}</b></span>
-            <span>{{ $t('mq.nonHeap') }} <b>{{ fmtBytes(overview.jvm.non_heap_used) }}</b></span>
-            <span>{{ $t('mq.threads') }} <b>{{ overview.jvm.threads ?? '-' }}</b></span>
-          </div>
-        </n-card>
+        <Card class="grow-1">
+          <CardHeader><CardTitle>{{ $t('mq.addrMemTitle') }}</CardTitle></CardHeader>
+          <CardContent>
+            <base-chart v-if="addrMemPie" :option="addrMemPie" height="220px" />
+            <div v-else class="py-10 text-center text-xs text-muted-foreground">
+              {{ $t('mq.noGlobalMax') }}
+            </div>
+            <div class="mt-1 text-center text-[13px] text-muted-foreground">
+              {{ $t('mq.addrMemLine', { used: fmtBytes(overview?.address_memory_usage), max: fmtBytes(overview?.global_max_size) }) }}
+              <b v-if="addrMemPct != null">（{{ addrMemPct }}%）</b>
+            </div>
+          </CardContent>
+        </Card>
+        <Card class="grow-1">
+          <CardHeader><CardTitle>{{ $t('mq.heapDistTitle') }}</CardTitle></CardHeader>
+          <CardContent>
+            <base-chart :option="heapPieOption" height="220px" />
+            <div class="mt-1 text-center text-[13px] text-muted-foreground">
+              {{ $t('mq.heapLine', { used: fmtBytes(overview?.jvm?.heap_used), max: fmtBytes(overview?.jvm?.heap_max) }) }}
+              <b v-if="heapPct != null">（{{ heapPct }}%）</b>
+            </div>
+          </CardContent>
+        </Card>
+        <Card class="grow-1">
+          <CardHeader><CardTitle>{{ $t('mq.broker') }}</CardTitle></CardHeader>
+          <CardContent>
+            <div class="mc-grid">
+              <metric-card :title="$t('mq.connectionsCol')" :value="overview.connections" />
+              <!-- Artemis 2.19 不上报 SessionCount（恒 null 只能显示 ?），
+                   换队列数：与下方队列表同源同值（3s 轮询）；点击滚动到队列表 -->
+              <metric-card class="tile-click" hoverable :title="$t('mq.queuesCount')" :value="queues.length"
+                @click="scrollToQueues" />
+              <metric-card :title="$t('mq.consumersCol')" :value="overview.consumers" />
+              <!-- 地址数：按队列表去重地址统计（非 broker AddressCount）；点击查看地址分布 -->
+              <metric-card class="tile-click" hoverable :title="$t('mq.addressesCol')" :value="addrCount"
+                @click="showAddrModal = true" />
+            </div>
+            <div class="kv">
+              <span>{{ $t('mq.versionCol') }} <b>{{ overview.version ?? '-' }}</b></span>
+              <span>{{ $t('mq.uptimeCol') }} <b>{{ overview.uptime ?? '-' }}</b></span>
+              <span>{{ $t('mq.nonHeap') }} <b>{{ fmtBytes(overview.jvm.non_heap_used) }}</b></span>
+              <span>{{ $t('mq.threads') }} <b>{{ overview.jvm.threads ?? '-' }}</b></span>
+            </div>
+          </CardContent>
+        </Card>
       </div>
 
       <div class="row">
-        <n-card size="small" class="grow-1" :title="$t('mq.heapTrend')">
-          <base-chart v-if="heapSeries.length" :option="heapOption" height="300px" />
-          <div v-else style="color: #999; font-size: 12px; padding: 40px 0; text-align: center">
-            采样收集中，几秒后出现趋势线
-          </div>
-        </n-card>
-        <n-card size="small" class="grow-1" :title="$t('mq.topQueues')">
-          <base-chart v-if="queues.length" :option="topQueuesOption" height="300px" />
-          <div v-else style="color: #999; font-size: 12px; padding: 40px 0; text-align: center">无队列数据</div>
-        </n-card>
+        <Card class="grow-1">
+          <CardHeader><CardTitle>{{ $t('mq.heapTrend') }}</CardTitle></CardHeader>
+          <CardContent>
+            <base-chart v-if="heapSeries.length" :option="heapOption" height="300px" />
+            <div v-else class="py-10 text-center text-xs text-muted-foreground">
+              采样收集中，几秒后出现趋势线
+            </div>
+          </CardContent>
+        </Card>
+        <Card class="grow-1">
+          <CardHeader><CardTitle>{{ $t('mq.topQueues') }}</CardTitle></CardHeader>
+          <CardContent>
+            <base-chart v-if="queues.length" :option="topQueuesOption" height="300px" />
+            <div v-else class="py-10 text-center text-xs text-muted-foreground">无队列数据</div>
+          </CardContent>
+        </Card>
       </div>
 
-      <n-card ref="queueCardRef" size="small" :title="$t('mq.queues')" :class="{ 'flash-ring': queueFlash }">
-        <template #header-extra>
-          <n-input v-model:value="queueFilter" size="small" style="width: 240px"
-            :placeholder="$t('mq.search')" />
-        </template>
-        <div v-if="queuesError" class="pane-error">Queues 读取失败：{{ queuesError }}（每 3s 自动重试）</div>
-        <div class="table-scroll">
-          <n-table :single-line="false" size="small">
-          <thead>
-            <tr>
-              <sort-th :label="$t('mq.queueCol')" :active="qSortKey === 'name'" :dir="qSortKey === 'name' ? qSortDir : null" @sort="toggleQueueSort('name')" />
-              <th>{{ $t('mq.addressCol') }}</th><th>{{ $t('mq.statusCol') }}</th>
-              <sort-th :label="$t('mq.messagesCol')" :active="qSortKey === 'message_count'" :dir="qSortKey === 'message_count' ? qSortDir : null" @sort="toggleQueueSort('message_count')" />
-              <sort-th style="width: 90px" :label="$t('mq.added1mCol')" :active="qSortKey === 'added_1m'" :dir="qSortKey === 'added_1m' ? qSortDir : null" @sort="toggleQueueSort('added_1m')" />
-              <sort-th :label="$t('mq.consumersCol')" :active="qSortKey === 'consumer_count'" :dir="qSortKey === 'consumer_count' ? qSortDir : null" @sort="toggleQueueSort('consumer_count')" />
-              <sort-th :label="$t('mq.added')" :active="qSortKey === 'messages_added'" :dir="qSortKey === 'messages_added' ? qSortDir : null" @sort="toggleQueueSort('messages_added')" />
-              <th>{{ $t('common.actions') }}</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="q in sortedQueues" :key="q.name">
-              <td class="mono" :title="q.name">{{ q.name }}</td>
-              <td class="mono" :title="q.address ?? ''">{{ q.address ?? '-' }}</td>
-              <td>
-                <n-tooltip trigger="hover" :style="{ maxWidth: '320px' }">
-                  <template #trigger>
-                    <span class="tip"><status-badge :status="q.diagnosis?.status" /></span>
-                  </template>
-                  {{ q.diagnosis?.issues?.length
-                    ? q.diagnosis.issues.map((i) => i.message).join('；')
-                    : '诊断正常' }}
-                </n-tooltip>
-              </td>
-              <td :style="{ fontWeight: (q.message_count ?? 0) > 5000 ? 700 : 400 }">{{ q.message_count ?? '-' }}</td>
-              <td>
-                <span class="trend-num" :style="{ color: addedColor(q.added_1m) }"
-                  :title="$t('mq.trendTip', { a1: q.added_1m ?? '-', a5: q.added_5m ?? '-' })">
-                  {{ q.added_1m == null ? '-' : q.added_1m > 0 ? `+${q.added_1m}` : '0' }}
-                </span>
-              </td>
-              <td>{{ q.consumer_count ?? '-' }}</td>
-              <td>{{ q.messages_added ?? '-' }}</td>
-              <td>
-                <!-- 仅清空一个操作：只对可管理（_mbean）且有积压的队列渲染，否则灰色占位 -->
-                <countdown-confirm
-                  v-if="q._mbean && (q.message_count ?? 0) > 0"
-                  :label="$t('mq.purge')"
-                  :confirm-text="$t('mq.purge')"
-                  :target="q.name"
-                  :seconds="3"
-                  width="64px"
-                  @confirm="emptyQueue(q)"
-                />
-                <span v-else style="color: #999">-</span>
-              </td>
-            </tr>
-            <tr v-if="!filteredQueues.length">
-              <td :colspan="8"><EmptyState :title="$t('mq.noMatch')" /></td>
-            </tr>
-          </tbody>
-        </n-table>
-        </div>
-      </n-card>
+      <Card ref="queueCardRef" :class="['grow-1', { 'flash-ring': queueFlash }]">
+        <CardHeader>
+          <CardTitle>{{ $t('mq.queues') }}</CardTitle>
+          <template #action>
+            <Input v-model="queueFilter" class="w-60 min-w-0" :placeholder="$t('mq.search')" />
+          </template>
+        </CardHeader>
+        <CardContent>
+          <div v-if="queuesError" class="pane-error">Queues 读取失败：{{ queuesError }}（每 3s 自动重试）</div>
+          <OpsDataTable :columns="queueColumns" :data="filteredQueues" row-key="name">
+            <template #empty><EmptyState :title="$t('mq.noMatch')" /></template>
+          </OpsDataTable>
+        </CardContent>
+      </Card>
 
       <!-- 地址分布弹窗：客户端按队列 address 聚合，按消息合计降序 -->
-      <n-modal v-model:show="showAddrModal" preset="card" :title="$t('mq.addrBreakdown')"
-        style="width: 640px; max-width: 94vw" :mask-closable="false" :close-on-esc="false">
-        <div v-if="addrBreakdown.length" class="table-scroll">
-          <n-table :single-line="false" size="small">
-            <thead>
-              <tr>
-                <th>{{ $t('mq.addrCol') }}</th>
-                <th style="width: 90px">{{ $t('mq.addrQueueCount') }}</th>
-                <th style="width: 110px">{{ $t('mq.addrMsgSum') }}</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="row in addrBreakdown" :key="row.address">
-                <td class="mono" :title="row.address">{{ row.address }}</td>
-                <td>{{ row.count }}</td>
-                <td>{{ row.msgs }}</td>
-              </tr>
-            </tbody>
-          </n-table>
-        </div>
-        <EmptyState v-else :title="$t('mq.noMatch')" />
-        <template #footer>
-          <n-space justify="end">
-            <n-button size="small" @click="showAddrModal = false">{{ $t('common.close') }}</n-button>
-          </n-space>
-        </template>
-      </n-modal>
+      <Dialog :open="showAddrModal" @update:open="showAddrModal = $event">
+        <DialogContent class="w-[640px] max-w-[94vw]" @escape-key-down="blockDismiss" @interact-outside="blockDismiss">
+          <DialogHeader><DialogTitle>{{ $t('mq.addrBreakdown') }}</DialogTitle></DialogHeader>
+          <OpsDataTable :columns="addrColumns" :data="addrBreakdown" row-key="address">
+            <template #empty><EmptyState :title="$t('mq.noMatch')" /></template>
+          </OpsDataTable>
+          <DialogFooter>
+            <Button variant="outline" size="sm" @click="showAddrModal = false">{{ $t('common.close') }}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </template>
 
-    <n-card v-else-if="!loading" size="small">
-      <span style="color: #999">该站点暂无 MQ 配置——请在「站点管理 → 资源 → ActiveMQ」中添加并测试连接</span>
-    </n-card>
-  </n-space>
+    <Card v-else-if="!loading">
+      <CardContent>
+        <span class="text-sm text-muted-foreground">该站点暂无 MQ 配置——请在「站点管理 → 资源 → ActiveMQ」中添加并测试连接</span>
+      </CardContent>
+    </Card>
+  </div>
 </template>
 
 <style scoped>
-/* 卡片行布局：原生 flex（n-space 会塌缩子项宽度）；窄屏换行堆叠，卡片最小 320px */
+/* 卡片行布局：原生 flex（窄屏换行堆叠），卡片最小 320px */
 .row {
   display: flex;
   flex-wrap: wrap;
@@ -516,15 +585,11 @@ function addedColor(added: number | null): string {
   flex: 1;
   min-width: 320px;
 }
-.grow-2 {
-  flex: 1.4;
-  min-width: 0;
-}
 .badge-line {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  color: #666;
+  color: var(--ops-text-2);
   font-size: 13px;
   white-space: nowrap;
 }
@@ -532,39 +597,6 @@ function addedColor(added: number | null): string {
 .poll-note {
   color: var(--ops-text-3);
   font-size: 12px;
-}
-.tip {
-  cursor: help;
-  border-bottom: 1px dashed #d0d3d8;
-  padding-bottom: 1px;
-}
-.mono {
-  font-family: ui-monospace, Consolas, monospace;
-  max-width: 320px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.heap-row {
-  display: flex;
-  align-items: center;
-  gap: 20px;
-}
-.heap-big {
-  font-size: 42px;
-  font-weight: 700;
-  line-height: 1;
-}
-.heap-big .unit {
-  font-size: 16px;
-  font-weight: 400;
-}
-.heap-sub {
-  font-size: 13px;
-  color: #666;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
 }
 .kv {
   display: flex;
@@ -583,18 +615,8 @@ function addedColor(added: number | null): string {
   gap: 8px;
   margin-bottom: 10px;
 }
-/* 表格内部横向滚动，不撑破页面 */
-.table-scroll {
-  overflow-x: auto;
-}
-/* 队列表新增（吞吐）列 */
-.trend-num {
-  font-family: var(--ops-font-mono);
-  font-variant-numeric: tabular-nums;
-  font-size: 12px;
-}
 .pane-error {
-  color: #d03050;
+  color: var(--destructive);
   font-size: 12px;
   margin-bottom: 8px;
 }

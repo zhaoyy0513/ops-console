@@ -62,7 +62,7 @@ async def list_keys(
     db: int = 0,
     pattern: str = "*",
     cursor: int = 0,
-    count: int = 100,
+    count: int = 500,
     key_type: str | None = None,
 ) -> dict[str, Any]:
     """浏览 Key（PRD §11.2/§11.3），禁 KEYS（验收 9）。

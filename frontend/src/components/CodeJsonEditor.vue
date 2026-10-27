@@ -3,7 +3,7 @@ import { EditorView, basicSetup } from 'codemirror'
 import { json, jsonParseLinter } from '@codemirror/lang-json'
 import { linter } from '@codemirror/lint'
 import { oneDark } from '@codemirror/theme-one-dark'
-import { inject, onBeforeUnmount, onMounted, ref, watch, type Ref } from 'vue'
+import { computed, inject, onBeforeUnmount, onMounted, ref, watch, type ComputedRef } from 'vue'
 const props = withDefaults(
   defineProps<{
     modelValue: string
@@ -15,7 +15,8 @@ const props = withDefaults(
 )
 const emit = defineEmits<{ (e: 'update:modelValue', v: string): void }>()
 
-const opsDark = inject<{ isDark: Ref<boolean> }>('opsDark')!
+// 三态画风；编辑器只有亮/暗两套主题，mono/terminal 归暗
+const theme = inject<ComputedRef<'light' | 'dark'>>('opsTheme', computed(() => 'light'))
 
 const el = ref<HTMLDivElement>()
 let view: EditorView | null = null
@@ -35,7 +36,7 @@ function buildExtensions() {
     ...(props.readonly
       ? [EditorView.editable.of(false)]
       : [linter(jsonParseLinter())]),
-    ...(opsDark.isDark.value ? [oneDark] : [lightTheme]),
+    ...(theme.value === 'light' ? [lightTheme] : [oneDark]),
   ]
 }
 
@@ -67,8 +68,9 @@ watch(() => props.modelValue, (v) => {
   }
 })
 
-// 暗色切换重建（Compartment 换主题可行，但重建代码更少且编辑器重建开销可忽略）
-watch(() => opsDark.isDark.value, () => {
+// 画风切换重建（Compartment 换主题可行，但重建代码更少且编辑器重建开销可忽略；
+// watch 映射后的主题名，mono/terminal 同为暗不重复重建）
+watch(() => (theme.value === 'light' ? 'light' : 'dark'), () => {
   view?.destroy()
   createView()
 })

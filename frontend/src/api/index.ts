@@ -3,6 +3,13 @@ import axios from 'axios'
 /** 统一 axios 实例：所有模块经此调用后端（PRD §20.1 api/）。 */
 const instance = axios.create({ baseURL: '/api', timeout: 15000 })
 
+// 操作人别名随所有请求携带（oplog 溯源用；别名在操作日志页设置，存 localStorage）
+instance.interceptors.request.use((config) => {
+  const user = localStorage.getItem('ops-user')
+  if (user) config.headers['X-Ops-User'] = user
+  return config
+})
+
 instance.interceptors.response.use(
   (resp) => resp.data,
   (error) => {

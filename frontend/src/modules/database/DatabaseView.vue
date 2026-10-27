@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { NCard } from 'naive-ui'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import EmptyState from '../../components/EmptyState.vue'
 </script>
 
 <template>
-  <n-card :title="$t('database.title')" size="small">
-    <EmptyState :title="$t('database.line2')" />
-  </n-card>
+  <Card>
+    <CardHeader><CardTitle>{{ $t('database.title') }}</CardTitle></CardHeader>
+    <CardContent><EmptyState :title="$t('database.line2')" /></CardContent>
+  </Card>
 </template>

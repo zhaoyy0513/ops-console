@@ -1,0 +1,94 @@
+@import 'tailwindcss';
+@import '../styles/tokens.css';
+
+/* Tailwind v4 CSS-first：把语义变量映射成工具类（bg-background / text-foreground …）。
+   shadcn-vue 组件与全部新样式只吃这些语义类，画风切换 = html data-theme 改属性。 */
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --font-sans: var(--ops-font-sans);
+  --font-mono: var(--ops-font-mono);
+}
+
+/* 语义类基础形状：shadcn 组件依赖（border 默认色、ring 行为） */
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
+  body {
+    background: var(--color-background);
+    color: var(--color-foreground);
+    font-size: 14px;
+  }
+}
+
+/* ---------- 全局动效 ----------
+   只用 opacity 淡入，绝不碰 transform/translate——弹窗用 translate 属性定位，
+   transform 动画会与它叠加产生"从左边跳到中间"的漂移（曾因此删除弹窗动画）。
+   关闭态不写退出动画——内部工具关闭要干脆。 */
+
+/* tooltip / 下拉浮层：纯淡入（popper 用坐标定位，无 transform 冲突） */
+[data-slot='select-content'][data-state='open'],
+[role='tooltip'][data-state='delayed-open'],
+[role='tooltip'][data-state='instant-open'] {
+  animation: ops-fade-in 0.12s ease-out;
+}
+
+@keyframes ops-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-slot='select-content'][data-state='open'],
+  [role='tooltip'] {
+    animation: none !important;
+  }
+}
+
+/* 全局尊重 reduced-motion（§2.2） */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Page 预览弹窗铺屏态（CSS 铺屏而非 F11；类名全局唯一）
+   关键：必须 translate:none——Tailwind v4 的 -translate-x/y-1/2 用 translate 属性
+   定位到中心，铺屏时不清除它弹窗会缩到左上角 */
+.page-fullscreen {
+  inset: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  max-width: none !important;
+  max-height: none !important;
+  translate: none !important;
+  transform: none !important;
+  border-radius: 0 !important;
+  padding: 12px 16px !important;
+}

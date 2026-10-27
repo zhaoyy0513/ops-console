@@ -44,10 +44,13 @@ export interface AuditPage {
     params: Record<string, unknown> | null
     result: string
     error: string | null
+    // 调用者溯源（2026-10-23）：定时任务等无 HTTP 上下文路径为 "-"
+    caller: string
+    caller_ip: string
   }>
   total: number
 }
 
 export const auditApi = {
-  page: (page = 1, size = 50) => api.get<AuditPage>(`/audit?page=${page}&size=${size}`),
+  page: (page = 1, size = 50, q = '') => api.get<AuditPage>(`/audit?page=${page}&size=${size}${q ? `&q=${encodeURIComponent(q)}` : ''}`),
 }

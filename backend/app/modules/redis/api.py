@@ -24,7 +24,7 @@ async def list_keys(
     db: int = 0,
     pattern: str = "*",
     cursor: int = 0,
-    count: int = 100,
+    count: int = 500,
     type: str | None = None,
 ) -> dict:
     try:

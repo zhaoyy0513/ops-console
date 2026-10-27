@@ -5,7 +5,7 @@ import App from './App.vue'
 import router from './router'
 import '@fontsource-variable/inter'
 import '@fontsource-variable/jetbrains-mono'
-import './styles/tokens.css'
+import './assets/main.css'
 import './style.css'
 
 createApp(App).use(createPinia()).use(i18n).use(router).mount('#app')

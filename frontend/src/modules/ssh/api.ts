@@ -32,14 +32,18 @@ export const sshApi = {
       { timeout: 90_000 }),
 
   /** 流式执行（SSE）：onChunk(kind,data) 实时回调；返回 abort 用于关闭窗口时终止远端进程 */
-  runStream: (siteId: string, id: string, onChunk: (kind: string, data: string) => void) =>
-    streamFetch(`/sites/${siteId}/ssh_scripts/${id}/run-stream`, undefined, onChunk),
+  /** 风险预检（run/save 前调用渲染确认框；执行时后端仍兜底校验） */
+  assessRisk: (content: string) =>
+    api.post<{ level: 'safe' | 'warn' | 'block'; patterns: string[] }>('/ssh/assess-risk', { content }),
+  runStream: (siteId: string, id: string, onChunk: (kind: string, data: string) => void, confirmRisk = false) =>
+    streamFetch(`/sites/${siteId}/ssh_scripts/${id}/run-stream?confirm_risk=${confirmRisk}`, undefined, onChunk),
   runAdhocStream: (
     siteId: string, serverId: string, content: string,
     onChunk: (kind: string, data: string) => void,
+    confirmRisk = false,
   ) =>
     streamFetch(`/sites/${siteId}/ssh_scripts/run-adhoc-stream`,
-      { server_id: serverId, content }, onChunk),
+      { server_id: serverId, content, confirm_risk: confirmRisk }, onChunk),
 }
 
 function streamFetch(

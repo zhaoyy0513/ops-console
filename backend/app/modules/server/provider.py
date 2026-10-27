@@ -16,7 +16,9 @@ from backend.app.shared.timeout import with_timeout
 
 # 只读诊断命令白名单：模块常量，非用户输入。LC_ALL=C 保证输出格式可解析。
 COMMANDS: dict[str, str] = {
-    "cpu": "LC_ALL=C top -bn1 | head -6",
+    # top -bn2 取第二帧：首帧是 top 自身启动后的亚秒瞬时值，单核一冲就显示 100%（噪声）；
+    # -d 1 让第二帧成为约 1 秒的真实平均。多帧时 parse_cpu 取最后一帧
+    "cpu": "LC_ALL=C top -bn2 -d 1 | head -14",
     "load": "LC_ALL=C uptime",
     "cores": "nproc",
     "memory": "LC_ALL=C free -m",
@@ -36,12 +38,12 @@ COMMANDS: dict[str, str] = {
 
 
 def parse_cpu(text: str) -> dict[str, float | None]:
-    """top 输出 -> {usage, iowait}，usage = 100 - idle。"""
-    idle = re.search(r"(\d+\.?\d*)\s*id[, ]", text)
-    wa = re.search(r"(\d+\.?\d*)\s*wa[, ]", text)
+    """top 输出 -> {usage, iowait}，usage = 100 - idle。多帧输出取最后一帧（首帧是亚秒噪声）。"""
+    idle = re.findall(r"(\d+\.?\d*)\s*id[, ]", text)
+    wa = re.findall(r"(\d+\.?\d*)\s*wa[, ]", text)
     return {
-        "usage": round(100 - float(idle.group(1)), 1) if idle else None,
-        "iowait": float(wa.group(1)) if wa else None,
+        "usage": round(100 - float(idle[-1]), 1) if idle else None,
+        "iowait": float(wa[-1]) if wa else None,
     }
 
 

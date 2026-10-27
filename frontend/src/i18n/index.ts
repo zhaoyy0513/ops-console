@@ -1,5 +1,5 @@
 import { createI18n } from 'vue-i18n'
-import { computed, ref } from 'vue'
+import { ref } from 'vue'
 
 export type Locale = 'zh' | 'en'
 
@@ -82,6 +82,8 @@ const messages = {
       nameRequired: '名称必填',
       copy: '复制',
       copied: '已复制',
+      loading: '加载中',
+      processing: '处理中',
     },
     // 资源连接字段列头/表单 label（资源表格与编辑弹窗共用）
     fields: {
@@ -160,6 +162,8 @@ const messages = {
       zCount: '僵尸数',
       zCmd: '父进程命令',
       killZombieConfirm: 'kill -9 {pid}（终止父进程后其僵尸子进程将由系统回收）',
+      zombieHint: '僵尸进程 = 已退出但未被父进程回收的子进程，本身不占 CPU/内存，唯一影响是占用进程号。表中列的是「父进程」及其名下堆积的僵尸数量——父进程存活且持续 spawn 子进程却不 wait，僵尸就会累积。父进程多为容器主进程（如 java），出现大量僵尸通常意味着应用层的子进程回收有缺陷（容器场景可给容器加 --init / tini 解决）。',
+      killWarn: '终止父进程会连同其承载的服务一起杀掉（如容器主进程 = 重启容器），确认父进程不是在用业务后再操作。',
     },
     mq: {
       broker: 'Broker',
@@ -222,11 +226,15 @@ const messages = {
     },
     page: {
       title: '页面',
-      hintShort: '点击卡片打开页面；外链新开标签页，HTML 页站内预览',
+      hintShort: '点击卡片站内放大预览；链接型可一键在新标签打开',
+      preview: '放大预览',
+      openExternal: '新标签打开',
+      fullscreen: '全屏',
+      exitFullscreen: '退出全屏',
       empty: '暂无页面——请在「站点管理 → 资源 → Page」中添加',
       kindUrl: '链接',
       kindHtml: '页面',
-      urlPh: 'https:// 开头；与下方 HTML 二选一',
+      urlPh: '与下方 HTML 二选一',
       htmlLabel: 'HTML 页面',
       uploadBtn: '上传 .html',
       uploadHint: '仅支持单个 .html 文件（也可直接粘贴完整 HTML）',
@@ -276,6 +284,7 @@ const messages = {
       value: 'Value',
       keysCount: '{n} 条',
       noMatch: '无匹配 Key',
+      formatJson: '格式化 JSON',
       loadMore: '加载更多',
       expandAll: '展开',
       collapseAll: '合并',
@@ -364,6 +373,10 @@ const messages = {
       timeoutWarn: '执行超时（60s 上限），输出为超时前收集的部分',
       runFailed: '执行失败：{msg}',
       confirmRun: '确认执行',
+      riskTitle: '高风险命令确认',
+      riskDesc: '脚本命中以下风险规则，确认要在该服务器上执行吗？',
+      riskConfirm: '仍要执行',
+      assessFailed: '风险预检失败：{msg}（执行时后端仍会校验）',
       test: '测试',
       testing: '测试中…',
       isCron: '定时任务',
@@ -415,6 +428,12 @@ const messages = {
       colOperation: '操作',
       colTarget: '目标',
       colResult: '结果',
+      colCaller: '操作人 / IP',
+      callerLabel: '操作人',
+      callerPh: '设置别名',
+      anonymous: '未设置',
+      riskConfirmed: '已确认风险',
+      searchPh: '搜命令/操作/操作人…',
     },
     database: {
       title: 'Database（扩展性 Demo）',
@@ -443,6 +462,8 @@ const messages = {
       enterBtn: '进入',
       empty: '暂无站点，点击右上角新建',
       resourcesTitle: '资源配置 · {name}',
+      kind: '类别',
+      passwordKeep: '留空保持原密码',
       editResource: '编辑 {type} 配置',
       newResource: '新增 {type} 配置',
       mappingBtn: '字段映射',
@@ -571,6 +592,8 @@ const messages = {
       nameRequired: 'Name is required',
       copy: 'Copy',
       copied: 'Copied',
+      loading: 'Loading',
+      processing: 'Working',
     },
     fields: {
       name: 'Name',
@@ -648,6 +671,8 @@ const messages = {
       zCount: 'Zombies',
       zCmd: 'Parent command',
       killZombieConfirm: 'kill -9 {pid} (its zombie children are reaped by the system once the parent dies)',
+      zombieHint: 'A zombie is a child process that exited but was never reaped by its parent. It uses no CPU/memory — only a PID slot. This table lists PARENT processes and how many zombies piled up under each: the parent keeps spawning children without wait()ing, so they accumulate. Parents are often container main processes (e.g. java); piles of zombies usually indicate a process-reaping flaw in the app (add --init / tini to the container to fix).',
+      killWarn: 'Killing the parent also kills the service it carries (container main process = container restart). Make sure it is not serving production traffic before proceeding.',
     },
     mq: {
       broker: 'Broker',
@@ -709,7 +734,11 @@ const messages = {
     },
     page: {
       title: 'Pages',
-      hintShort: 'Click a card to open; links open in a new tab, HTML previews inline',
+      hintShort: 'Click a card to preview inline; link pages can open in a new tab',
+      preview: 'Preview',
+      openExternal: 'Open in new tab',
+      fullscreen: 'Fullscreen',
+      exitFullscreen: 'Exit fullscreen',
       empty: 'No pages yet — add one in Sites → Resources → Page',
       kindUrl: 'Link',
       kindHtml: 'Page',
@@ -763,6 +792,7 @@ const messages = {
       value: 'Value',
       keysCount: '{n} keys',
       noMatch: 'No matching keys',
+      formatJson: 'Format JSON',
       loadMore: 'Load More',
       expandAll: 'Expand',
       collapseAll: 'Collapse',
@@ -851,6 +881,10 @@ const messages = {
       timeoutWarn: 'Timed out (60s limit) — partial output collected before the timeout',
       runFailed: 'Run failed: {msg}',
       confirmRun: 'Run',
+      riskTitle: 'High-risk command confirmation',
+      riskDesc: 'The script matches the following risk rules. Run it on this server?',
+      riskConfirm: 'Run anyway',
+      assessFailed: 'Risk pre-check failed: {msg} (backend still enforces)',
       test: 'Test',
       testing: 'Testing…',
       isCron: 'Scheduled',
@@ -902,6 +936,12 @@ const messages = {
       colOperation: 'Operation',
       colTarget: 'Target',
       colResult: 'Result',
+      colCaller: 'Caller / IP',
+      callerLabel: 'Caller',
+      callerPh: 'Set alias',
+      anonymous: 'anonymous',
+      riskConfirmed: 'risk confirmed',
+      searchPh: 'Search command/op/caller…',
     },
     database: {
       title: 'Database (extensibility demo)',
@@ -930,6 +970,8 @@ const messages = {
       enterBtn: 'Enter',
       empty: 'No sites yet — click "New Site" to create one',
       resourcesTitle: 'Resources · {name}',
+      kind: 'Kind',
+      passwordKeep: 'Leave blank to keep current password',
       editResource: 'Edit {type} resource',
       newResource: 'Add {type} resource',
       mappingBtn: 'Field Mapping',
@@ -1001,7 +1043,3 @@ export function setLocale(l: Locale) {
   i18n.global.locale.value = l
   localStorage.setItem(STORAGE_KEY, l)
 }
-
-// 语言变化时同步 naive-ui 的组件语言（App.vue watch）
-export const naiveLocale = computed(() => (locale.value === 'zh' ? 'zh-CN' : 'en-US'))
-export const naiveDateLocale = computed(() => (locale.value === 'zh' ? 'zh-CN' : 'dateUS'))

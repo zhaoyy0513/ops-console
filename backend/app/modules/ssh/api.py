@@ -5,6 +5,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from backend.app.modules.sites.service import NotFound
+from backend.app.shared.errors import OpsError
 from backend.app.modules.ssh import scheduling
 from backend.app.modules.ssh import service
 
@@ -35,6 +36,12 @@ class CronIn(BaseModel):
 
 class RunAdhocIn(BaseModel):
     server_id: str
+    content: str
+    # 风险确认：WARN 级命令需前端二次确认后置 true（BLOCK 级任何情况都拒绝）
+    confirm_risk: bool = False
+
+
+class RiskIn(BaseModel):
     content: str
 
 
@@ -85,10 +92,11 @@ async def delete_script(site_id: str, script_id: str) -> None:
 
 
 @router.post("/sites/{site_id}/ssh_scripts/{script_id}/run")
-async def run_script(site_id: str, script_id: str) -> dict:
+async def run_script(site_id: str, script_id: str, confirm_risk: bool = False) -> dict:
     """在绑定的 Server 上执行脚本（手动触发；60s 上限，记录 oplog）。"""
     try:
-        return await service.run_script(site_id, script_id, triggered="manual")
+        return await service.run_script(site_id, script_id, triggered="manual",
+                                        confirm_risk=confirm_risk)
     except NotFound as e:
         raise HTTPException(status_code=404, detail=str(e)) from None
     except ValueError as e:
@@ -99,7 +107,8 @@ async def run_script(site_id: str, script_id: str) -> dict:
 async def run_adhoc(site_id: str, data: RunAdhocIn) -> dict:
     """编辑弹窗测试：直接执行表单内容（不落库，oplog 记 adhoc@{server}）。"""
     try:
-        return await service.run_adhoc(site_id, data.server_id, data.content)
+        return await service.run_adhoc(site_id, data.server_id, data.content,
+                                       confirm_risk=data.confirm_risk)
     except NotFound as e:
         raise HTTPException(status_code=404, detail=str(e)) from None
     except ValueError as e:
@@ -111,16 +120,21 @@ def _sse(kind: str, data: str) -> str:
 
 
 @router.post("/sites/{site_id}/ssh_scripts/{script_id}/run-stream")
-async def run_script_stream(site_id: str, script_id: str) -> StreamingResponse:
+async def run_script_stream(site_id: str, script_id: str, confirm_risk: bool = False) -> StreamingResponse:
     """流式执行（SSE）：输出实时推送；客户端断开即 kill 远端进程。"""
     async def gen():
         try:
-            async for kind, data in service.stream_script(site_id, script_id):
+            async for kind, data in service.stream_script(site_id, script_id,
+                                                          confirm_risk=confirm_risk):
                 yield _sse(kind, data)
         except NotFound as e:
             yield _sse("error", str(e))
         except ValueError as e:
             yield _sse("error", str(e))
+        except OpsError as e:
+            # 风险闸门（SSH_RISK_CONFIRM/BLOCKED）必须作为 error 帧送达前端，
+            # 否则表现为静默断流——拦截完全不可见
+            yield _sse("error", f"{e.error_code}: {e.message}")
 
     return StreamingResponse(gen(), media_type="text/event-stream",
                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
@@ -131,15 +145,30 @@ async def run_adhoc_stream(site_id: str, data: RunAdhocIn) -> StreamingResponse:
     """编辑弹窗测试（流式）：直接执行表单内容，不落库；断开即杀进程。"""
     async def gen():
         try:
-            async for kind, chunk in service.stream_adhoc(site_id, data.server_id, data.content):
+            async for kind, chunk in service.stream_adhoc(site_id, data.server_id,
+                                                          data.content,
+                                                          confirm_risk=data.confirm_risk):
                 yield _sse(kind, chunk)
         except NotFound as e:
             yield _sse("error", str(e))
         except ValueError as e:
             yield _sse("error", str(e))
+        except OpsError as e:
+            yield _sse("error", f"{e.error_code}: {e.message}")
 
     return StreamingResponse(gen(), media_type="text/event-stream",
                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+@router.post("/ssh/assess-risk")
+async def assess_risk(data: RiskIn) -> dict:
+    """脚本内容风险预检（前端 run/save 前调用以渲染确认框；执行时后端仍兜底校验）。
+    level: "safe" | "warn" | "block"。"""
+    from backend.app.modules.ssh import risk as risk_mod
+
+    hits = risk_mod.assess(data.content)
+    level = "block" if risk_mod.block_descs(hits) else ("warn" if risk_mod.warn_descs(hits) else "safe")
+    return {"level": level, "patterns": [h.desc for h in hits]}
 
 
 @router.post("/ssh/validate-cron")

@@ -1,17 +1,22 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, h, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useRouter } from 'vue-router'
+import { LoaderCircle } from 'lucide-vue-next'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import OpsSwitch from '../../components/OpsSwitch.vue'
 import {
-  NButton,
-  NDrawer,
-  NDrawerContent,
-  NPopconfirm,
-  NSpace,
-  NTabPane,
-  NTabs,
-  NTable,
-  useMessage,
-} from 'naive-ui'
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogTitle,
+  AlertDialogBody,
+  AlertDialogCancel,
+  AlertDialogContent,
+} from '@/components/ui/alert-dialog'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { message } from '@/lib/message'
 import {
   sitesApi,
   type ResourceConfig,
@@ -20,9 +25,11 @@ import {
 } from './api'
 import ResourceEditModal from './ResourceEditModal.vue'
 import FieldMappingDialog from './FieldMappingDialog.vue'
+import OpsDataTable from '../../components/OpsDataTable.vue'
 
 const props = defineProps<{ show: boolean; site: Site | null }>()
 const emit = defineEmits<{ (e: 'update:show', v: boolean): void; (e: 'changed'): void }>()
+const router = useRouter()
 
 const TYPES: Array<{ key: ResourceType; label: string }> = [
   { key: 'servers', label: 'Server' },
@@ -61,13 +68,11 @@ const COLUMN_DEFS: Record<ResourceType, Array<{ key: string; label: string }>> =
   ],
 }
 
-const message = useMessage()
 const { t } = useI18n()
 const activeType = ref<ResourceType>('servers')
 const items = ref<ResourceConfig[]>([])
 
 const siteId = computed(() => props.site?.id ?? '')
-const columns = computed(() => COLUMN_DEFS[activeType.value] ?? [])
 
 /** 编辑弹窗状态（独立组件，与 Drawer 平级渲染——嵌套时焦点陷阱锁输入） */
 const editShow = ref(false)
@@ -83,6 +88,8 @@ const editTarget = ref<{
 /** Device 字段映射弹窗 */
 const mappingShow = ref(false)
 const mappingDevice = ref<ResourceConfig | null>(null)
+
+const deleteTarget = ref<ResourceConfig | null>(null)
 
 async function load() {
   if (!props.show || !siteId.value) return
@@ -151,75 +158,184 @@ function onSaved() {
   emit('changed')
 }
 
+/** 删除中：禁用确定按钮，防连点重复提交 */
+const deleting = ref(false)
+
 async function remove(item: ResourceConfig) {
-  await sitesApi.removeResource(siteId.value, activeType.value, item.id)
-  message.success(t('sites.deleted'))
-  await load()
+  if (deleting.value) return
+  deleting.value = true
+  try {
+    await sitesApi.removeResource(siteId.value, activeType.value, item.id)
+    message.success(t('sites.deleted'))
+    await load()
+  } finally {
+    deleting.value = false
+  }
+}
+
+/** 同 SitesView：AlertDialogAction 关窗先清 deleteTarget，先取快照再删 */
+function confirmDelete() {
+  const target = deleteTarget.value
+  deleteTarget.value = null
+  if (target) void remove(target)
 }
 
 function displayValue(item: ResourceConfig, key: string): string {
+  // 密码列：接口已脱敏（不回明文），按 has_password 显示掩码
+  if (key === 'password') return item.has_password ? '••••••••' : '-'
   const v = item[key]
   if (v === undefined || v === '') return '-'
   if (typeof v === 'object') return JSON.stringify(v)
   return String(v)
 }
 
-const hasMapping = computed(() => activeType.value === 'devices')
+/** 页资源"进入"：url 型直接开外链，html 型进 console 的 page 模块查看渲染 */
+function enterPage(row: ResourceConfig) {
+  const url = row.url ? String(row.url) : ''
+  if (url) {
+    window.open(url, '_blank', 'noopener')
+    return
+  }
+  router.push(`/console/site/${siteId.value}/page`)
+}
+
+/** 行内启停：与站点列表一致走局部更新，None 表示不改（后端部分更新语义） */
+async function toggleEnabled(row: ResourceConfig) {
+  await sitesApi.updateResource(siteId.value, activeType.value, row.id, {
+    enabled: !row.enabled,
+  })
+  await load()
+}
+
+/** 每个 tab 一组列（启用 + name + 类型字段 + [类别] + 操作）；操作列不排 */
+const columns = computed<any[]>(() => {
+  const isPage = activeType.value === 'pages'
+  const actionButtons = (row: ResourceConfig) => {
+    const btns: ReturnType<typeof h>[] = []
+    if (isPage && (row.url || row.html)) {
+      btns.push(
+        h(Button, { variant: 'ghost', size: 'sm', onClick: () => enterPage(row) }, () => t('sites.enterBtn')),
+      )
+    }
+    if (activeType.value === 'devices' && row.id) {
+      btns.push(
+        h(
+          Button,
+          { variant: 'ghost', size: 'sm', onClick: () => { mappingDevice.value = row; mappingShow.value = true } },
+          () => t('sites.mappingBtn'),
+        ),
+      )
+    }
+    btns.push(
+      h(Button, { variant: 'ghost', size: 'sm', onClick: () => openEdit(row) }, () => t('common.edit')),
+      h(
+        Button,
+        { variant: 'ghost', size: 'sm', class: 'text-destructive hover:text-destructive', onClick: () => (deleteTarget.value = row) },
+        () => t('common.delete'),
+      ),
+    )
+    return btns
+  }
+  const kindBadge = (row: ResourceConfig) => {
+    // 与后端 _with_kind 同规则派生（有 url 即 url 型，否则有 html 即 html 型），
+    // 不依赖后端版本是否带回 kind 字段
+    const kind = row.url ? 'url' : row.html ? 'html' : null
+    return kind
+      ? h(Badge, { variant: kind === 'url' ? 'secondary' : 'default', size: 'sm' }, () => kind)
+      : h('span', { class: 'text-muted-foreground' }, '-')
+  }
+  return [
+    {
+      id: 'enabled',
+      header: t('common.enabled'),
+      enableSorting: false,
+      cell: (ctx: any) =>
+        h(OpsSwitch, {
+          value: ctx.row.original.enabled,
+          'onUpdate:value': () => toggleEnabled(ctx.row.original),
+        }),
+    },
+    { accessorKey: 'name', header: t('common.name'), cell: (ctx: any) => h('span', { class: 'font-medium' }, ctx.row.original.name) },
+    ...COLUMN_DEFS[activeType.value].map((f) => ({
+      accessorKey: f.key,
+      header: t(`fields.${f.key}`),
+      // 长值（base_url 等）截断显示：抽屉宽度有限，杜绝表格横向滚动条
+      cell: (ctx: any) => {
+        const v = displayValue(ctx.row.original, f.key)
+        return h('span', { class: 'block max-w-[180px] truncate', title: v }, v)
+      },
+    })),
+    ...(isPage
+      ? [
+          {
+            id: 'kind',
+            header: t('sites.kind'),
+            cell: (ctx: any) => kindBadge(ctx.row.original),
+          },
+        ]
+      : []),
+    {
+      id: 'actions',
+      header: t('common.actions'),
+      enableSorting: false,
+      cell: (ctx: any) => h('div', { class: 'flex items-center gap-1' }, actionButtons(ctx.row.original)),
+    },
+  ]
+})
 </script>
 
 <template>
-  <n-drawer :mask-closable="false" :close-on-esc="false" :show="props.show" :width="720" @update:show="emit('update:show', $event)">
-    <n-drawer-content :title="$t('sites.resourcesTitle', { name: props.site?.name ?? '' })" closable>
-      <n-tabs v-model:value="activeType" type="line" size="small">
-        <n-tab-pane v-for="t in TYPES" :key="t.key" :name="t.key" :tab="t.label">
-          <n-space justify="end" style="margin-bottom: 8px">
-            <n-button size="small" type="primary" @click="openCreate">{{ $t('common.add') }}</n-button>
-          </n-space>
-          <n-table :bordered="false" :single-line="false" size="small">
-            <thead>
-              <tr>
-                <th>{{ $t('common.name') }}</th>
-                <th v-for="f in columns" :key="f.key">{{ $t(`fields.${f.key}`) }}</th>
-                <th style="width: 210px">{{ $t('common.actions') }}</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="item in items" :key="item.id">
-                <td>{{ item.name }}</td>
-                <td v-for="f in columns" :key="f.key">
-                  {{ displayValue(item, f.key) }}
-                </td>
-                <td>
-                  <n-space :size="4">
-                    <n-button size="tiny" @click="openEdit(item)">{{ $t('common.edit') }}</n-button>
-                    <n-button
-                      v-if="hasMapping && item.id"
-                      size="tiny"
-                      @click="((mappingDevice = item), (mappingShow = true))"
-                    >{{ $t('sites.mappingBtn') }}</n-button>
-                    <n-popconfirm @positive-click="remove(item)">
-                      <template #trigger>
-                        <n-button size="tiny" type="error" ghost>{{ $t('common.delete') }}</n-button>
-                      </template>
-                      {{ $t('sites.deleteResourceConfirm', { name: item.name }) }}
-                    </n-popconfirm>
-                  </n-space>
-                </td>
-              </tr>
-              <tr v-if="!items.length">
-                <td :colspan="columns.length + 2" style="text-align: center; color: #999">
-                  {{ $t('sites.emptyResources') }}
-                </td>
-              </tr>
-            </tbody>
-          </n-table>
-        </n-tab-pane>
-      </n-tabs>
-    </n-drawer-content>
-  </n-drawer>
+  <Dialog :open="props.show" @update:open="(v: boolean) => emit('update:show', v)">
+    <DialogContent class="flex h-[560px] w-[720px] max-w-[94vw] flex-col overflow-hidden" @escape-key-down.prevent @interact-outside.prevent>
+      <DialogHeader>
+        <DialogTitle>{{ $t('sites.resourcesTitle', { name: props.site?.name ?? '' }) }}</DialogTitle>
+      </DialogHeader>
+      <!-- 新增按钮与 Tabs 同行右侧（原挤在 Tabs 与表格之间贴顶） -->
+      <div class="flex items-center justify-between">
+        <Tabs v-model="activeType">
+          <TabsList class="justify-start">
+            <TabsTrigger v-for="tp in TYPES" :key="tp.key" :value="tp.key">{{ tp.label }}</TabsTrigger>
+          </TabsList>
+        </Tabs>
+        <Button size="sm" @click="openCreate">{{ $t('common.add') }}</Button>
+      </div>
+      <!-- 固定内容区高度：弹窗打开即定型，数据到达不再跳变 -->
+      <Tabs v-model="activeType" class="flex-1 overflow-hidden">
+        <TabsContent v-for="tp in TYPES" :key="tp.key" :value="tp.key" class="mt-0">
+          <div class="max-h-[420px] overflow-auto">
+            <OpsDataTable
+              :columns="columns"
+              :data="items"
+              row-key="id"
+              :empty-text="$t('sites.emptyResources')"
+            />
+          </div>
+        </TabsContent>
+      </Tabs>
+    </DialogContent>
+  </Dialog>
+
+  <!-- 删除确认（原 NPopconfirm -> AlertDialog） -->
+  <AlertDialog :open="deleteTarget !== null" @update:open="(v: boolean) => { if (!v) deleteTarget = null }">
+    <AlertDialogContent>
+      <AlertDialogBody>
+        <AlertDialogTitle class="text-base font-semibold">{{ $t('common.confirm') }}</AlertDialogTitle>
+        <p class="text-sm text-muted-foreground">{{ $t('sites.deleteResourceConfirm', { name: deleteTarget?.name ?? '' }) }}</p>
+      </AlertDialogBody>
+      <div class="flex justify-end gap-2 pt-3">
+        <AlertDialogCancel :disabled="deleting">{{ $t('common.cancel') }}</AlertDialogCancel>
+        <AlertDialogAction :disabled="deleting" @click="confirmDelete">
+          <span class="inline-flex items-center gap-1.5">
+            <LoaderCircle v-if="deleting" class="size-3.5 animate-spin" />
+            {{ deleting ? $t('common.processing') : $t('common.delete') }}
+          </span>
+        </AlertDialogAction>
+      </div>
+    </AlertDialogContent>
+  </AlertDialog>
 
   <!-- 编辑/新增弹窗：独立组件，与 Drawer 平级（嵌套时焦点陷阱锁输入） -->
-  <resource-edit-modal
+  <ResourceEditModal
     v-model:show="editShow"
     :target="editTarget"
     :existing-names="items.map((r) => r.name)"
@@ -227,7 +343,7 @@ const hasMapping = computed(() => activeType.value === 'devices')
   />
 
   <!-- Device 字段映射弹窗 -->
-  <field-mapping-dialog
+  <FieldMappingDialog
     v-model:show="mappingShow"
     :site-id="siteId"
     :device="mappingDevice"

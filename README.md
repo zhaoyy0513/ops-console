@@ -28,7 +28,7 @@ cp .env.example .env
 | 变量 | 必填 | 说明 |
 |---|---|---|
 | `OPS_REDIS_URL` | ✅ | 平台 Redis（配置/缓存/锁/操作日志），建议独立 DB，如 `redis://host:6379/5` |
-| `OPS_PORT` |  | 部署宿主机端口（默认 8090） |
+| `OPS_PORT` |  | 部署宿主机端口（默认 25089） |
 | `OPS_LOG_LEVEL` |  | 日志级别（默认 INFO） |
 | `SSH_COMMAND_TIMEOUT` 等 |  | 外部系统超时（秒），默认值见 `backend/app/core/config.py` |
 | `ARTEMIS_*` / `SERVER_*` |  | 仅 E2E 脚本使用，可选 |
@@ -37,11 +37,11 @@ cp .env.example .env
 
 ```bash
 uv sync                                  # 安装后端依赖（.venv）
-uv run --env-file .env python -m uvicorn backend.app.main:app --host 0.0.0.0 --port 8000
+uv run --env-file .env python -m uvicorn backend.app.main:app --host 0.0.0.0 --port 25088
 
 cd frontend
 npm install
-npm run dev -- --host                             # http://localhost:5173，/api 代理到 :8000
+npm run dev -- --host 0.0.0.0 --port 25089                            # http://localhost:25089，/api 代理到 :25088
 ```
 
 测试：
@@ -60,16 +60,16 @@ docker compose up -d --build
 
 - 构建两个镜像：`ops-backend`（uv 装依赖 + uvicorn:8000）与 `ops-nginx`（Node 构建前端 dist → nginx 托管 + `/api` 反代到 ops-backend）
 - **Redis 不在 compose 内**——复用现场现有 Redis，通过 `.env` 的 `OPS_REDIS_URL` 接入
-- 访问 `http://<host>:${OPS_PORT:-8090}`
+- 访问 `http://<host>:${OPS_PORT:-25089}`
 - `nginx.conf` 的 `/api` 读超时为 300s（SSH 执行预算 60s、SSE 流式执行需要长连接）
 
 ### 端口说明（常见困惑）
 
 | 端口 | 出现场景 | 说明 |
 |---|---|---|
-| `5173` | 仅本地开发 | vite 开发服务器（`/api` 代理到本机 `127.0.0.1:8000`）；**部署时不存在** |
+| `5173` | 仅本地开发 | vite 开发服务器默认端口；本仓库实际用 `25089` 起前端（`/api` 代理到本机 `127.0.0.1:25088`）；**部署时不存在** |
 | `8000` | 仅容器内部 | uvicorn 监听容器内端口；ops-nginx 经 **docker 内网**以服务名 `http://ops-backend:8000` 访问，**与宿主机端口映射无关** |
-| `OPS_PORT` | 唯一公网端口 | 浏览器只访问它：nginx 返回前端页面并把 `/api` 反代给 backend |
+| `OPS_PORT`（25089） | 唯一公网端口 | 浏览器只访问它：nginx 返回前端页面并把 `/api` 反代给 backend |
 
 要点：**前端不是独立部署的服务**——它与 nginx 打包为同一镜像（ops-nginx）。backend 无需任何宿主机端口映射（Portainer 里映射 8000 纯属多余，还会把 API 绕过 nginx 直接暴露）。
 

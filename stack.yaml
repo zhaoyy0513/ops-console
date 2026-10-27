@@ -1,9 +1,9 @@
 services:
   ops-backend:
-    image:  dck0.prime/prime-ops-console-backend:7d5194b
+    image:  dck0.prime/prime-ops-console-backend:acda36f
     restart: unless-stopped
     environment:
-      OPS_REDIS_URL: redis://10.102.129.21:26379/5
+      OPS_REDIS_URL: redis://10.102.129.30:26379/5
       OPS_LOG_LEVEL: ${OPS_LOG_LEVEL:-INFO}
       SSH_CONNECT_TIMEOUT: ${SSH_CONNECT_TIMEOUT:-5}
       SSH_COMMAND_TIMEOUT: ${SSH_COMMAND_TIMEOUT:-10}
@@ -20,10 +20,10 @@ services:
       retries: 3
 
   ops-nginx:
-    image: dck0.prime/prime-ops-console-nginx:7d5194b
+    image: dck0.prime/prime-ops-console-nginx:acda36f
     restart: unless-stopped
     ports:
-      - "25089:80"
+      - "${OPS_PORT:-25089}:80"
     depends_on:
       - ops-backend
 

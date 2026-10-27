@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { onMounted, ref, watch, type Component } from 'vue'
 import { useRouter } from 'vue-router'
-import {
-  HardwareChipOutline, LayersOutline, PulseOutline, ServerOutline,
-} from '@vicons/ionicons5'
-import { NButton, NCard, NTable, NTag, useMessage } from 'naive-ui'
+import { Server, Layers, Activity, HardDriveDownload } from 'lucide-vue-next'
+import LoadingDots from '../../components/LoadingDots.vue'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { message } from '@/lib/message'
 import StatusBadge from '../../components/StatusBadge.vue'
 import TabHelp from '../../components/TabHelp.vue'
 import MetricCard from '../../components/MetricCard.vue'
@@ -13,7 +15,6 @@ import { overviewApi, type OverviewData } from './api'
 
 const siteStore = useSiteStore()
 const router = useRouter()
-const message = useMessage()
 
 const data = ref<OverviewData | null>(null)
 const loading = ref(false)
@@ -49,10 +50,10 @@ onMounted(load)
 watch(() => siteStore.currentSiteId, load)
 
 const KIND_META: Record<string, { label: string; route: string; icon: Component }> = {
-  server: { label: 'Server', route: 'server', icon: ServerOutline },
-  redis: { label: 'Redis', route: 'redis', icon: LayersOutline },
-  mq: { label: 'ActiveMQ', route: 'mq', icon: PulseOutline },
-  device: { label: 'Device', route: 'device', icon: HardwareChipOutline },
+  server: { label: 'Server', route: 'server', icon: Server },
+  redis: { label: 'Redis', route: 'redis', icon: Layers },
+  mq: { label: 'ActiveMQ', route: 'mq', icon: Activity },
+  device: { label: 'Device', route: 'device', icon: HardDriveDownload },
 }
 
 /** tile 顶边色：有 critical 红、有 warning 黄、全健康绿、无资源灰 */
@@ -75,17 +76,24 @@ function fmtTime(iso: string): string {
 
 <template>
   <div class="ov-stack">
-    <n-card size="small">
-      <div class="ov-bar">
-        <span style="font-size: 16px; font-weight: 600">{{ data?.site.name ?? siteStore.currentSiteId }}</span>
+    <Card>
+      <CardContent class="ov-bar">
+        <span class="text-base font-semibold">{{ data?.site.name ?? siteStore.currentSiteId }}</span>
         <status-badge v-if="data" :status="data.overall" />
-        <n-button size="small" :loading="loading" @click="refresh">{{ $t('overview.checkNow') }}</n-button>
+        <Button variant="outline" size="sm" :disabled="loading" @click="refresh">{{ $t('overview.checkNow') }}</Button>
         <tab-help topic="overview" />
-        <span v-if="data?.checked_at" style="color: var(--ops-text-3); font-size: 12px">
+        <span v-if="data?.checked_at" class="text-xs text-muted-foreground">
           {{ $t('overview.lastCheck', { time: fmtTime(data.checked_at) }) }}
         </span>
-      </div>
-    </n-card>
+      </CardContent>
+    </Card>
+
+    <!-- 首载 loading（全站统一 LoadingDots 风格） -->
+    <Card v-if="loading && !data">
+      <CardContent class="flex justify-center py-14">
+        <loading-dots :text="$t('common.loading')" />
+      </CardContent>
+    </Card>
 
     <div v-if="data" class="ov-tiles">
       <div v-for="(_, kind) in KIND_META" :key="kind" class="tile-wrap" @click="goIssueModule(kind)">
@@ -97,60 +105,78 @@ function fmtTime(iso: string): string {
           hoverable
         >
           <span class="dist">
-            <n-tag type="success" size="tiny" :bordered="false">{{ data.summary[kind as keyof typeof data.summary].healthy }}</n-tag>
-            <n-tag v-if="data.summary[kind as keyof typeof data.summary].warning" type="warning" size="tiny" :bordered="false">{{ data.summary[kind as keyof typeof data.summary].warning }}</n-tag>
-            <n-tag v-if="data.summary[kind as keyof typeof data.summary].critical" type="error" size="tiny" :bordered="false">{{ data.summary[kind as keyof typeof data.summary].critical }}</n-tag>
-            <n-tag v-if="data.summary[kind as keyof typeof data.summary].unknown" size="tiny" :bordered="false">{{ data.summary[kind as keyof typeof data.summary].unknown }}</n-tag>
+            <Badge variant="success" size="sm">{{ data.summary[kind as keyof typeof data.summary].healthy }}</Badge>
+            <Badge v-if="data.summary[kind as keyof typeof data.summary].warning" variant="warning" size="sm">{{ data.summary[kind as keyof typeof data.summary].warning }}</Badge>
+            <Badge v-if="data.summary[kind as keyof typeof data.summary].critical" variant="critical" size="sm">{{ data.summary[kind as keyof typeof data.summary].critical }}</Badge>
+            <Badge v-if="data.summary[kind as keyof typeof data.summary].unknown" variant="outline" size="sm">{{ data.summary[kind as keyof typeof data.summary].unknown }}</Badge>
           </span>
         </metric-card>
       </div>
     </div>
 
-    <n-card v-if="data?.issues?.length" size="small" :title="$t('overview.issues')">
-      <div class="table-scroll">
-        <n-table :single-line="false" size="small">
-        <thead>
-          <tr><th style="width: 90px">{{ $t('overview.colLevel') }}</th><th style="width: 90px">{{ $t('overview.colType') }}</th><th>{{ $t('overview.colResource') }}</th><th>{{ $t('overview.colDetail') }}</th><th style="width: 150px">{{ $t('overview.colCheckedAt') }}</th></tr>
-        </thead>
-        <tbody>
-          <tr v-for="i in data.issues" :key="i.kind + i.id">
-            <td><status-badge :status="i.status" /></td>
-            <td>{{ KIND_META[i.kind] ? $t(`tabs.${i.kind}`) : i.kind }}</td>
-            <td>{{ i.name }}</td>
-            <td>{{ i.message }}</td>
-            <td>{{ fmtTime(i.checked_at) }}</td>
-          </tr>
-        </tbody>
-      </n-table>
-      </div>
-    </n-card>
+    <Card v-if="data?.issues?.length">
+      <CardHeader><CardTitle>{{ $t('overview.issues') }}</CardTitle></CardHeader>
+      <CardContent>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="border-b border-border">
+                <th class="issue-th" style="width: 90px">{{ $t('overview.colLevel') }}</th>
+                <th class="issue-th" style="width: 90px">{{ $t('overview.colType') }}</th>
+                <th class="issue-th">{{ $t('overview.colResource') }}</th>
+                <th class="issue-th">{{ $t('overview.colDetail') }}</th>
+                <th class="issue-th" style="width: 150px">{{ $t('overview.colCheckedAt') }}</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="i in data.issues" :key="i.kind + i.id" class="border-b border-border/60 hover:bg-accent/50">
+                <td class="issue-td"><status-badge :status="i.status" /></td>
+                <td class="issue-td">{{ KIND_META[i.kind] ? $t(`tabs.${i.kind}`) : i.kind }}</td>
+                <td class="issue-td">{{ i.name }}</td>
+                <td class="issue-td">{{ i.message }}</td>
+                <td class="issue-td">{{ fmtTime(i.checked_at) }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </CardContent>
+    </Card>
 
-    <n-card v-if="data" size="small" :title="$t('overview.recentOps')">
-      <template #header-extra>
-        <n-button size="tiny" quaternary @click="router.push('/audit')">{{ $t('overview.allLogs') }}</n-button>
-      </template>
-      <div class="table-scroll">
-        <n-table :single-line="false" size="small">
-        <thead>
-          <tr><th style="width: 130px">{{ $t('overview.colTime') }}</th><th>{{ $t('overview.colResource') }}</th><th>{{ $t('overview.colOperation') }}</th><th>{{ $t('overview.colTarget') }}</th><th style="width: 90px">{{ $t('overview.colResult') }}</th></tr>
-        </thead>
-        <tbody>
-          <tr v-for="(op, idx) in data.recent_ops" :key="idx">
-            <td>{{ fmtTime(op.time) }}</td>
-            <td><div class="ellip" :title="op.resource">{{ op.resource }}</div></td>
-            <td>{{ op.operation }}</td>
-            <td><div class="mono ellip" :title="op.target ?? '-'">{{ op.target ?? '-' }}</div></td>
-            <td>
-              <n-tag :type="op.result === 'SUCCESS' ? 'success' : 'error'" size="tiny" :bordered="false">{{ op.result }}</n-tag>
-            </td>
-          </tr>
-          <tr v-if="!data.recent_ops.length">
-            <td colspan="5" style="text-align: center; color: var(--ops-text-3)">{{ $t('overview.noOps') }}</td>
-          </tr>
-        </tbody>
-      </n-table>
-      </div>
-    </n-card>
+    <Card v-if="data">
+      <CardHeader class="flex-row items-center justify-between">
+        <CardTitle>{{ $t('overview.recentOps') }}</CardTitle>
+        <Button variant="ghost" size="sm" @click="router.push('/audit')">{{ $t('overview.allLogs') }}</Button>
+      </CardHeader>
+      <CardContent>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="border-b border-border">
+                <th class="issue-th" style="width: 130px">{{ $t('overview.colTime') }}</th>
+                <th class="issue-th">{{ $t('overview.colResource') }}</th>
+                <th class="issue-th">{{ $t('overview.colOperation') }}</th>
+                <th class="issue-th">{{ $t('overview.colTarget') }}</th>
+                <th class="issue-th" style="width: 90px">{{ $t('overview.colResult') }}</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="(op, idx) in data.recent_ops" :key="idx" class="border-b border-border/60 hover:bg-accent/50">
+                <td class="issue-td">{{ fmtTime(op.time) }}</td>
+                <td class="issue-td"><div class="ellip" :title="op.resource">{{ op.resource }}</div></td>
+                <td class="issue-td">{{ op.operation }}</td>
+                <td class="issue-td"><div class="mono ellip" :title="op.target ?? '-'">{{ op.target ?? '-' }}</div></td>
+                <td class="issue-td">
+                  <Badge :variant="op.result === 'SUCCESS' ? 'success' : 'critical'" size="sm">{{ op.result }}</Badge>
+                </td>
+              </tr>
+              <tr v-if="!data.recent_ops.length">
+                <td colspan="5" class="py-3 text-center text-muted-foreground">{{ $t('overview.noOps') }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </CardContent>
+    </Card>
   </div>
 </template>
 
@@ -176,10 +202,6 @@ function fmtTime(iso: string): string {
   min-width: 150px;
   cursor: pointer;
 }
-/* 表格内部横向滚动，不撑破页面 */
-.table-scroll {
-  overflow-x: auto;
-}
 .dist {
   display: inline-flex;
   gap: 4px;
@@ -194,5 +216,23 @@ function fmtTime(iso: string): string {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+</style>
+
+<style>
+/* 简表头/单元格（两处手写 table 共用）：padding 与 OpsDataTable 对齐 */
+.issue-th {
+  padding: 0.5rem 0.625rem;
+  text-align: left;
+  font-weight: 500;
+  color: var(--muted-foreground);
+  white-space: nowrap;
+  font-size: 0.875rem;
+}
+.issue-td {
+  padding: 0.5rem 0.625rem;
+  vertical-align: middle;
+  white-space: nowrap;
+  font-size: 0.875rem;
 }
 </style>

@@ -19,11 +19,21 @@ import asyncssh
 from backend.app.core import oplog
 from backend.app.core.config import settings
 from backend.app.modules.sites.service import NotFound
+from backend.app.modules.ssh import risk
+from backend.app.modules.ssh import risk
 from backend.app.modules.sites.service import get_resource_raw
 from backend.app.core.redis import get_platform_redis
 from backend.app.shared.concurrency import get_host_semaphore, get_semaphore
+from backend.app.shared.errors import OpsError
 
 SCRIPTS_KEY = "ops:site:{site_id}:ssh_scripts"
+RUN_TIMEOUT = 60
+
+
+def _cmd_head(content: str, n: int = 200) -> str:
+    """oplog 用命令摘要：换行折叠成 "; "，截前 n 字符——审计页可据此搜到 rm -rf 之类。"""
+    flat = " ; ".join(line.strip() for line in (content or "").splitlines() if line.strip())
+    return flat[:n]
 RUN_TIMEOUT = 60
 
 
@@ -35,6 +45,67 @@ def _bash_cmd() -> str:
     远端 预算-5s TERM + 5s KILL，本地 wait_for（预算全额）仍是兜底。
     """
     return f"timeout -k 5 {settings.ssh_command_timeout * 6 - 5} bash -s"
+
+
+def _risk_gate(content: str, *, site_id: str, log_resource: str, log_target: str,
+               confirmed: bool, scheduled: bool = False) -> dict[str, Any]:
+    """风险闸门：BLOCK 一律拒绝（oplog 记 BLOCKED）；WARN 需人工确认
+    （confirm_risk=true 放行，patterns 记入 oplog），定时任务无人工环节仅受 BLOCK 约束。
+    返回放行后的 warn 描述列表（供 oplog params.risk）。"""
+    hits = risk.assess(content)
+    blocks = risk.block_descs(hits)
+    if blocks:
+        from backend.app.shared.errors import OpsError
+        oplog_sync = None
+        # BLOCKED 也落 oplog（异步函数内直接 await；此处是同步函数，改由调用方记）
+        raise _RiskBlocked(blocks)
+    warns = risk.warn_descs(hits)
+    if warns and not confirmed and not scheduled:
+        raise _RiskConfirm(warns)
+    return {"risk": warns} if warns else {}
+
+
+class _RiskBlocked(Exception):
+    def __init__(self, descs: list[str]):
+        self.descs = descs
+
+
+class _RiskConfirm(Exception):
+    def __init__(self, descs: list[str]):
+        self.descs = descs
+
+
+async def _log_blocked(site_id: str, log_resource: str, log_target: str,
+                       descs: list[str], content: str = "") -> None:
+    await oplog.record(site_id, log_resource, "SSH_SCRIPT_RUN",
+                       target=log_target,
+                       params={"blocked_by": descs, "cmd": _cmd_head(content)},
+                       result="BLOCKED")
+
+
+def _risk_gate(content: str, *, site_id: str, log_resource: str, log_target: str,
+               confirmed: bool, scheduled: bool = False) -> dict[str, Any]:
+    """风险闸门：BLOCK 一律拒绝（oplog 记 BLOCKED）；WARN 需人工确认
+    （confirm_risk=true 放行，patterns 记入 oplog），定时任务无人工环节仅受 BLOCK 约束。
+    返回放行后的 warn 描述列表（供 oplog params.risk）。"""
+    hits = risk.assess(content)
+    blocks = risk.block_descs(hits)
+    if blocks:
+        raise _RiskBlocked(blocks)
+    warns = risk.warn_descs(hits)
+    if warns and not confirmed and not scheduled:
+        raise _RiskConfirm(warns)
+    return {"risk": warns} if warns else {}
+
+
+class _RiskBlocked(Exception):
+    def __init__(self, descs: list[str]):
+        self.descs = descs
+
+
+class _RiskConfirm(Exception):
+    def __init__(self, descs: list[str]):
+        self.descs = descs
 
 
 def _key(site_id: str) -> str:
@@ -144,7 +215,8 @@ async def _execute(server_cfg: dict[str, Any], content: str, *,
         except (OSError, asyncssh.Error) as e:
             await oplog.record(site_id, log_resource, "SSH_SCRIPT_RUN",
                                target=log_target,
-                               params={**(log_extra or {}), "server": server_cfg["host"], "triggered": triggered},
+                               params={**(log_extra or {}), "server": server_cfg["host"], "triggered": triggered,
+                               "cmd": _cmd_head(content)},
                                result="FAILED", error=str(e)[:200])
             raise NotFound(f"SSH 执行失败：{e}") from None
         finally:
@@ -157,7 +229,7 @@ async def _execute(server_cfg: dict[str, Any], content: str, *,
     await oplog.record(site_id, log_resource, "SSH_SCRIPT_RUN",
                        target=log_target,
                        params={**(log_extra or {}), "server": server_cfg["host"], "triggered": triggered,
-                               "timed_out": timed_out})
+                               "timed_out": timed_out, "cmd": _cmd_head(content)})
     return {
         "stdout": stdout[-50_000:],
         "stderr": stderr[-10_000:],
@@ -166,7 +238,8 @@ async def _execute(server_cfg: dict[str, Any], content: str, *,
     }
 
 
-async def run_script(site_id: str, script_id: str, *, triggered: str = "manual") -> dict[str, Any]:
+async def run_script(site_id: str, script_id: str, *, triggered: str = "manual",
+                     confirm_risk: bool = False) -> dict[str, Any]:
     """按脚本 id 执行（手动/定时共用；记录 oplog）。"""
     script = await get_script(site_id, script_id)
     if not script:
@@ -177,22 +250,49 @@ async def run_script(site_id: str, script_id: str, *, triggered: str = "manual")
     content = str(script.get("content") or "")
     if not content.strip():
         raise ValueError("脚本内容为空")
+    log_resource = f"ssh/{_server_label(server_cfg)}"
+    extra: dict[str, Any] = {"script_id": script_id}
+    try:
+        extra.update(_risk_gate(content, site_id=site_id, log_resource=log_resource,
+                                log_target=script["name"], confirmed=confirm_risk,
+                                scheduled=(triggered == "schedule")))
+    except _RiskBlocked as e:
+        await _log_blocked(site_id, log_resource, script["name"], e.descs, content)
+        raise OpsError("SSH_RISK_BLOCKED", f"脚本包含禁止执行的命令：{'、'.join(e.descs)}",
+                       status_code=400) from None
+    except _RiskConfirm as e:
+        raise OpsError("SSH_RISK_CONFIRM", f"脚本包含高风险命令：{'、'.join(e.descs)}",
+                       status_code=400) from None
     return await _execute(server_cfg, content, site_id=site_id,
-                          log_resource=f"ssh/{_server_label(server_cfg)}",
+                          log_resource=log_resource,
                           log_target=script["name"], triggered=triggered,
-                          log_extra={"script_id": script_id})
+                          log_extra=extra)
 
 
-async def run_adhoc(site_id: str, server_id: str, content: str) -> dict[str, Any]:
+async def run_adhoc(site_id: str, server_id: str, content: str,
+                    confirm_risk: bool = False) -> dict[str, Any]:
     """编辑弹窗内的“测试”：直接执行表单内容，不创建、不保存脚本。"""
     server_cfg = await get_resource_raw(site_id, "servers", server_id)
     if not server_cfg:
         raise NotFound(f"绑定的 Server 配置不存在: {server_id}")
     if not (content or "").strip():
         raise ValueError("脚本内容为空")
+    log_resource = f"ssh/{_server_label(server_cfg)}"
+    log_target = f"adhoc@{_server_label(server_cfg)}"
+    try:
+        warn = _risk_gate(content, site_id=site_id, log_resource=log_resource,
+                          log_target=log_target, confirmed=confirm_risk)
+    except _RiskBlocked as e:
+        await _log_blocked(site_id, log_resource, log_target, e.descs, content)
+        raise OpsError("SSH_RISK_BLOCKED", f"脚本包含禁止执行的命令：{'、'.join(e.descs)}",
+                       status_code=400) from None
+    except _RiskConfirm as e:
+        raise OpsError("SSH_RISK_CONFIRM", f"脚本包含高风险命令：{'、'.join(e.descs)}",
+                       status_code=400) from None
     return await _execute(server_cfg, content, site_id=site_id,
-                          log_resource=f"ssh/{_server_label(server_cfg)}",
-                          log_target=f"adhoc@{_server_label(server_cfg)}", triggered="test")
+                          log_resource=log_resource,
+                          log_target=log_target, triggered="test",
+                          log_extra=warn)
 
 
 async def stream_execute(server_cfg: dict[str, Any], content: str, *,
@@ -277,7 +377,8 @@ async def stream_execute(server_cfg: dict[str, Any], content: str, *,
             logged = True
             await oplog.record(site_id, log_resource, "SSH_SCRIPT_RUN",
                                target=log_target,
-                               params={**(log_extra or {}), "server": server_cfg["host"], "triggered": triggered},
+                               params={**(log_extra or {}), "server": server_cfg["host"], "triggered": triggered,
+                                       "cmd": _cmd_head(content)},
                                result="FAILED", error=str(e)[:200])
             raise NotFound(f"SSH 执行失败：{e}") from None
         finally:
@@ -298,7 +399,8 @@ async def stream_execute(server_cfg: dict[str, Any], content: str, *,
                     await oplog.record(site_id, log_resource, "SSH_SCRIPT_RUN",
                                        target=log_target,
                                        params={**(log_extra or {}), "server": server_cfg["host"],
-                                               "triggered": triggered, "timed_out": timed_out})
+                                               "triggered": triggered, "timed_out": timed_out,
+                                               "cmd": _cmd_head(content)})
                 except Exception:  # noqa: BLE001
                     pass
 
@@ -308,7 +410,8 @@ async def stream_execute(server_cfg: dict[str, Any], content: str, *,
     })
 
 
-async def stream_script(site_id: str, script_id: str, *, triggered: str = "manual"):
+async def stream_script(site_id: str, script_id: str, *, triggered: str = "manual",
+                        confirm_risk: bool = False):
     script = await get_script(site_id, script_id)
     if not script:
         raise NotFound(f"script not found: {script_id}")
@@ -318,21 +421,47 @@ async def stream_script(site_id: str, script_id: str, *, triggered: str = "manua
     content = str(script.get("content") or "")
     if not content.strip():
         raise ValueError("脚本内容为空")
+    log_resource = f"ssh/{_server_label(server_cfg)}"
+    extra: dict[str, Any] = {"script_id": script_id}
+    try:
+        extra.update(_risk_gate(content, site_id=site_id, log_resource=log_resource,
+                                log_target=script["name"], confirmed=confirm_risk,
+                                scheduled=(triggered == "schedule")))
+    except _RiskBlocked as e:
+        await _log_blocked(site_id, log_resource, script["name"], e.descs, content)
+        raise OpsError("SSH_RISK_BLOCKED", f"脚本包含禁止执行的命令：{'、'.join(e.descs)}",
+                       status_code=400) from None
+    except _RiskConfirm as e:
+        raise OpsError("SSH_RISK_CONFIRM", f"脚本包含高风险命令：{'、'.join(e.descs)}",
+                       status_code=400) from None
     async for item in stream_execute(server_cfg, content, site_id=site_id,
-                                     log_resource=f"ssh/{_server_label(server_cfg)}",
+                                     log_resource=log_resource,
                                      log_target=script["name"], triggered=triggered,
-                                     log_extra={"script_id": script_id}):
+                                     log_extra=extra):
         yield item
 
 
-async def stream_adhoc(site_id: str, server_id: str, content: str):
+async def stream_adhoc(site_id: str, server_id: str, content: str,
+                       confirm_risk: bool = False):
     server_cfg = await get_resource_raw(site_id, "servers", server_id)
     if not server_cfg:
         raise NotFound(f"绑定的 Server 配置不存在: {server_id}")
     if not (content or "").strip():
         raise ValueError("脚本内容为空")
+    log_resource = f"ssh/{_server_label(server_cfg)}"
+    log_target = f"adhoc@{_server_label(server_cfg)}"
+    try:
+        extra = _risk_gate(content, site_id=site_id, log_resource=log_resource,
+                           log_target=log_target, confirmed=confirm_risk)
+    except _RiskBlocked as e:
+        await _log_blocked(site_id, log_resource, log_target, e.descs, content)
+        raise OpsError("SSH_RISK_BLOCKED", f"脚本包含禁止执行的命令：{'、'.join(e.descs)}",
+                       status_code=400) from None
+    except _RiskConfirm as e:
+        raise OpsError("SSH_RISK_CONFIRM", f"脚本包含高风险命令：{'、'.join(e.descs)}",
+                       status_code=400) from None
     async for item in stream_execute(server_cfg, content, site_id=site_id,
-                                     log_resource=f"ssh/{_server_label(server_cfg)}",
-                                     log_target=f"adhoc@{_server_label(server_cfg)}",
-                                     triggered="test"):
+                                     log_resource=log_resource,
+                                     log_target=log_target,
+                                     triggered="test", log_extra=extra):
         yield item

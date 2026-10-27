@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// 可排序表头单元格（手写 n-table 用）：标签 + 上下小箭头（未激活弱化，激活主色）。
+// 可排序表头单元格（手写 table 用）：标签 + 上下小箭头（未激活弱化，激活主色）。
 // 整个 th 可点击；style/class 经 attrs 透传到根 th，与原列宽写法兼容（style="width: 90px"）。
 defineProps<{
   label: string
@@ -42,7 +42,7 @@ const emit = defineEmits<{ (e: 'sort'): void }>()
   opacity: 0.45;
 }
 .arr.on {
-  color: var(--ops-primary);
+  color: var(--primary);
   opacity: 1;
 }
 </style>

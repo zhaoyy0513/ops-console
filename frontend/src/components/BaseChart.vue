@@ -1,9 +1,8 @@
 <script setup lang="ts">
-/** 图表底座：统一主题（随暗色切换销毁重建）、容器级 resize 监听、
+/** 图表底座：统一主题（随画风切换销毁重建）、容器级 resize 监听、
  *  loading / empty 内置态。业务图表只传 option。 */
-import { inject, onBeforeUnmount, onMounted, ref, watch, type Ref } from 'vue'
+import { computed, inject, onBeforeUnmount, onMounted, ref, watch, type ComputedRef } from 'vue'
 import { useResizeObserver } from '@vueuse/core'
-import { NSpin } from 'naive-ui'
 import echarts from '../utils/echarts'
 
 const props = defineProps<{
@@ -14,13 +13,14 @@ const props = defineProps<{
   empty?: string
 }>()
 
-const opsDark = inject<{ isDark: Ref<boolean> }>('opsDark')!
+// 明暗二态，echarts 主题 ops-light / ops-dark（utils/echarts.ts 注册）
+const theme = inject<ComputedRef<'light' | 'dark'>>('opsTheme', computed(() => 'light'))
 
 const el = ref<HTMLDivElement>()
 let chart: echarts.ECharts | null = null
 
 function themeName() {
-  return opsDark.isDark.value ? 'ops-dark' : 'ops-light'
+  return theme.value === 'light' ? 'ops-light' : 'ops-dark'
 }
 
 function render() {
@@ -40,8 +40,8 @@ onBeforeUnmount(() => {
 })
 
 watch(() => props.option, render, { deep: true })
-// 主题不能热切：销毁后以新主题重建
-watch(() => opsDark.isDark.value, () => {
+// 主题不能热切：销毁后以新主题重建（watch 映射后的主题名，mono/terminal 同为暗不重复重建）
+watch(themeName, () => {
   chart?.dispose()
   chart = echarts.init(el.value!, themeName())
   render()
@@ -52,7 +52,9 @@ watch(() => opsDark.isDark.value, () => {
   <div class="base-chart" :style="{ height: height ?? '240px' }">
     <div ref="el" style="width: 100%; height: 100%" />
     <div v-if="empty" class="chart-empty">{{ empty }}</div>
-    <n-spin v-if="loading" size="small" class="chart-spin" />
+    <div v-if="loading" class="chart-spin">
+      <span class="inline-block size-4 rounded-full border-2 border-border border-t-muted-foreground animate-spin" />
+    </div>
   </div>
 </template>
 

@@ -1,26 +1,19 @@
 <script setup lang="ts">
-import { computed, h, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import {
-  NAlert,
-  NButton,
-  NCard,
-  NInput,
-  NInputNumber,
-  NModal,
-  NRadioButton,
-  NRadioGroup,
-  NSelect,
-  NSpace,
-  NSpin,
-  NSkeleton,
-  NTag,
-  NTooltip,
-  NTree,
-  useMessage,
-  type TreeOption,
-} from 'naive-ui'
+import { AlertCircle, ChevronDown, ChevronRight, Database, LoaderCircle, Search, Server, WandSparkles } from 'lucide-vue-next'
 import { parser as jsonParser } from '@lezer/json'
+import { message } from '@/lib/message'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/ui/select'
+import { Skeleton } from '@/components/ui/skeleton'
+import { TooltipProvider, TooltipRoot, TooltipTrigger } from 'reka-ui'
+import TooltipContent from '@/components/ui/tooltip/TooltipContent.vue'
+import { Textarea } from '@/components/ui/textarea'
 import CountdownConfirm from '../../components/CountdownConfirm.vue'
 import TabHelp from '../../components/TabHelp.vue'
 import DiffJsonEditor from '../../components/DiffJsonEditor.vue'
@@ -36,7 +29,6 @@ import {
 } from './api'
 
 const siteStore = useSiteStore()
-const message = useMessage()
 const { t } = useI18n()
 
 // ---------- 实例 / DB / 搜索 ----------
@@ -50,7 +42,7 @@ const cursor = ref(0)
 const loading = ref(false)
 const info = ref<RedisInfo | null>(null)
 
-/** DB 下拉：label 'DB5'（选中框显示），render-label 在数字后加灰色 [key 数] */
+/** DB 下拉：label 'DB5'，行内数字后跟灰色 [key 数] */
 const DB_OPTIONS = computed(() =>
   Array.from({ length: 16 }, (_, i) => ({
     label: `DB${i}`,
@@ -58,12 +50,9 @@ const DB_OPTIONS = computed(() =>
   })),
 )
 
-function renderDbLabel(option: { label?: string; value?: number }) {
-  const n = info.value?.db_sizes?.[option.value as number]
-  return h('span', { class: 'db-option' }, [
-    h('span', null, `DB${option.value}`),
-    n != null ? h('span', { class: 'db-count' }, `  [${n}]`) : null,
-  ])
+function dbCount(v: number): number | null {
+  const n = info.value?.db_sizes?.[v]
+  return n != null ? n : null
 }
 
 async function loadInstances() {
@@ -83,7 +72,10 @@ async function loadInstances() {
 
 /** silent：5s 轮询用，不闪 loading 骨架/转圈（手动入口仍走 loading）；
  *  count：单页拉取量（轮询传当前已加载数，"加载更多"的成果不因刷新收缩） */
-async function search(reset = true, silent = false, count = 100) {
+async function search(reset = true, silent = false, count = 500) {
+  // 首屏 500：SCAN 单批 100 时同一前缀的分组会分批到达，树按已加载 key 分组
+  // 导致分组计数偏小（如 ALERT_CONFIG 只显示 1 个），点"加载更多"才补全。
+  // 内网库规模小，500 基本一次拉全；大库仍走分页。
   if (!siteStore.currentSiteId || !instanceId.value) return
   if (!silent) loading.value = true
   try {
@@ -137,7 +129,7 @@ watch(instanceId, () => {
   refreshDb()
 })
 
-// ---------- 树（':' 分层折叠 + 自然排序；点击整行任意位置展开/折叠） ----------
+// ---------- 树（':' 分层折叠 + 自然排序；点击整行展开/折叠） ----------
 
 interface TreeDir { key: string; label: string; dir: true; children: TreeNode[]; count: number }
 interface TreeLeaf { key: string; label: string; dir: false; item: KeyItem }
@@ -182,7 +174,20 @@ function buildTree(items: KeyItem[]): TreeNode[] {
   return sortTree(roots)
 }
 
-const treeData = computed(() => buildTree(keys.value) as unknown as TreeOption[])
+const treeData = computed(() => buildTree(keys.value))
+
+/** 深度展开的渲染序：目录在其展开时才进列表（自绘树替代 NTree，任意深度可用） */
+const flatTree = computed(() => {
+  const out: Array<{ node: TreeNode; depth: number }> = []
+  const walk = (nodes: TreeNode[], depth: number) => {
+    for (const n of nodes) {
+      out.push({ node: n, depth })
+      if (n.dir && expandedKeys.value.includes(n.key)) walk(n.children, depth + 1)
+    }
+  }
+  walk(treeData.value, 0)
+  return out
+})
 
 function toggleDir(node: TreeDir) {
   expandedKeys.value = expandedKeys.value.includes(node.key)
@@ -199,34 +204,16 @@ function expandAll() {
       walk(n.children)
     }
   }
-  walk(treeData.value as unknown as TreeNode[])
+  walk(treeData.value)
   expandedKeys.value = out
 }
 function collapseAll() {
   expandedKeys.value = []
 }
 
-function renderLabel({ option }: { option: TreeOption }) {
-  const node = option as unknown as TreeNode
-  if (node.dir) {
-    // label 铺满整行并接管点击（select 事件对已选中项不再触发，会导致"点两下"）
-    return h('span', {
-      class: 'tree-label tree-dir-row',
-      onClick: (e: Event) => {
-        e.stopPropagation()
-        toggleDir(node)
-      },
-    }, [
-      h('span', null, node.label),
-      h('span', { class: 'tree-count' }, ` (${node.count})`),
-    ])
-  }
-  return h('span', { class: 'tree-label mono', title: node.item.key }, node.label)
-}
-
-function onTreeSelect(_keys: Array<string>, options: Array<unknown>) {
-  const option = options?.[0] as unknown as TreeNode | null
-  if (option && !option.dir) selectKey(option.item)
+/** 弹窗不响应 Esc / 点遮罩关闭（对齐原 mask-closable=false / close-on-esc=false） */
+function blockDismiss(e: Event) {
+  e.preventDefault()
 }
 
 // ---------- 详情（左树右值；Text/Json 自动感知 + CodeMirror 直接编辑） ----------
@@ -352,6 +339,16 @@ function switchFormat(v: string) {
   }
 }
 
+/** 格式化当前 Json 编辑内容（不改变 diff 基线，仅重排缩进；仅 Json 视图可用） */
+function formatJson() {
+  if (format.value !== 'json') return
+  try {
+    editText.value = JSON.stringify(JSON.parse(editText.value), null, 2)
+  } catch {
+    message.warning(t('redis.jsonInvalidTitle'))
+  }
+}
+
 /** 保存前校验（两个入口共用）：jsonInvalid 覆盖 Json 视图语法错误 + JSON 值的 key
  *  在 Text 视图被改坏（loadedAsJson 基线，见 computed）——一律拦截 */
 function validateBeforeSave(): boolean {
@@ -364,7 +361,7 @@ function validateBeforeSave(): boolean {
 }
 
 /** 保存按钮入口：必须先校验再开确认弹窗（不能反过来在弹窗里报错）——
- *  message 挂在 App 内的 provider 下（不 teleport），弹窗遮罩 z-index 更高，会把 toast 盖住 */
+ *  toast 挂 body 顶层，但确认弹窗遮罩之上仍可能盖住，统一在弹窗外报错 */
 function openSaveConfirm() {
   if (validateBeforeSave()) confirmShow.value = true
 }
@@ -512,7 +509,7 @@ function userEditing(): boolean {
 async function autoRefresh() {
   if (document.hidden || !siteStore.currentSiteId || !instanceId.value) return
   // 单页拉满当前已加载数量：刷新不收缩"加载更多"的列表（树按 key 重建，展开态保留）
-  await search(true, true, Math.max(100, keys.value.length))
+  await search(true, true, Math.max(500, keys.value.length))
   loadInfo()
   const sel = selected.value
   if (!sel || userEditing()) return
@@ -590,185 +587,286 @@ const INFO_METRICS = computed(() => {
 </script>
 
 <template>
-  <n-space vertical :size="12">
-    <n-card size="small">
-      <!-- 允许换行：窄屏下控件折行而不是把页面撑出横向滚动条 -->
-      <n-space align="center" :size="12">
-        <span>{{ $t('redis.instance') }}</span>
-        <n-select v-model:value="instanceId" size="small" style="width: 200px; max-width: 100%"
-          :placeholder="$t('redis.selectRedis')" :options="instances" />
-        <span>{{ $t('redis.db') }}</span>
-        <n-select v-model:value="db" size="small" style="width: 160px; max-width: 100%" :options="DB_OPTIONS"
-          :render-label="renderDbLabel" @update:value="refreshDb" />
-        <n-input v-model:value="pattern" size="small" style="width: 240px; max-width: 100%"
-          :placeholder="$t('redis.search')" @keyup.enter="refreshDb" />
-        <n-button size="small" :loading="loading" :title="$t('redis.manualRefreshTip')" @click="refreshDb">{{ $t('common.refresh') }}</n-button>
+  <div class="flex flex-col gap-3">
+    <Card class="p-3">
+      <!-- 工具栏：实例 / DB / 搜索 / 刷新 收进一条紧凑控制条。
+           分组用分隔线而不是裸标签，窄屏才折行（标签 inline 在同一行内，不单独占位） -->
+      <div class="flex flex-wrap items-center gap-2">
+        <div class="tool-group">
+          <Server class="tool-icon" />
+          <Select
+            class="w-[190px] max-w-full"
+            :model-value="instanceId ?? ''"
+            @update:model-value="(v: unknown) => (instanceId = (v as string) || null)"
+          >
+            <SelectTrigger :placeholder="$t('redis.selectRedis')" />
+            <SelectContent>
+              <SelectItem v-for="o in instances" :key="o.value" :value="o.value">{{ o.label }}</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <span class="tool-sep" />
+        <div class="tool-group">
+          <Database class="tool-icon" />
+          <Select
+            class="w-[150px] max-w-full"
+            :model-value="String(db)"
+            @update:model-value="(v: unknown) => { db = Number(v); refreshDb() }"
+          >
+            <SelectTrigger :placeholder="`DB${db}`" />
+            <SelectContent>
+              <SelectItem v-for="o in DB_OPTIONS" :key="o.value" :value="String(o.value)">
+                DB{{ o.value }}<span v-if="dbCount(o.value) !== null" class="db-count">  [{{ dbCount(o.value) }}]</span>
+              </SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <span class="tool-sep" />
+        <!-- 搜索：图标 + 输入框 + 回车即查 -->
+        <div class="tool-group search-group">
+          <Search class="tool-icon" />
+          <Input
+            v-model="pattern"
+            class="w-[230px] max-w-full"
+            :placeholder="$t('redis.search')"
+            @keyup.enter="refreshDb"
+          />
+        </div>
+        <Button variant="outline" size="sm" :disabled="loading" :title="$t('redis.manualRefreshTip')" @click="refreshDb">
+          <LoaderCircle v-if="loading" class="animate-spin" />
+          {{ $t('common.refresh') }}
+        </Button>
         <tab-help topic="redis" />
         <span class="poll-note">{{ $t('redis.autoRefresh') }}</span>
-      </n-space>
-    </n-card>
+      </div>
+    </Card>
 
-    <n-card v-if="info" size="small">
-      <n-space :size="20">
-        <n-tooltip v-for="m in INFO_METRICS" :key="m.label" trigger="hover" :style="{ maxWidth: '320px' }">
-          <template #trigger>
+    <Card v-if="info" class="p-3">
+      <div class="flex flex-wrap gap-5">
+        <TooltipProvider>
+          <TooltipRoot v-for="m in INFO_METRICS" :key="m.label" :delay-duration="100">
+          <TooltipTrigger as-child>
             <span class="metric">
               <span class="metric-label">{{ m.label }}</span>
-              <b class="mono">{{ m.value }}</b>
+              <b class="metric-value font-mono">{{ m.value }}</b>
             </span>
-          </template>
-          <span class="info-tip">{{ m.tip }}</span>
-        </n-tooltip>
-      </n-space>
-    </n-card>
+          </TooltipTrigger>
+          <TooltipContent class="max-w-80 whitespace-pre-line">
+            <span class="text-xs">{{ m.tip }}</span>
+          </TooltipContent>
+          </TooltipRoot>
+        </TooltipProvider>
+      </div>
+    </Card>
 
     <!-- 左树右值（RedisDesktop 格局） -->
     <div class="split">
-      <n-card size="small" class="left-pane" :title="$t('redis.keys')">
-        <template #header-extra>
-          <!-- 头部动作条统一 tiny 文本按钮：新增是唯一真实动作（主色 ghost 弱化为轻量入口），
-               展开/合并为 quaternary 轻按钮，计数弱化放末尾；窄面板下中英文均单行放下 -->
-          <n-space align="center" :size="6" :wrap="false">
-            <n-button size="tiny" type="primary" ghost @click="openAdd">{{ $t('redis.add') }}</n-button>
-            <n-button size="tiny" quaternary @click="expandAll">{{ $t('redis.expandAll') }}</n-button>
-            <n-button size="tiny" quaternary @click="collapseAll">{{ $t('redis.collapseAll') }}</n-button>
-            <span class="keys-count">{{ $t('redis.keysCount', { n: keys.length }) }}</span>
-          </n-space>
-        </template>
-        <n-spin :show="loading && !!treeData.length">
-          <div class="tree-scroll">
-            <n-tree
-              v-if="treeData.length"
-              v-model:expanded-keys="expandedKeys"
-              :data="treeData"
-              key-field="key"
-              label-field="label"
-              children-field="children"
-              block-line
-              selectable
-              :render-label="renderLabel"
-              @update:selected-keys="onTreeSelect"
-            />
-            <!-- 首次加载骨架（替换白屏/转圈，ui-upgrade-design.md §6.2） -->
-            <n-skeleton v-else-if="loading" :repeat="5" text class="tree-skel" />
-            <div v-else style="text-align: center; color: var(--ops-text-3); padding: 24px 0">{{ $t('redis.noMatch') }}</div>
+      <Card class="left-pane">
+        <CardHeader class="pb-1">
+          <!-- CardTitle 默认插槽 / 按钮组走 action 插槽：CardHeader justify-between 把按钮推到行最右 -->
+          <CardTitle>{{ $t('redis.keys') }}</CardTitle>
+          <template #action>
+            <!-- 头部动作条：新增是唯一真实动作（主色），展开/收起轻量 outline；计数弱化放末尾 -->
+            <div class="flex flex-wrap items-center justify-end gap-1.5">
+              <Button variant="outline" size="sm" class="text-primary" @click="openAdd">{{ $t('redis.add') }}</Button>
+              <Button variant="ghost" size="sm" @click="expandAll">{{ $t('redis.expandAll') }}</Button>
+              <Button variant="ghost" size="sm" @click="collapseAll">{{ $t('redis.collapseAll') }}</Button>
+              <span class="keys-count">{{ $t('redis.keysCount', { n: keys.length }) }}</span>
+            </div>
+          </template>
+        </CardHeader>
+        <CardContent>
+          <div class="tree-scroll" style="position: relative">
+            <!-- 自绘折叠树（替代 NTree）：目录行整行点击展开/折叠，叶子行点击开详情；
+                 v-for 的 key 用 key 名（D: 前缀目录 / L: 前缀叶子），深浅展开态由 flatTree 决定 -->
+            <template v-if="treeData.length">
+              <template v-for="{ node, depth } in flatTree" :key="node.key">
+                <div
+                  v-if="node.dir"
+                  class="tree-row tree-dir"
+                  :style="{ paddingLeft: `${6 + depth * 16}px` }"
+                  @click="toggleDir(node)"
+                >
+                  <ChevronDown v-if="expandedKeys.includes(node.key)" class="tree-arrow flex-none" />
+                  <ChevronRight v-else class="tree-arrow flex-none" />
+                  <span class="truncate">{{ node.label }}</span>
+                  <span class="tree-count">({{ node.count }})</span>
+                </div>
+                <div
+                  v-else
+                  class="tree-row tree-leaf font-mono"
+                  :style="{ paddingLeft: `${6 + depth * 16}px` }"
+                  :class="{ active: selected?.key === node.item.key }"
+                  :title="node.item.key"
+                  @click="selectKey(node.item)"
+                >
+                  <!-- 与箭头等宽的透明占位，保证叶子文本与目录文本左缘对齐 -->
+                  <span class="size-4 flex-none" />
+                  <span class="truncate">{{ node.item.key }}</span>
+                </div>
+              </template>
+            </template>
+            <!-- 首次加载骨架 -->
+            <div v-else-if="loading" class="flex flex-col gap-2 p-1">
+              <Skeleton v-for="i in 5" :key="i" class="h-4 w-full" />
+            </div>
+            <div v-else class="py-6 text-center text-sm text-muted-foreground">{{ $t('redis.noMatch') }}</div>
           </div>
-        </n-spin>
-        <div v-if="cursor !== 0" style="text-align: center; margin-top: 8px">
-          <n-button size="small" :loading="loading" @click="search(false)">{{ $t('redis.loadMore') }}</n-button>
-        </div>
-      </n-card>
+          <div v-if="cursor !== 0" class="mt-2 text-center">
+            <Button variant="outline" size="sm" :disabled="loading" @click="search(false)">
+              <LoaderCircle v-if="loading" class="animate-spin" />
+              {{ $t('redis.loadMore') }}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
 
-      <n-card size="small" class="right-pane" :title="$t('redis.value')">
-        <n-spin :show="detailLoading">
+      <Card class="right-pane">
+        <CardHeader class="pb-1"><CardTitle>{{ $t('redis.value') }}</CardTitle></CardHeader>
+        <CardContent style="position: relative">
+          <div v-if="detailLoading" class="absolute inset-0 z-10 flex items-center justify-center bg-card/70">
+            <LoaderCircle class="size-6 animate-spin text-muted-foreground" />
+          </div>
           <template v-if="detail">
             <!-- 头部：彩色类型徽标 + key + TTL/内存徽章 + 刷新 -->
             <div class="detail-head">
-              <n-tag size="small" :class="`type-${detail.type}`" :bordered="false">
-                {{ detail.type.toUpperCase() }}
-              </n-tag>
-              <span class="detail-key mono">{{ detail.key }}</span>
-              <n-tag size="small" :bordered="false" round>TTL {{ fmtTtl(currentTtl) }}</n-tag>
-              <n-tag size="small" :bordered="false" round>
+              <Badge size="sm" :class="`type-${detail.type}`">{{ detail.type.toUpperCase() }}</Badge>
+              <span class="detail-key font-mono">{{ detail.key }}</span>
+              <Badge variant="secondary" size="sm" class="rounded-full">TTL {{ fmtTtl(currentTtl) }}</Badge>
+              <Badge variant="secondary" size="sm" class="rounded-full">
                 {{ $t('redis.mem') }} {{ detail.memory_usage != null ? fmtBytes(detail.memory_usage) : '?' }}
-              </n-tag>
-              <div style="flex: 1" />
-              <n-button size="small" @click="refreshValue">{{ $t('common.refresh') }}</n-button>
+              </Badge>
+              <div class="flex-1" />
+              <Button variant="outline" size="sm" @click="refreshValue">{{ $t('common.refresh') }}</Button>
             </div>
 
-            <!-- Text / Json：CodeMirror 高亮 + 实时校验，两种视图都可直接编辑 -->
+            <!-- Text / Json 切换 + CodeMirror（两种视图都可直接编辑） -->
             <div class="value-toolbar">
-              <n-radio-group :value="format" size="small" @update:value="switchFormat">
-                <n-radio-button value="text">Text</n-radio-button>
-                <n-radio-button value="json">Json</n-radio-button>
-              </n-radio-group>
-              <div style="flex: 1" />
+              <div class="fmt-toggle">
+                <button type="button" class="fmt-btn" :class="{ on: format === 'text' }" @click="switchFormat('text')">Text</button>
+                <button type="button" class="fmt-btn" :class="{ on: format === 'json' }" @click="switchFormat('json')">Json</button>
+              </div>
+              <div class="flex-1" />
+              <Button variant="outline" size="sm" :disabled="format !== 'json'" :title="$t('redis.formatJson')" @click="formatJson">
+                <WandSparkles />
+                {{ $t('redis.formatJson') }}
+              </Button>
+            </div>
+
+            <!-- JSON 语法错误横幅（编辑器上方，与编辑动线零距离）：编辑器内有红波浪线
+                 +浅红底色，这里给出行/列定位（Json 视图，或 JSON 值的 key 在 Text 视图被改坏）。
+                 放在编辑器之上是因为错误提示必须紧跟用户视线焦点，放下面会被操作栏挤到视野外 -->
+            <div v-if="jsonInvalid" :class="['json-banner', { shake: bannerShake }]">
+              <AlertCircle class="json-banner-icon" />
+              {{ $t('redis.jsonInvalidTitle') }} — {{ jsonInvalid }}
             </div>
 
             <diff-json-editor v-if="format === 'json'" :original="originalText" v-model="editText" height="420px" />
-            <n-input v-else v-model:value="editText" type="textarea"
-              :rows="16" :input-props="{ spellcheck: false }" class="mono" />
+            <Textarea v-else v-model="editText" :rows="16" :spellcheck="false" class="font-mono" />
 
-            <!-- JSON 语法错误横幅（编辑器与操作行之间，紧凑样式）：编辑器内有红波浪线
-                 +浅红底色，这里给出行/列定位（Json 视图，或 JSON 值的 key 在 Text 视图被改坏） -->
-            <n-alert v-if="jsonInvalid" type="error" :show-icon="false" :class="{ shake: bannerShake }"
-              style="margin-top: 6px" :theme-overrides="{ padding: '4px 12px', fontSize: '12px' }">
-              {{ $t('redis.jsonInvalidTitle') }} — {{ jsonInvalid }}
-            </n-alert>
-
-            <!-- TTL / 删除 / 保存（按钮规格统一：small 实心） -->
+            <!-- TTL / 删除 / 保存（small 实心） -->
             <div class="detail-actions">
               <span>{{ $t('redis.ttlSec') }}</span>
-              <n-input-number v-model:value="editTtl" size="small" :min="1" style="width: 130px"
-                :placeholder="$t('redis.ttlPh')" />
-              <n-button size="small" @click="applyTtl">{{ $t('redis.applyTtl') }}</n-button>
-              <div style="flex: 1" />
+              <Input
+                :model-value="editTtl ?? ''"
+                type="number"
+                :min="1"
+                class="w-[130px]"
+                :placeholder="$t('redis.ttlPh')"
+                @update:model-value="(v: unknown) => (editTtl = v === '' ? null : Number(v))"
+                @keydown.enter="applyTtl"
+              />
+              <Button variant="outline" size="sm" @click="applyTtl">{{ $t('redis.applyTtl') }}</Button>
+              <div class="flex-1" />
               <countdown-confirm :label="$t('common.delete')" :target="detail.key" :seconds="3" @confirm="deleteKey" />
               <!-- 不禁用按钮：点击时校验并弹明确错误（禁用会让用户不知道为何点不了）；
-                   校验必须在开弹窗前做：弹窗内 toast 会被遮罩盖住（见 openSaveConfirm 注释） -->
-              <n-button size="small" type="primary" :loading="saving"
-                @click="openSaveConfirm">{{ $t('common.save') }}</n-button>
+                   校验必须在开弹窗前做（见 openSaveConfirm 注释） -->
+              <Button size="sm" :disabled="saving" @click="openSaveConfirm">
+                <LoaderCircle v-if="saving" class="animate-spin" />
+                {{ $t('common.save') }}
+              </Button>
             </div>
           </template>
-          <div v-else style="text-align: center; color: #999; padding: 60px 0">
+          <div v-else class="py-15 text-center text-sm text-muted-foreground">
             {{ $t('redis.clickHint') }}
           </div>
-        </n-spin>
-      </n-card>
+        </CardContent>
+      </Card>
     </div>
 
     <!-- 保存确认对话框（PRD §11.4） -->
-    <n-modal :mask-closable="false" :close-on-esc="false" v-model:show="confirmShow" preset="card" :title="$t('redis.confirmSave')" style="width: 520px; max-width: 94vw">
-      <p>{{ $t('redis.writeKey') }} <b class="mono">{{ detail?.key }}</b></p>
-      <template #footer>
-        <div style="display: flex; justify-content: end; gap: 8px">
-          <n-button size="small" @click="confirmShow = false">{{ $t('common.cancel') }}</n-button>
-          <n-button size="small" type="primary" :loading="saving"
-            @click="saveValue">{{ $t('redis.confirmWrite') }}</n-button>
+    <Dialog :open="confirmShow" @update:open="(v: boolean) => (confirmShow = v)">
+      <DialogContent class="w-[520px] max-w-[94vw]" @escape-key-down="blockDismiss" @interact-outside="blockDismiss">
+        <DialogHeader>
+          <DialogTitle>{{ $t('redis.confirmSave') }}</DialogTitle>
+        </DialogHeader>
+        <p class="text-sm">{{ $t('redis.writeKey') }} <b class="font-mono">{{ detail?.key }}</b></p>
+        <div class="flex justify-end gap-2">
+          <Button variant="outline" size="sm" @click="confirmShow = false">{{ $t('common.cancel') }}</Button>
+          <Button size="sm" :disabled="saving" @click="saveValue">
+            <LoaderCircle v-if="saving" class="animate-spin" />
+            {{ $t('redis.confirmWrite') }}
+          </Button>
         </div>
-      </template>
-    </n-modal>
+      </DialogContent>
+    </Dialog>
 
     <!-- 新增 Key：按数据类型 set 建 key（非 string 由后端按行解析文本）+ 可选 expire 设 TTL -->
-    <n-modal :mask-closable="false" :close-on-esc="false" v-model:show="addShow" preset="card" :title="$t('redis.addKey')" style="width: 520px; max-width: 94vw">
-      <div class="add-field">
-        <span>{{ $t('redis.keyName') }}</span>
-        <n-input v-model:value="addKeyName" class="mono" :placeholder="$t('redis.keyNamePh')"
-          :input-props="{ spellcheck: false }" />
-      </div>
-      <div class="add-field">
-        <span>{{ $t('redis.keyStruct') }}</span>
-        <n-select v-model:value="addStruct" size="small" :options="STRUCT_OPTIONS" />
-      </div>
-      <!-- Text/Json 只是 string 类型的值格式提示；list/set/hash/zset 均为按行文本 -->
-      <div v-if="addStruct === 'string'" class="add-field">
-        <span>{{ $t('redis.keyType') }}</span>
-        <n-radio-group v-model:value="addFormat" size="small">
-          <n-radio-button value="text">Text</n-radio-button>
-          <n-radio-button value="json">Json</n-radio-button>
-        </n-radio-group>
-      </div>
-      <div class="add-field">
-        <span>{{ $t('redis.initialValue') }}</span>
-        <n-input v-model:value="addValue" type="textarea" :rows="6" class="mono"
-          :placeholder="addPlaceholder" :input-props="{ spellcheck: false }" />
-        <n-alert v-if="addJsonInvalid" type="error" :show-icon="false" style="margin-top: 6px">
-          {{ $t('redis.jsonInvalidTitle') }} — {{ addJsonInvalid }}
-        </n-alert>
-      </div>
-      <div class="add-field">
-        <span>{{ $t('redis.ttlOptional') }}</span>
-        <n-input-number v-model:value="addTtl" size="small" :min="1" style="width: 100%" />
-      </div>
-      <template #footer>
-        <div style="display: flex; justify-content: end; gap: 8px">
-          <n-button size="small" @click="addShow = false">{{ $t('common.cancel') }}</n-button>
-          <n-button size="small" type="primary" :loading="creating"
-            @click="createKey">{{ $t('common.save') }}</n-button>
+    <Dialog :open="addShow" @update:open="(v: boolean) => (addShow = v)">
+      <DialogContent class="w-[520px] max-w-[94vw]" @escape-key-down="blockDismiss" @interact-outside="blockDismiss">
+        <DialogHeader>
+          <DialogTitle>{{ $t('redis.addKey') }}</DialogTitle>
+        </DialogHeader>
+        <div class="add-field">
+          <span>{{ $t('redis.keyName') }}</span>
+          <Input v-model="addKeyName" class="font-mono" :placeholder="$t('redis.keyNamePh')" :spellcheck="false" />
         </div>
-      </template>
-    </n-modal>
-  </n-space>
+        <div class="add-field">
+          <span>{{ $t('redis.keyStruct') }}</span>
+          <Select :model-value="addStruct" @update:model-value="(v: unknown) => (addStruct = v as 'string' | 'list' | 'set' | 'hash' | 'zset')">
+            <SelectTrigger :placeholder="addStruct" />
+            <SelectContent>
+              <SelectItem v-for="o in STRUCT_OPTIONS" :key="o.value" :value="o.value">{{ o.label }}</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <!-- Text/Json 只是 string 类型的值格式提示；list/set/hash/zset 均为按行文本 -->
+        <div v-if="addStruct === 'string'" class="add-field">
+          <span>{{ $t('redis.keyType') }}</span>
+          <div class="fmt-toggle">
+            <button type="button" class="fmt-btn" :class="{ on: addFormat === 'text' }" @click="addFormat = 'text'">Text</button>
+            <button type="button" class="fmt-btn" :class="{ on: addFormat === 'json' }" @click="addFormat = 'json'">Json</button>
+          </div>
+        </div>
+        <div class="add-field">
+          <span>{{ $t('redis.initialValue') }}</span>
+          <div v-if="addJsonInvalid" :class="['json-banner', 'add-json-banner']">
+            <AlertCircle class="json-banner-icon" />
+            {{ $t('redis.jsonInvalidTitle') }} — {{ addJsonInvalid }}
+          </div>
+          <Textarea v-model="addValue" :rows="6" class="font-mono" :placeholder="addPlaceholder" :spellcheck="false" />
+        </div>
+        <div class="add-field">
+          <span>{{ $t('redis.ttlOptional') }}</span>
+          <Input
+            :model-value="addTtl ?? ''"
+            type="number"
+            :min="1"
+            class="w-full"
+            placeholder="TTL"
+            @update:model-value="(v: unknown) => (addTtl = v === '' ? null : Number(v))"
+          />
+        </div>
+        <div class="flex justify-end gap-2">
+          <Button variant="outline" size="sm" @click="addShow = false">{{ $t('common.cancel') }}</Button>
+          <Button size="sm" :disabled="creating" @click="createKey">
+            <LoaderCircle v-if="creating" class="animate-spin" />
+            {{ $t('common.save') }}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  </div>
 </template>
 
 <style scoped>
@@ -788,7 +886,7 @@ const INFO_METRICS = computed(() => {
   min-width: 0;
 }
 .tree-scroll {
-  max-height: calc(100vh - 320px);
+  max-height: calc(100vh - 100px);
   overflow: auto;
 }
 /* 窄屏竖向堆叠：树面板占满宽度并限高，保证值面板可见（不出现页面级横向滚动条） */
@@ -803,18 +901,71 @@ const INFO_METRICS = computed(() => {
     max-height: 40vh;
   }
 }
-/* 顶栏自动刷新频率注记（对齐 Server 页 poll-note） */
+.tool-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+}
+.tool-icon {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  color: var(--ops-text-3);
+}
+.tool-sep {
+  width: 1px;
+  height: 18px;
+  flex: none;
+  background: var(--ops-border);
+  margin: 0 2px;
+}
+.search-group :deep(input) {
+  padding-left: 8px;
+}
 .poll-note {
   color: var(--ops-text-3);
   font-size: 12px;
 }
-/* Keys 头部计数（与按钮同高垂直居中，弱化灰） */
 .keys-count {
-  color: #999;
+  color: var(--ops-text-3);
   font-size: 12px;
 }
-.mono {
-  font-family: ui-monospace, Consolas, monospace;
+.tree-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  padding: 0 6px;
+  border-radius: 4px;
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+  user-select: none;
+  transition: background 120ms;
+}
+.tree-row:hover {
+  background: var(--ops-surface-2);
+}
+.tree-row.active {
+  background: color-mix(in srgb, var(--primary) 12%, transparent);
+}
+.tree-arrow {
+  width: 1rem;
+  height: 1rem;
+  color: var(--ops-text-3);
+}
+.tree-dir:hover .tree-arrow {
+  color: var(--ops-text-1);
+}
+.tree-leaf {
+  color: var(--ops-text-2);
+}
+.tree-count {
+  color: var(--ops-text-3);
+  font-size: 12px;
+  margin-left: 4px;
+  flex: none;
 }
 .detail-head {
   display: flex;
@@ -828,7 +979,6 @@ const INFO_METRICS = computed(() => {
   font-weight: 600;
   word-break: break-all;
 }
-/* 类型徽标着色（对齐 RedisDesktop 的类型辨识度） */
 .type-string { background: #18a058; color: #fff; }
 .type-hash { background: #0b63ce; color: #fff; }
 .type-list { background: #f0a020; color: #fff; }
@@ -840,12 +990,52 @@ const INFO_METRICS = computed(() => {
   gap: 12px;
   margin-bottom: 8px;
 }
+/* Text/Json 切换（自绘分段按钮，替代 NRadioGroup） */
+.fmt-toggle {
+  display: inline-flex;
+  border: 1px solid var(--ops-border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.fmt-btn {
+  padding: 3px 12px;
+  font-size: 12px;
+  cursor: pointer;
+  background: transparent;
+  color: var(--ops-text-2);
+  border: none;
+}
+.fmt-btn.on {
+  background: var(--primary);
+  color: var(--primary-foreground);
+}
+.json-banner {
+  /* 位于编辑器上方：下边距与编辑器拉开、上边距贴住工具栏 */
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 8px;
+  padding: 6px 12px;
+  font-size: 12px;
+  border-radius: 4px;
+  color: var(--ops-critical);
+  background: color-mix(in srgb, var(--ops-critical) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--ops-critical) 30%, transparent);
+}
+.json-banner-icon {
+  width: 14px;
+  height: 14px;
+  flex: none;
+}
 .detail-actions {
   display: flex;
   align-items: center;
   gap: 12px;
   margin-top: 12px;
   flex-wrap: wrap;
+}
+.add-json-banner {
+  margin-top: 6px;
 }
 .add-field {
   display: flex;
@@ -867,40 +1057,19 @@ const INFO_METRICS = computed(() => {
   border-bottom: 1px dashed var(--ops-border);
   padding-bottom: 1px;
 }
-.metric b {
+.metric-value {
   color: var(--ops-text-1);
-}
-/* info 指标 tooltip 正文：i18n 文案可带 \n 分行（碎片率 tip 用），其余单行不受影响 */
-.info-tip {
-  white-space: pre-line;
-}
-.metric .mono {
-  font-family: var(--ops-font-mono);
   font-variant-numeric: tabular-nums;
+}
+.db-count {
+  color: var(--ops-text-3);
+  font-size: 12px;
+  margin-left: 8px;
 }
 </style>
 
 <style>
-/* 树节点：文件夹与叶子样式统一；目录行 label 铺满整行接管点击 */
-.tree-label {
-  font-size: 13px;
-}
-.tree-dir-row {
-  display: block;
-  cursor: pointer;
-}
-.tree-count {
-  color: #999;
-  font-size: 12px;
-  margin-left: 6px;
-}
-/* DB 下拉选项：DB5 [102]，数字灰色弱化（dropdown 挂 body，样式需全局） */
-.db-option .db-count {
-  color: #b0b3b8;
-  font-size: 12px;
-  margin-left: 8px;
-}
-/* JSON 错误横幅抖动（保存被拦截时的就地反馈；keyframes 放全局避免 scoped 改名） */
+/* JSON 错误横幅抖动（保存被拦截时的就地反馈） */
 .shake {
   animation: ops-shake 0.3s ease-in-out 1;
 }

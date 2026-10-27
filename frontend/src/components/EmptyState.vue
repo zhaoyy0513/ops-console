@@ -1,6 +1,5 @@
 <script setup lang="ts">
-import { NIcon } from 'naive-ui'
-import { FileTrayOutline } from '@vicons/ionicons5'
+import { Inbox } from 'lucide-vue-next'
 
 defineProps<{
   /** 主文案 */
@@ -12,7 +11,7 @@ defineProps<{
 
 <template>
   <div class="empty-state">
-    <n-icon :size="36" class="empty-icon"><FileTrayOutline /></n-icon>
+    <Inbox class="empty-icon size-9" :stroke-width="1.5" />
     <div class="empty-title">{{ title }}</div>
     <div v-if="desc" class="empty-desc">{{ desc }}</div>
     <slot />

@@ -3,10 +3,10 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { NMessageProvider } from 'naive-ui'
 import { i18n } from '../../i18n'
 import { useSiteStore } from '../../stores/site'
 
+vi.mock('@/lib/message', () => ({ message: { success: vi.fn(), error: vi.fn(), warning: vi.fn(), info: vi.fn() } }))
 vi.mock('../../api', () => ({ default: { post: vi.fn().mockResolvedValue({ valid: true, next_runs: [] }) } }))
 vi.mock('./api', () => ({
   sshApi: {
@@ -33,13 +33,10 @@ describe('SshView render regression', () => {
     const store = useSiteStore()
     store.setSite('sz')
 
-    const wrapper = mount(
-      {
-        components: { SshView, NMessageProvider },
-        template: '<n-message-provider><SshView /></n-message-provider>',
-      },
-      { global: { plugins: [i18n] }, attachTo: document.body },
-    )
+    const wrapper = mount(SshView, {
+      global: { plugins: [i18n] },
+      attachTo: document.body,
+    })
     await flushPromises()
 
     // 打开新增脚本弹窗
@@ -48,7 +45,7 @@ describe('SshView render regression', () => {
     await btn!.trigger('click')
     await flushPromises()
 
-    // 弹窗经 teleport 挂到 body：断言“定时任务”开关与 cron 控件在渲染结果中
+    // 弹窗经 DialogPortal teleport 挂到 body：断言"定时任务"开关与 cron 控件在渲染结果中
     const html = document.body.innerHTML
     expect(html).toContain('定时任务')
     // 调试输出：确认开关控件的真实 DOM 形态

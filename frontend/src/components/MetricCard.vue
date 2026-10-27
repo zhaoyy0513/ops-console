@@ -5,7 +5,6 @@
  *  聚光效果（Phase D §5.2④）同为 opt-in：仅 hoverable（可点击）卡片跟随
  *  鼠标更新 --sx/--sy，极淡一层光斑；非交互卡完全素面。 */
 import type { Component } from 'vue'
-import { NIcon } from 'naive-ui'
 import CountUp from './bits/CountUp.vue'
 
 const props = withDefaults(
@@ -42,7 +41,9 @@ function onSpotMove(e: MouseEvent) {
     <div v-if="barColor" class="mc-bar" :style="{ background: barColor }" />
     <div v-if="hoverable" class="mc-spot" aria-hidden="true" />
     <div class="mc-head">
-      <n-icon v-if="icon" :component="icon" :size="14" class="mc-icon" />
+      <span v-if="icon" class="mc-icon inline-flex size-[14px] shrink-0 [&_svg]:size-full">
+        <component :is="icon" />
+      </span>
       <span class="mc-title">{{ title }}</span>
     </div>
     <!-- 无 value 且 slot 承载内容（如 donut/网络双行）时不渲染数值行，避免出现孤立的 "?" -->

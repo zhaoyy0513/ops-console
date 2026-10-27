@@ -1,7 +1,10 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { NButton, NIcon, NSpace, NTag, NTooltip } from 'naive-ui'
-import { CheckmarkCircleOutline, CloseCircleOutline } from '@vicons/ionicons5'
+import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
+import { TooltipProvider, TooltipRoot, TooltipTrigger } from 'reka-ui'
+import { TooltipContent } from '@/components/ui/tooltip'
+import { CircleCheck, CircleX, LoaderCircle } from 'lucide-vue-next'
 import { i18n } from '../i18n'
 import api from '../api'
 
@@ -48,38 +51,36 @@ async function run() {
 </script>
 
 <template>
-  <n-space align="center" :size="8" :wrap="false">
-    <n-button size="small" :loading="loading" @click="run">{{ t('common.test') }}</n-button>
-    <n-tooltip v-if="result" trigger="hover">
-      <template #trigger>
-        <n-tag
-          class="result-tag"
-          :class="{ shake: !result.success }"
-          :type="result.success ? 'success' : 'error'"
-          size="small"
-          :bordered="false"
-        >
-          <span class="result-inner">
-            <n-icon :component="result.success ? CheckmarkCircleOutline : CloseCircleOutline" />
-            {{ result.success ? 'OK' : 'FAILED' }} · {{ shortMessage }}
-            <span class="latency">{{ result.latency_ms }}ms</span>
-          </span>
-        </n-tag>
-      </template>
-      {{ result.message }} <!-- 悬浮看全文，标签内截断不撑破弹窗 -->
-    </n-tooltip>
-  </n-space>
+  <div class="inline-flex items-center gap-2">
+    <Button variant="outline" size="sm" :disabled="loading" @click="run">
+      <LoaderCircle v-if="loading" class="size-3.5 animate-spin" />
+      {{ t('common.test') }}
+    </Button>
+    <TooltipProvider>
+      <TooltipRoot v-if="result">
+        <TooltipTrigger as-child>
+          <Badge
+            class="max-w-[280px] cursor-default"
+            :class="{ shake: !result.success }"
+            :variant="result.success ? 'success' : 'critical'"
+          >
+            <span class="result-inner min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">
+              <component :is="result.success ? CircleCheck : CircleX" class="size-3 shrink-0" />
+              {{ result.success ? 'OK' : 'FAILED' }} · {{ shortMessage }}
+              <span class="latency">{{ result.latency_ms }}ms</span>
+            </span>
+          </Badge>
+        </TooltipTrigger>
+        <TooltipContent class="max-w-sm whitespace-pre-wrap break-all">
+          <!-- 悬浮看全文，标签内截断不撑破弹窗 -->
+          {{ result.message }}
+        </TooltipContent>
+      </TooltipRoot>
+    </TooltipProvider>
+  </div>
 </template>
 
 <style scoped>
-.result-tag {
-  max-width: 280px;
-}
-.result-tag :deep(.n-tag__content) {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 .result-inner {
   display: inline-flex;
   align-items: center;

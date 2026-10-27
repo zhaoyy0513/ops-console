@@ -1,7 +1,11 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import { NCard, NModal, NSpin, NTag, NIcon, useMessage } from 'naive-ui'
-import { DocumentTextOutline, LinkOutline } from '@vicons/ionicons5'
+import { ExternalLink, FileText, Link, Maximize2, Minimize2 } from 'lucide-vue-next'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { message } from '@/lib/message'
 import EmptyState from '../../components/EmptyState.vue'
 import TabHelp from '../../components/TabHelp.vue'
 import FadeContent from '../../components/bits/FadeContent.vue'
@@ -10,7 +14,6 @@ import { useSiteStore } from '../../stores/site'
 import { pageApi, type PageResource } from './api'
 
 const siteStore = useSiteStore()
-const message = useMessage()
 
 const pages = ref<PageResource[]>([])
 const loading = ref(false)
@@ -34,14 +37,36 @@ async function load() {
 onMounted(load)
 watch(() => siteStore.currentSiteId, load)
 
-/** 跳转逻辑：URL 型新开标签页；HTML 型在站内 sandbox iframe 渲染 */
+/** 预览：URL 型与 HTML 型统一在站内弹窗打开（iframe）。
+ *  URL 型走 src（受目标站 X-Frame-Options 限制，可能空白）→ 弹窗内保留"新标签打开"兜底。 */
 function open(p: PageResource) {
-  if (p.kind === 'html') {
-    active.value = p
-    showHtml.value = true
+  active.value = p
+  showHtml.value = true
+}
+
+/** 新标签打开（两种类型都支持）：url 型直接开；html 型转 Blob URL（内容快照，
+ *  打开的是生成瞬间的副本）。Blob 用完即回收 */
+function openExternal() {
+  const p = active.value
+  if (!p) return
+  if (p.kind === 'url' && p.url) {
+    window.open(p.url, '_blank', 'noopener')
     return
   }
-  if (p.url) window.open(p.url, '_blank', 'noopener')
+  if (p.html) {
+    const blob = new Blob([p.html], { type: 'text/html;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    window.open(url, '_blank', 'noopener')
+    setTimeout(() => URL.revokeObjectURL(url), 60_000)
+  }
+}
+
+// ---- 弹窗全屏：CSS 铺屏（page-fullscreen 类），不是浏览器 F11——
+// 弹窗自身铺满当前视口，内容随之拉伸；Esc 关弹窗行为不变 ----
+const isFullscreen = ref(false)
+
+function toggleFullscreen() {
+  isFullscreen.value = !isFullscreen.value
 }
 
 /** 卡片聚光跟随：只写 CSS 变量，不进响应式状态、不触发重渲 */
@@ -52,27 +77,41 @@ function onCardMove(e: MouseEvent) {
   el.style.setProperty('--py', `${e.clientY - r.top}px`)
 }
 
+/** 危险确认弹窗防误关（对齐原 modal mask-closable=false / close-on-esc=false） */
+function blockDismiss(e: Event) {
+  e.preventDefault()
+}
+
 const activeSrcDoc = computed(() => active.value?.html ?? '')
+/** URL 型页面：站内 iframe 预览（目标站可能禁止嵌入，弹窗内提供外链兜底） */
+const isUrlKind = computed(() => active.value?.kind === 'url')
 
 </script>
 
 <template>
-  <n-card size="small">
-    <template #header-extra>
-      <span style="color: var(--ops-text-3); font-size: 12px">{{ $t('page.hintShort') }}</span>
-      <tab-help topic="page" />
-    </template>
-    <n-spin :show="loading">
-      <div v-if="pages.length" class="page-grid">
+  <Card>
+    <CardHeader class="flex-row items-center justify-between">
+      <CardTitle>{{ $t('page.title') }}</CardTitle>
+      <span class="flex items-center gap-2">
+        <span class="text-xs text-muted-foreground">{{ $t('page.hintShort') }}</span>
+        <tab-help topic="page" />
+      </span>
+    </CardHeader>
+    <CardContent>
+      <div v-if="loading" class="flex justify-center py-12">
+        <span class="inline-block size-6 animate-spin rounded-full border-2 border-border border-t-muted-foreground" />
+      </div>
+      <div v-else-if="pages.length" class="page-grid">
         <fade-content v-for="(p, i) in pages" :key="p.id" :delay="i * 60" class="page-fade">
           <div class="page-card" @click="open(p)" @mousemove="onCardMove">
             <div class="pc-head">
               <span class="pc-title">{{ p.name }}</span>
               <span class="pc-kind">
-                <n-icon :size="13" :component="p.kind === 'html' ? DocumentTextOutline : LinkOutline" />
-                <n-tag size="small" round :bordered="false" :type="p.kind === 'html' ? 'default' : 'info'">
+                <component :is="p.kind === 'html' ? FileText : Link" class="size-3.5" />
+                <Badge size="sm" :variant="p.kind === 'html' ? 'secondary' : 'default'">
                   {{ p.kind === 'html' ? $t('page.kindHtml') : $t('page.kindUrl') }}
-                </n-tag>
+                </Badge>
+                <Maximize2 class="pc-expand" :title="$t('page.preview')" />
               </span>
             </div>
             <div class="pc-desc">{{ p.description }}</div>
@@ -83,34 +122,50 @@ const activeSrcDoc = computed(() => active.value?.html ?? '')
         </fade-content>
       </div>
       <empty-state v-else :title="$t('page.empty')" />
-    </n-spin>
-  </n-card>
+    </CardContent>
+  </Card>
 
   <!-- HTML 型页面站内预览：sandbox 隔离（allow-scripts 但不 allow-same-origin，
-       脚本可运行却拿不到本域 cookie/storage——内部工具嵌入不受信页面的安全底线）。
-       缩放淡入进场：naive 内置 zoomed-out-transition，借 Bits「缩放进容器」的体感 -->
-  <n-modal
-    :mask-closable="false"
-    :close-on-esc="false"
-    v-model:show="showHtml"
-    preset="card"
-    :title="active?.name ?? ''"
-    transition="scale"
-    style="width: 92vw; max-height: 88vh; display: flex; flex-direction: column"
-  >
-    <iframe
-      v-if="active"
-      class="html-frame"
-      sandbox="allow-scripts"
-      :srcdoc="activeSrcDoc"
-      :title="active.name"
-    />
-    <template #footer>
-      <div class="frame-foot">
+       脚本可运行却拿不到本域 cookie/storage——内部工具嵌入不受信页面的安全底线） -->
+  <Dialog :open="showHtml" @update:open="showHtml = $event">
+    <DialogContent
+      class="flex h-[88vh] w-[92vw] max-w-none flex-col overflow-hidden"
+      :class="isFullscreen && 'page-fullscreen'"
+      @escape-key-down="blockDismiss"
+      @interact-outside="blockDismiss"
+    >
+      <DialogHeader>
+        <DialogTitle>{{ active?.name ?? '' }}</DialogTitle>
+      </DialogHeader>
+      <!-- URL 型：直接 src 嵌入（无 sandbox——目标站需自带隔离；禁止嵌入时显示兜底按钮） -->
+      <iframe
+        v-if="active && isUrlKind && active.url"
+        class="html-frame min-h-0 w-full flex-1"
+        :src="active.url"
+        :title="active.name"
+      />
+      <iframe
+        v-else-if="active"
+        class="html-frame min-h-0 w-full flex-1"
+        sandbox="allow-scripts"
+        :srcdoc="activeSrcDoc"
+        :title="active.name"
+      />
+      <DialogFooter class="flex-row items-center justify-between pt-2">
         <span class="frame-note">{{ $t('page.frameNote') }}</span>
-      </div>
-    </template>
-  </n-modal>
+        <span class="flex items-center gap-2">
+          <Button variant="outline" size="sm" :title="isFullscreen ? $t('page.exitFullscreen') : $t('page.fullscreen')" @click="toggleFullscreen">
+            <Minimize2 v-if="isFullscreen" />
+            <Maximize2 v-else />
+          </Button>
+          <Button v-if="active" variant="outline" size="sm" @click="openExternal">
+            <ExternalLink />
+            {{ $t('page.openExternal') }}
+          </Button>
+        </span>
+      </DialogFooter>
+    </DialogContent>
+  </Dialog>
 </template>
 
 <style scoped>
@@ -203,6 +258,17 @@ const activeSrcDoc = computed(() => active.value?.html ?? '')
   flex: none;
   color: var(--ops-text-3);
 }
+/* 放大图标：默认淡显，卡片 hover 时提亮，提示可点开预览 */
+.pc-expand {
+  width: 14px;
+  height: 14px;
+  margin-left: 2px;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+.page-card:hover .pc-expand {
+  opacity: 0.7;
+}
 .pc-desc {
   font-size: 12px;
   color: var(--ops-text-2);
@@ -219,16 +285,9 @@ const activeSrcDoc = computed(() => active.value?.html ?? '')
   overflow: hidden;
 }
 .html-frame {
-  width: 100%;
-  height: 72vh;
   border: 1px solid var(--ops-border);
   border-radius: 4px;
   background: var(--ops-surface);
-}
-.frame-foot {
-  display: flex;
-  justify-content: flex-end;
-  width: 100%;
 }
 .frame-note {
   color: var(--ops-text-3);

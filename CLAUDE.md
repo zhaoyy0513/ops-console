@@ -11,7 +11,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ```bash
 # 后端（Python 3.13 + uv）
 uv sync                                                       # 装依赖到 .venv
-uv run --env-file .env python -m uvicorn backend.app.main:app --host 0.0.0.0 --port 8000
+uv run --env-file .env python -m uvicorn backend.app.main:app --host 0.0.0.0 --port 25088
 uv run pytest backend/tests -q                                # 后端测试（fakeredis，不依赖真实服务）
 uv run pytest backend/tests/test_device.py -q                 # 单个文件
 uv run pytest backend/tests/test_device.py::test_xxx -q       # 单个用例

@@ -1,10 +1,6 @@
-/* 专业内部工具风格（PRD §22）：克制、表格为主、状态色不滥用 */
-* {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
-}
-
+/* 专业内部工具风格（PRD §22）：克制、表格为主、状态色不滥用。
+   全局 reset 交由 Tailwind preflight（main.css）——此文件不再写 * 选择器规则，
+   unlayered 的 * { margin/padding:0 } 会以更高优先级压制所有 Tailwind 间距类。 */
 html,
 body,
 #app {

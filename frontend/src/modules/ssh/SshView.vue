@@ -1,23 +1,22 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { Expand, LoaderCircle, Shrink } from 'lucide-vue-next'
+import { message } from '@/lib/message'
 import {
-  NButton,
-  NCard,
-  NForm,
-  NFormItem,
-  NIcon,
-  NInput,
-  NModal,
-  NPopconfirm,
-  NSelect,
-  NSpace,
-  NSpin,
-  NTable,
-  useMessage,
-} from 'naive-ui'
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogBody,
+  AlertDialogCancel,
+  AlertDialogContent,
+} from '@/components/ui/alert-dialog'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/ui/select'
+import { Textarea } from '@/components/ui/textarea'
 import { useSiteStore } from '../../stores/site'
-import { ContractOutline, ExpandOutline } from '@vicons/ionicons5'
 import api from '../../api'
 import OpsSwitch from '../../components/OpsSwitch.vue'
 import EmptyState from '../../components/EmptyState.vue'
@@ -27,7 +26,6 @@ import { useTableSort } from '../../composables/useTableSort'
 import { sshApi, type SshScript } from './api'
 
 const siteStore = useSiteStore()
-const message = useMessage()
 const { t } = useI18n()
 
 const scripts = ref<SshScript[]>([])
@@ -143,17 +141,33 @@ async function testScript() {
     return
   }
   testing.value = true
-  // 展示目标：临时对象（仅用于 console 标题与描述），编辑弹窗保持打开
-  runTarget.value = {
-    id: '',
-    name: form.value.name.trim() || t('ssh.unsaved'),
-    server_id: form.value.server_id,
-    content: form.value.content,
-    enabled: true,
+  try {
+    // 先做风险预检：safe 直接开执行弹窗跑；WARN 先弹确认框（用户确认后才开
+    // 执行弹窗——曾因先开弹窗后确认，警告与执行弹窗同时出现，逻辑混乱）；
+    // BLOCK 直接报错，什么弹窗都不开
+    const res = await sshApi.assessRisk(form.value.content)
+    if (res.level === 'block') {
+      message.error(t('ssh.riskBlocked', { patterns: res.patterns.join('、') }))
+      return
+    }
+    runTarget.value = {
+      id: '',
+      name: form.value.name.trim() || t('ssh.unsaved'),
+      server_id: form.value.server_id,
+      content: form.value.content,
+      enabled: true,
+    }
+    if (res.level === 'warn') {
+      riskConfirm.value = { patterns: res.patterns, openConsoleAfter: true }
+      return
+    }
+    runShow.value = true
+    startRun(false)
+  } catch (e) {
+    message.warning(t('ssh.assessFailed', { msg: (e as Error).message }))
+  } finally {
+    testing.value = false
   }
-  runShow.value = true
-  confirmRun() // 流式：输出实时进入 console
-  testing.value = false
 }
 
 onMounted(() => {
@@ -231,6 +245,14 @@ async function remove(item: SshScript) {
   await load()
 }
 
+/** 删除确认弹窗（替代 NPopconfirm）：行内按钮只置目标，弹窗确认才执行 */
+const removeTarget = ref<SshScript | null>(null)
+
+/** 弹窗不响应 Esc / 点遮罩关闭（对齐原 mask-closable=false / close-on-esc=false） */
+function blockDismiss(e: Event) {
+  e.preventDefault()
+}
+
 // ---------- 执行（确认 + 黑色 console，可全屏） ----------
 const runShow = ref(false)
 const runFullscreen = ref(false)
@@ -294,9 +316,48 @@ function backToEdit() {
   }
 }
 
+/** 风险预检：BLOCK 直接拒绝；WARN 弹确认框，用户确认后带 confirm_risk 重跑。
+ *  后端在执行时仍兜底校验（前端预检只是 UX，可被绕过）。 */
+const riskConfirm = ref<{ patterns: string[]; openConsoleAfter?: boolean } | null>(null)
+
+async function assessAndRun() {
+  const item = runTarget.value
+  if (!item || !siteStore.currentSiteId) return
+  const content = item.id ? '' : item.content
+  // 表格流（按 id 执行已保存脚本）：内容在库里，预检取脚本内容
+  const text = content || item.content || ''
+  try {
+    if (text.trim()) {
+      const res = await sshApi.assessRisk(text)
+      if (res.level === 'block') {
+        message.error(t('ssh.riskBlocked', { patterns: res.patterns.join('、') }))
+        running.value = false
+        return
+      }
+      if (res.level === 'warn') {
+        riskConfirm.value = { patterns: res.patterns }
+        return // 等用户确认后 riskConfirmRun() 继续
+      }
+    }
+  } catch (e) {
+    // 预检接口失败必须可见（不能静默放行装作没问题）；执行仍由后端兜底校验
+    message.warning(t('ssh.assessFailed', { msg: (e as Error).message }))
+  }
+  riskConfirm.value = null
+  startRun(false)
+}
+
+/** 用户确认风险后的执行 */
+function riskConfirmRun() {
+  const openConsole = riskConfirm.value?.openConsoleAfter ?? false
+  riskConfirm.value = null
+  if (openConsole) runShow.value = true // 测试入口：确认后才开执行弹窗
+  startRun(true)
+}
+
 /** 流式执行（测试流 id 为空时跑表单内容；表格流按 id）。
  *  每次执行 console 全新开始（互不影响）；输出实时追加并跟随滚动。 */
-function confirmRun() {
+function startRun(confirmRisk: boolean) {
   const item = runTarget.value
   if (!item || !siteStore.currentSiteId) return
   stopRun()
@@ -332,198 +393,231 @@ function confirmRun() {
     }
   }
   runAbort = item.id
-    ? sshApi.runStream(siteStore.currentSiteId, item.id, onChunk)
+    ? sshApi.runStream(siteStore.currentSiteId, item.id, onChunk, confirmRisk)
     : sshApi.runAdhocStream(
-        siteStore.currentSiteId, form.value.server_id ?? '', form.value.content, onChunk)
+        siteStore.currentSiteId, form.value.server_id ?? '', form.value.content, onChunk, confirmRisk)
 }
 </script>
 
 <template>
-  <n-space vertical :size="12">
-    <n-card size="small">
-      <n-space align="center" :size="12" :wrap="false">
-        <span>{{ $t('ssh.title') }}</span>
-        <n-button size="small" :loading="loading" @click="load">{{ $t('common.refresh') }}</n-button>
-        <span style="color: #999; font-size: 12px">{{ $t('ssh.hintShort') }}</span>
-      </n-space>
-    </n-card>
-
-    <n-card size="small" :title="$t('ssh.scripts')">
-      <template #header-extra>
-        <n-button size="small" type="primary" @click="openCreate">{{ $t('ssh.newScript') }}</n-button>
-      </template>
-      <n-spin :show="loading">
-        <!-- overflow-x:auto：窄窗口时表格内部横向滚动，不撑破页面 -->
-        <div class="table-scroll">
-          <n-table :single-line="false" size="small">
+  <div class="flex flex-col gap-3">
+    <Card>
+      <CardHeader>
+        <div class="flex flex-wrap items-center gap-3">
+          <CardTitle>{{ $t('ssh.title') }}</CardTitle>
+          <span class="hidden text-xs text-muted-foreground md:inline">{{ $t('ssh.hintShort') }}</span>
+        </div>
+        <template #action>
+          <div class="flex flex-wrap items-center gap-2">
+            <Button variant="outline" size="sm" :disabled="loading" @click="load">
+              <LoaderCircle v-if="loading" class="animate-spin" />
+              {{ $t('common.refresh') }}
+            </Button>
+            <Button size="sm" @click="openCreate">{{ $t('ssh.newScript') }}</Button>
+          </div>
+        </template>
+      </CardHeader>
+      <CardContent>
+        <!-- 窄窗口时表格内部横向滚动，不撑破页面 -->
+        <div class="overflow-x-auto">
+          <table class="w-full table-fixed border-collapse text-sm">
           <thead>
-            <tr>
-              <sort-th :label="$t('ssh.colName')" :active="sSortKey === 'name'" :dir="sSortKey === 'name' ? sSortDir : null" @sort="toggleScriptSort('name')" />
-              <th style="width: 22%">{{ $t('ssh.colServer') }}</th>
-              <sort-th style="width: 100px" :label="$t('ssh.colCron')" :active="sSortKey === 'cron'" :dir="sSortKey === 'cron' ? sSortDir : null" @sort="toggleScriptSort('cron')" />
-              <th style="width: 70px">{{ $t('ssh.colSched') }}</th><th>{{ $t('ssh.colContent') }}</th><th style="width: 210px">{{ $t('common.actions') }}</th>
+            <tr class="border-b border-border">
+              <sort-th class="px-2.5 py-2 text-left font-medium text-muted-foreground" :label="$t('ssh.colName')" :active="sSortKey === 'name'" :dir="sSortKey === 'name' ? sSortDir : null" @sort="toggleScriptSort('name')" />
+              <th class="px-2.5 py-2 text-left font-medium text-muted-foreground" style="width: 22%">{{ $t('ssh.colServer') }}</th>
+              <sort-th class="px-2.5 py-2 text-left font-medium text-muted-foreground" style="width: 100px" :label="$t('ssh.colCron')" :active="sSortKey === 'cron'" :dir="sSortKey === 'cron' ? sSortDir : null" @sort="toggleScriptSort('cron')" />
+              <th class="px-2.5 py-2 text-left font-medium text-muted-foreground" style="width: 70px">{{ $t('ssh.colSched') }}</th>
+              <th class="px-2.5 py-2 text-left font-medium text-muted-foreground">{{ $t('ssh.colContent') }}</th>
+              <th class="px-2.5 py-2 text-left font-medium text-muted-foreground" style="width: 210px">{{ $t('common.actions') }}</th>
             </tr>
           </thead>
           <tbody>
-            <tr v-for="item in sortedScripts" :key="item.id">
-              <td style="font-weight: 600">{{ item.name }}</td>
-              <td>{{ serverName(item.server_id) }}</td>
-              <td class="mono">{{ item.cron || '-' }}</td>
-              <td>
+            <tr v-for="item in sortedScripts" :key="item.id" class="h-10 border-b border-border/60 transition-colors hover:bg-accent/50">
+              <td class="overflow-hidden px-2.5 font-semibold">{{ item.name }}</td>
+              <td class="overflow-hidden px-2.5">{{ serverName(item.server_id) }}</td>
+              <td class="overflow-hidden px-2.5 font-mono">{{ item.cron || '-' }}</td>
+              <td class="overflow-hidden px-2.5">
                 <ops-switch
                   v-if="item.cron"
                   size="small"
                   :value="item.sched_enabled"
                   @update:value="(v: boolean) => toggleSched(item, v)"
                 />
-                <span v-else style="color: #999">-</span>
+                <span v-else class="text-muted-foreground">-</span>
               </td>
-              <td class="mono content-cell" :title="item.content">{{ item.content }}</td>
-              <td>
-                <n-space :size="4" :wrap="false">
-                  <n-button class="act" size="tiny" type="primary" ghost @click="askRun(item)">{{ $t('ssh.run') }}</n-button>
-                  <n-button class="act" size="tiny" @click="openEdit(item)">{{ $t('common.edit') }}</n-button>
-                  <n-popconfirm @positive-click="remove(item)">
-                    <template #trigger>
-                      <n-button class="act" size="tiny" type="error" ghost>{{ $t('common.delete') }}</n-button>
-                    </template>
-                    {{ $t('ssh.deleteConfirm', { name: item.name }) }}
-                  </n-popconfirm>
-                </n-space>
+              <td class="content-cell overflow-hidden px-2.5 font-mono" :title="item.content">{{ item.content }}</td>
+              <td class="overflow-hidden px-2.5">
+                <div class="flex gap-1">
+                  <Button variant="outline" size="sm" class="act text-primary" @click="askRun(item)">{{ $t('ssh.run') }}</Button>
+                  <Button variant="outline" size="sm" class="act" @click="openEdit(item)">{{ $t('common.edit') }}</Button>
+                  <Button variant="outline" size="sm" class="act text-destructive hover:text-destructive" @click="removeTarget = item">{{ $t('common.delete') }}</Button>
+                </div>
               </td>
             </tr>
             <tr v-if="!scripts.length && !loading">
-              <td :colspan="7"><EmptyState :title="$t('ssh.empty')" /></td>
+              <td colspan="7"><EmptyState :title="$t('ssh.empty')" /></td>
             </tr>
           </tbody>
-          </n-table>
+          </table>
         </div>
-      </n-spin>
-    </n-card>
+      </CardContent>
+    </Card>
 
     <!-- 编辑/新增脚本 -->
-    <n-modal :mask-closable="false" :close-on-esc="false" v-model:show="editShow" preset="card"
-      :title="editingId ? $t('ssh.editTitle') : $t('ssh.createTitle')" style="width: 640px; max-width: 94vw">
-      <n-form label-placement="top">
-        <n-form-item :label="$t('ssh.formName')" required>
-          <n-input v-model:value="form.name" :placeholder="$t('ssh.namePh')" />
-        </n-form-item>
-        <n-form-item :label="$t('ssh.isCron')">
-          <ops-switch v-model:value="isCron" />
-        </n-form-item>
-        <n-form-item v-if="isCron" :label="$t('ssh.cronLabel')" :show-feedback="false">
-          <div class="cron-block">
-            <div class="cron-row">
-              <n-input
-                v-model:value="form.cron"
-                size="small"
-                :placeholder="$t('ssh.cronPh')"
-                class="mono"
-                style="flex: 1"
-                @blur="testCron"
-              />
-              <n-button size="small" :loading="cronTesting" @click="testCron">{{ $t('ssh.cronTest') }}</n-button>
-            </div>
-            <!-- 有结果才渲染（不测试不留空白）；打开弹窗时已重置 -->
-            <div v-if="cronInvalid || cronNextRuns.length" class="cron-feedback" :class="{ invalid: cronInvalid }">
-              <template v-if="cronInvalid">{{ $t('ssh.cronInvalid') }}</template>
-              <template v-else-if="cronNextRuns.length">
-                {{ $t('ssh.cronNext') }}<template v-if="cronTzLabel">（{{ cronTzLabel }}）</template>
-                <div v-for="(t, i) in cronNextRuns" :key="i" class="cron-run">{{ t }}</div>
-              </template>
+    <Dialog :open="editShow" @update:open="(v: boolean) => (editShow = v)">
+      <DialogContent class="w-[640px] max-w-[94vw]" @escape-key-down="blockDismiss" @interact-outside="blockDismiss">
+        <DialogHeader>
+          <DialogTitle>{{ editingId ? $t('ssh.editTitle') : $t('ssh.createTitle') }}</DialogTitle>
+        </DialogHeader>
+        <div class="flex flex-col gap-3">
+          <div class="flex flex-col gap-1.5">
+            <span class="text-sm">{{ $t('ssh.formName') }} <span class="text-destructive">*</span></span>
+            <Input v-model="form.name" :placeholder="$t('ssh.namePh')" />
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="text-sm">{{ $t('ssh.isCron') }}</span>
+            <ops-switch v-model:value="isCron" />
+          </div>
+          <div v-if="isCron" class="flex flex-col gap-1.5">
+            <span class="text-sm">{{ $t('ssh.cronLabel') }}</span>
+            <div class="cron-block">
+              <div class="flex items-center gap-2">
+                <Input
+                  v-model="form.cron"
+                  :placeholder="$t('ssh.cronPh')"
+                  class="flex-1 font-mono"
+                  @blur="testCron"
+                />
+                <Button variant="outline" size="sm" :disabled="cronTesting" @click="testCron">
+                  <LoaderCircle v-if="cronTesting" class="animate-spin" />
+                  {{ $t('ssh.cronTest') }}
+                </Button>
+              </div>
+              <!-- 有结果才渲染（不测试不留空白）；打开弹窗时已重置 -->
+              <div v-if="cronInvalid || cronNextRuns.length" class="cron-feedback" :class="{ invalid: cronInvalid }">
+                <template v-if="cronInvalid">{{ $t('ssh.cronInvalid') }}</template>
+                <template v-else-if="cronNextRuns.length">
+                  {{ $t('ssh.cronNext') }}<template v-if="cronTzLabel">（{{ cronTzLabel }}）</template>
+                  <div v-for="(run, i) in cronNextRuns" :key="i" class="font-mono">{{ run }}</div>
+                </template>
+              </div>
             </div>
           </div>
-        </n-form-item>
-        <n-form-item :label="$t('ssh.bindServer')" required>
-          <n-select
-            v-model:value="form.server_id"
-            filterable
-            :options="servers"
-            :placeholder="$t('ssh.serverPh')"
-          />
-        </n-form-item>
-        <n-form-item :label="$t('ssh.formContent')" required>
-          <n-input
-            v-model:value="form.content"
-            type="textarea"
-            :rows="10"
-            :input-props="{ spellcheck: false }"
-            :placeholder="$t('ssh.contentPh')"
-            class="mono"
-          />
-        </n-form-item>
-      </n-form>
-      <template #footer>
-        <n-space justify="end" :size="8">
-          <n-button :loading="testing" @click="testScript">{{ $t('ssh.test') }}</n-button>
-          <n-button @click="editShow = false">{{ $t('common.cancel') }}</n-button>
-          <n-button type="primary" @click="save">{{ $t('common.save') }}</n-button>
-        </n-space>
-      </template>
-    </n-modal>
+          <div class="flex flex-col gap-1.5">
+            <span class="text-sm">{{ $t('ssh.bindServer') }} <span class="text-destructive">*</span></span>
+            <Select :model-value="form.server_id ?? ''" @update:model-value="(v: unknown) => (form.server_id = (v as string) || null)">
+              <SelectTrigger :placeholder="$t('ssh.serverPh')" />
+              <SelectContent>
+                <SelectItem v-for="s in servers" :key="s.value" :value="s.value">{{ s.label }}</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div class="flex items-start gap-2">
+            <span class="shrink-0 pt-2 text-sm">{{ $t('ssh.formContent') }} <span class="text-destructive">*</span></span>
+            <Textarea v-model="form.content" :rows="10" :spellcheck="false" :placeholder="$t('ssh.contentPh')" class="flex-1 font-mono" />
+          </div>
+        </div>
+        <div class="flex justify-end gap-2">
+          <Button variant="outline" :disabled="testing" @click="testScript">
+            <LoaderCircle v-if="testing" class="animate-spin" />
+            {{ $t('ssh.test') }}
+          </Button>
+          <Button variant="outline" @click="editShow = false">{{ $t('common.cancel') }}</Button>
+          <Button @click="save">{{ $t('common.save') }}</Button>
+        </div>
+      </DialogContent>
+    </Dialog>
 
-    <!-- 执行确认 + 黑色 console（可全屏；header-extra 的全屏按钮位于关闭按钮左侧） -->
-    <n-modal :mask-closable="false" :close-on-esc="false"
-      v-model:show="runShow"
-      preset="card"
-      :title="$t('ssh.runTitle', { name: runTarget?.name ?? '' })"
-      :style="runFullscreen
-        ? { width: '96vw', maxWidth: '96vw', height: '92vh', display: 'flex', flexDirection: 'column' }
-        : { width: '920px', maxWidth: '94vw' }"
-    >
-      <template #header-extra>
-        <span
-          class="fullscreen-btn"
-          :title="runFullscreen ? $t('ssh.restore') : $t('ssh.fullscreen')"
-          @click="runFullscreen = !runFullscreen"
-        >
-          <n-icon size="18" :component="runFullscreen ? ContractOutline : ExpandOutline" />
-        </span>
-      </template>
-      <p class="run-desc">
-        {{ $t('ssh.runDesc', { server: runTarget ? serverName(runTarget.server_id) : '' }) }}
-      </p>
-      <div v-if="running" class="console-live">{{ $t('ssh.executing') }}</div>
-      <div ref="consoleEl" class="console mono" :class="{ 'console-max': runFullscreen }">
-        <template v-if="runOutput">{{ runOutput }}</template>
-        <div v-else-if="running" class="console-running">{{ $t('ssh.noOutput') }}</div>
-        <span v-else style="color: #6b7280">{{ $t('ssh.clickToRun') }}</span>
-      </div>
-      <div v-if="runTimedOut" class="timeout-note">
-        {{ $t('ssh.timeoutNote') }}
-      </div>
-      <template #footer>
-        <n-space justify="space-between" :size="8">
-          <n-button :disabled="running" @click="backToEdit">{{ $t('ssh.backToEdit') }}</n-button>
-          <n-space :size="8">
-            <n-button @click="runShow = false">{{ $t('common.close') }}</n-button>
+    <!-- 执行确认 + 黑色 console（可全屏；标题行右侧全屏切换，Dialog 自带关闭 X） -->
+    <Dialog :open="runShow" @update:open="(v: boolean) => (runShow = v)">
+      <DialogContent
+        :class="runFullscreen
+          ? 'flex h-[92vh] max-h-[92vh] w-[96vw] max-w-[96vw] flex-col'
+          : 'w-[920px] max-w-[94vw]'"
+        @escape-key-down="blockDismiss" @interact-outside="blockDismiss"
+      >
+        <div class="flex items-center justify-between gap-2 pr-7">
+          <DialogTitle class="text-base font-semibold">
+            {{ $t('ssh.runTitle', { name: runTarget?.name ?? '' }) }}
+          </DialogTitle>
+          <button
+            type="button"
+            class="flex size-7 cursor-pointer items-center justify-center rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            :title="runFullscreen ? $t('ssh.restore') : $t('ssh.fullscreen')"
+            @click="runFullscreen = !runFullscreen"
+          >
+            <Shrink v-if="runFullscreen" class="size-4" />
+            <Expand v-else class="size-4" />
+          </button>
+        </div>
+        <p class="run-desc">
+          {{ $t('ssh.runDesc', { server: runTarget ? serverName(runTarget.server_id) : '' }) }}
+        </p>
+        <div v-if="running" class="console-live">{{ $t('ssh.executing') }}</div>
+        <div ref="consoleEl" class="console" :class="{ 'console-max': runFullscreen }">
+          <template v-if="runOutput">{{ runOutput }}</template>
+          <div v-else-if="running" class="console-running">{{ $t('ssh.noOutput') }}</div>
+          <span v-else class="text-muted-foreground">{{ $t('ssh.clickToRun') }}</span>
+        </div>
+        <div v-if="runTimedOut" class="timeout-note">
+          {{ $t('ssh.timeoutNote') }}
+        </div>
+        <div class="flex items-center justify-between gap-2" :class="runFullscreen ? 'mt-auto pt-2' : ''">
+          <Button variant="outline" :disabled="running" @click="backToEdit">{{ $t('ssh.backToEdit') }}</Button>
+          <div class="flex gap-2">
+            <Button variant="outline" @click="runShow = false">{{ $t('common.close') }}</Button>
             <ClickSpark>
-              <n-button type="error" :loading="running" :disabled="running" @click="confirmRun">
+              <Button variant="destructive" :disabled="running" @click="assessAndRun">
+                <LoaderCircle v-if="running" class="animate-spin" />
                 {{ $t('ssh.confirmRun') }}
-              </n-button>
+              </Button>
             </ClickSpark>
-          </n-space>
-        </n-space>
-      </template>
-    </n-modal>
-  </n-space>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+
+    <!-- 删除确认 -->
+    <AlertDialog :open="!!removeTarget" @update:open="(v: boolean) => { if (!v) removeTarget = null }">
+      <AlertDialogContent @escape-key-down="blockDismiss" @interact-outside="blockDismiss">
+        <AlertDialogBody>
+          <p class="text-sm">{{ $t('ssh.deleteConfirm', { name: removeTarget?.name ?? '' }) }}</p>
+        </AlertDialogBody>
+        <div class="flex justify-end gap-2 pt-2">
+          <AlertDialogCancel>{{ $t('common.cancel') }}</AlertDialogCancel>
+          <AlertDialogAction @click="removeTarget ? remove(removeTarget) : undefined">{{ $t('common.delete') }}</AlertDialogAction>
+        </div>
+      </AlertDialogContent>
+    </AlertDialog>
+
+    <!-- 高风险命令二次确认（WARN 级；BLOCK 级直接拒绝不会到这里） -->
+    <AlertDialog :open="riskConfirm !== null" @update:open="(v: boolean) => { if (!v) riskConfirm = null }">
+      <AlertDialogContent>
+        <AlertDialogBody>
+          <h2 class="text-base font-semibold">{{ $t('ssh.riskTitle') }}</h2>
+          <p class="text-sm text-muted-foreground">{{ $t('ssh.riskDesc') }}</p>
+          <ul class="mt-1 list-disc pl-5 text-sm text-destructive">
+            <li v-for="pt in riskConfirm?.patterns ?? []" :key="pt">{{ pt }}</li>
+          </ul>
+        </AlertDialogBody>
+        <div class="flex justify-end gap-2 pt-3">
+          <AlertDialogCancel>{{ $t('common.cancel') }}</AlertDialogCancel>
+          <AlertDialogAction variant="destructive" @click="riskConfirmRun">
+            {{ $t('ssh.riskConfirm') }}
+          </AlertDialogAction>
+        </div>
+      </AlertDialogContent>
+    </AlertDialog>
+  </div>
 </template>
 
 <style scoped>
-/* 窄窗口：表格在容器内横向滚动（列固定宽 22%/100/70/210px 之和可能超出容器） */
-.table-scroll {
-  overflow-x: auto;
-}
-.mono {
-  font-family: ui-monospace, Consolas, monospace;
-}
 .content-cell {
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
+  /* 多行脚本紧凑渲染（换行保留、行距正常）——原 -webkit-box+line-clamp hack 会把行距拉出大空隙 */
+  white-space: pre-line;
   overflow: hidden;
   font-size: 12px;
-  line-height: 1.4;
+  line-height: 1.5;
   word-break: break-all;
 }
 .console {
@@ -538,96 +632,42 @@ function confirmRun() {
   overflow: auto;
   white-space: pre;
   overflow-x: auto;
+  font-family: ui-monospace, Consolas, monospace;
 }
 .console-max {
   max-height: none;
-  height: calc(92vh - 230px);
+  flex: 1;
   min-height: 300px;
-}
-.cron-block {
-  width: 100%;
-}
-.cron-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
 }
 .cron-feedback {
   margin-top: 6px;
   font-size: 12px;
-  color: #18a058;
+  color: var(--ops-healthy);
   line-height: 1.5;
 }
 .cron-feedback.invalid {
-  color: #d03050;
-}
-.cron-run {
-  font-family: ui-monospace, monospace;
-}
-.fullscreen-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  margin-right: 2px;
-  border-radius: 3px;
-  color: #666;
-  cursor: pointer;
-}
-.fullscreen-btn:hover {
-  color: #1f2329;
-  background: #f2f3f5;
+  color: var(--ops-critical);
 }
 .console-live {
-  color: #f0a020;
+  color: var(--ops-warning);
   font-size: 12px;
   margin-bottom: 4px;
 }
 .run-desc {
   margin-bottom: 8px;
-  color: #666;
+  color: var(--ops-text-2);
   font-size: 13px;
 }
 .timeout-note {
-  color: #d03050;
+  color: var(--ops-critical);
   font-size: 12px;
   margin-top: 8px;
 }
 .console-running {
-  color: #f0a020;
+  color: var(--ops-warning);
   white-space: pre-wrap;
 }
-</style>
-<style scoped>
-/* 操作列三按钮统一规格 */
 .act {
   min-width: 44px;
-}
-/* 固定表格布局：内容列再长也不挤歪其他列（:deep 穿透 n-table 内部 <table>，
-   裸 table 选择器在 scoped 下匹配不到子组件内部元素——之前的修复因此未生效） */
-:deep(table) {
-  width: 100%;
-  table-layout: fixed;
-}
-:deep(td) {
-  overflow: hidden;
-}
-</style>
-
-<style>
-/* 全屏时卡片内容纵向撑满（modal teleport 到 body，scoped 够不着） */
-.n-modal.n-card[style*="92vh"] {
-  display: flex;
-  flex-direction: column;
-}
-.n-modal.n-card[style*="92vh"] .n-card__content {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-}
-.n-modal.n-card[style*="92vh"] .console-max {
-  flex: 1;
 }
 </style>

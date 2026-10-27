@@ -9,6 +9,9 @@ import { sitesApi, type Site } from '../modules/sites/api'
 export const useSiteStore = defineStore('site', () => {
   const currentSiteId = ref('')
   const sites = ref<Site[]>([])
+  // 首次 loadSites 是否已完成：ensureValidSite 用它区分"列表为空"与"列表未就绪"，
+  // 否则整页直达 /console 链接时会在列表返回前误判站点无效而被弹回 /sites（竞态）
+  const loaded = ref(false)
 
   const currentSite = computed(
     () => sites.value.find((s) => s.id === currentSiteId.value) ?? null,
@@ -35,8 +38,10 @@ export const useSiteStore = defineStore('site', () => {
       sites.value = await sitesApi.list()
     } catch {
       // 后端未就绪时保留现状，不阻塞页面
+    } finally {
+      loaded.value = true
     }
   }
 
-  return { currentSiteId, currentSite, sites, options, setSite, loadSites }
+  return { currentSiteId, currentSite, sites, options, loaded, setSite, loadSites }
 })

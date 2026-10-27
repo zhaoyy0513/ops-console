@@ -21,25 +21,26 @@ async def _make_site(client):
 async def test_redis_resource_crud_and_password_rules(client, fake_platform_redis):
     await _make_site(client)
 
-    # 创建：明文回显（内部工具全明文，2026-09-22 用户决策）
+    # 创建：接口永不回明文（2026-10-22 用户决策：F12/抓包不可见）——password 换 has_password
     r = await client.post(
         "/api/sites/sz-test/redis",
         json={"id": "redis-01", "name": "redis-01", "host": "10.10.1.20", "password": "secret"},
     )
     assert r.status_code == 201
-    assert r.json()["password"] == "secret"
+    body = r.json()
+    assert "password" not in body and body["has_password"] is True
 
-    # 存储层一致
+    # 存储层仍为明文（后端 provider 建连依赖，不经任何 API 响应）
     raw = await fake_platform_redis.hget(resource_key("sz-test", "redis"), "redis-01")
     assert json.loads(raw)["password"] == "secret"
 
-    # 列表 / 详情均明文
+    # 列表 / 详情均脱敏
     r = await client.get("/api/sites/sz-test/redis")
-    assert r.json()[0]["password"] == "secret"
+    assert "password" not in r.json()[0] and r.json()[0]["has_password"] is True
     r = await client.get("/api/sites/sz-test/redis/redis-01")
-    assert r.json()["password"] == "secret"
+    assert "password" not in r.json() and r.json()["has_password"] is True
 
-    # 更新：提交什么存什么（编辑表单预填原密码，改动即覆盖）
+    # 更新：显式提交新密码 = 覆盖
     r = await client.put(
         "/api/sites/sz-test/redis/redis-01", json={"name": "redis-01改", "password": "newpass"}
     )
@@ -48,7 +49,7 @@ async def test_redis_resource_crud_and_password_rules(client, fake_platform_redi
     assert stored["password"] == "newpass"
     assert stored["name"] == "redis-01改"
 
-    # 更新不带 password 字段 = 保留原值（exclude_unset 语义）
+    # 更新不带 password 字段 = 保留原值（编辑表单密码留空即保持）
     r = await client.put("/api/sites/sz-test/redis/redis-01", json={"name": "x2"})
     raw = await fake_platform_redis.hget(resource_key("sz-test", "redis"), "redis-01")
     assert json.loads(raw)["password"] == "newpass"

@@ -1,7 +1,12 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { NButton, NDrawer, NDrawerContent, NInput, NModal, NRadio, NRadioGroup, NSelect, NSpace, NSpin, NTable, useMessage } from 'naive-ui'
+import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/ui/select'
+import { Textarea } from '@/components/ui/textarea'
+import { message } from '@/lib/message'
 import { DEVICE_FIELDS } from '../device/fields'
 import type { DeviceCustomField } from '../device/api'
 
@@ -26,7 +31,6 @@ const MAX_CUSTOM = 10
 
 type FieldMode = 'bind' | 'template'
 
-const message = useMessage()
 const { t } = useI18n()
 const loading = ref(false)
 const saving = ref(false)
@@ -186,18 +190,18 @@ function applyMapping(
   customs?: DeviceCustomField[] | null,
 ) {
   const b: Record<string, string | null> = {}
-  const t: Record<string, string> = {}
+  const tp: Record<string, string> = {}
   const m: Record<string, FieldMode> = {}
   for (const [k, v] of Object.entries(fieldMap ?? {})) {
-    if (v.includes('{')) { t[k] = v; m[k] = 'template' }
+    if (v.includes('{')) { tp[k] = v; m[k] = 'template' }
     else { b[k] = v; m[k] = 'bind' }
   }
   for (const cf of customs ?? []) {
-    if (cf.template) { t[cf.key] = cf.template; m[cf.key] = 'template' }
+    if (cf.template) { tp[cf.key] = cf.template; m[cf.key] = 'template' }
     else if (cf.bind) { b[cf.key] = cf.bind; m[cf.key] = 'bind' }
   }
   bindings.value = b
-  templates.value = t
+  templates.value = tp
   modes.value = m
   const vm: Record<string, string> = {}
   for (const [k, mm] of Object.entries(valueMap ?? {})) {
@@ -261,167 +265,215 @@ async function save() {
     message.error((e as Error).message)
   }
 }
+
+/** 每行行模型的赋值 setter：模板编译器不允许 v-model="fn()"（左侧需可赋值），
+ *  故用 :model-value + @update:model-value 直接下标赋值（对象属性可赋值）。 */
+function setTpl(key: string, v: string | number) { templates.value[key] = String(v) }
+function setVm(key: string, v: string | number) { valueMaps.value[key] = String(v) }
 </script>
 
 <template>
-  <n-drawer :mask-closable="false" :close-on-esc="false" :show="props.show" :width="1060" placement="right"
-    style="max-width: 94vw"
-    @update:show="emit('update:show', $event)">
-    <n-drawer-content :title="$t('fieldmap.title', { name: props.device?.name ?? '' })" closable>
-      <n-spin :show="loading">
-        <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 12px">
-          <p style="flex: 1; margin: 0; color: #666; font-size: 13px">
-            {{ $t('fieldmap.intro') }}
-          </p>
-          <span v-if="customFields.length >= MAX_CUSTOM" style="color: #f0a020; font-size: 12px; white-space: nowrap">
-            {{ $t('device.customMax') }}
-          </span>
-          <n-button size="small" type="primary" ghost :disabled="customFields.length >= MAX_CUSTOM" @click="addCustom">
-            + {{ $t('device.addCustom') }}
-          </n-button>
+  <Dialog :open="props.show" @update:open="(v: boolean) => emit('update:show', v)">
+    <DialogContent class="flex w-[1060px] max-w-[94vw] flex-col max-h-[85vh]" @escape-key-down.prevent @interact-outside.prevent>
+      <DialogHeader>
+        <DialogTitle>{{ $t('fieldmap.title', { name: props.device?.name ?? '' }) }}</DialogTitle>
+      </DialogHeader>
+
+      <!-- 自绘 spinner（替代 NSpin）：数据未到时挡住表格区，布局不跳 -->
+      <div class="relative flex-1 overflow-y-auto">
+        <div v-if="loading" class="flex h-40 items-center justify-center">
+          <div class="size-6 animate-spin rounded-full border-2 border-muted-foreground border-t-transparent" />
         </div>
-        <div class="fm-scroll">
-          <div class="fm-grid">
-            <div class="fm-row fm-head">
-              <div class="c-name">{{ $t('fieldmap.nameLabel') }}</div>
-              <div class="c-mode">{{ $t('fieldmap.modeLabel') }}</div>
-              <div class="c-value">{{ $t('fieldmap.valueLabel') }}</div>
-              <div class="c-raw">{{ $t('fieldmap.raw') }}</div>
-              <div class="c-vm">{{ $t('fieldmap.vmLabel') }}</div>
-              <div class="c-preview">{{ $t('fieldmap.preview') }}</div>
-              <div class="c-del" />
-            </div>
-            <div v-for="row in rows" :key="row.key" class="fm-row fm-body">
-              <div class="c-name" :class="{ 'c-name-biz': !row.cf }">
-                <template v-if="row.cf">
-                  <!-- 自定义字段：双语展示名可编辑；内置字段名固定不可改 -->
-                  <n-input v-model:value="row.cf.label_zh" size="small"
-                    :placeholder="$t('device.customNameZh')" />
-                  <n-input v-model:value="row.cf.label_en" size="small"
-                    :placeholder="$t('device.customNameEn')" />
-                </template>
-                <template v-else>{{ $t(`device.fields.${row.key}`) }}</template>
+        <template v-else>
+          <div class="mb-2 flex items-center gap-3">
+            <p class="flex-1 text-[13px] text-muted-foreground">{{ $t('fieldmap.intro') }}</p>
+            <span v-if="customFields.length >= MAX_CUSTOM" class="whitespace-nowrap text-xs text-[var(--ops-warning)]">
+              {{ $t('device.customMax') }}
+            </span>
+            <Button variant="outline" size="sm" :disabled="customFields.length >= MAX_CUSTOM" @click="addCustom">
+              + {{ $t('device.addCustom') }}
+            </Button>
+          </div>
+          <div class="overflow-x-auto">
+            <div class="min-w-[880px]">
+              <div class="fm-row border-border font-normal text-muted-foreground text-xs" style="padding: 2px 0 6px">
+                <div class="c-name">{{ $t('fieldmap.nameLabel') }}</div>
+                <div class="c-mode">{{ $t('fieldmap.modeLabel') }}</div>
+                <div class="c-value">{{ $t('fieldmap.valueLabel') }}</div>
+                <div class="c-raw">{{ $t('fieldmap.raw') }}</div>
+                <div class="c-vm">{{ $t('fieldmap.vmLabel') }}</div>
+                <div class="c-preview">{{ $t('fieldmap.preview') }}</div>
+                <div class="c-del" />
               </div>
-              <div class="c-mode">
-                <n-radio-group :value="modes[row.key] ?? 'bind'" size="small"
-                  @update:value="(v) => setMode(row.key, v)">
-                  <n-radio value="bind">{{ $t('fieldmap.modeBind') }}</n-radio>
-                  <n-radio value="template">{{ $t('fieldmap.modeTemplate') }}</n-radio>
-                </n-radio-group>
-              </div>
-              <div class="c-value">
-                <!-- key 绑定 deviceKey：切换实例时销毁重建，杜绝上一个 Device 的内容/高度残留 -->
-                <n-select
-                  v-if="(modes[row.key] ?? 'bind') === 'bind'"
-                  :key="`b-${deviceKey}-${row.key}`"
-                  v-model:value="bindings[row.key]"
-                  size="small"
-                  clearable
-                  filterable
-                  :options="jsonFields.map((jf) => ({ label: jf, value: jf }))"
-                  :placeholder="$t('fieldmap.selectPh')"
-                  style="width: 100%"
-                />
-                <!-- 花括号示例是模板语法本身，必须硬编码（vue-i18n 会把 {x} 当占位符） -->
-                <n-input
-                  v-else
-                  :key="`t-${deviceKey}-${row.key}`"
-                  v-model:value="templates[row.key]"
-                  size="small"
-                  :status="tplInvalid(templates[row.key]) ? 'error' : undefined"
-                  :placeholder="'({mapId},{areaId}) 或 ({mapId,areaId})'"
-                />
-                <div v-if="tplInvalid(templates[row.key])" class="tpl-hint">
-                  {{ $t('fieldmap.tplInvalid') }}
+              <div v-for="row in rows" :key="row.key" class="fm-row border-border/60">
+                <div class="c-name" :class="{ 'font-semibold text-[13px]': !row.cf }">
+                  <template v-if="row.cf">
+                    <!-- 自定义字段：双语展示名可编辑；内置字段名固定不可改 -->
+                    <Input v-model="row.cf.label_zh" class="h-7" :placeholder="$t('device.customNameZh')" />
+                    <Input v-model="row.cf.label_en" class="h-7" :placeholder="$t('device.customNameEn')" />
+                  </template>
+                  <template v-else>{{ $t(`device.fields.${row.key}`) }}</template>
                 </div>
-              </div>
-              <div class="c-raw mono">{{ rawValue(row.key) }}</div>
-              <div class="c-vm">
-                <n-input
-                  :key="`v-${deviceKey}-${row.key}`"
-                  v-model:value="valueMaps[row.key]"
-                  type="textarea"
-                  :rows="1"
-                  :placeholder="$t('fieldmap.vmPh')"
-                />
-              </div>
-              <div class="c-preview mono">{{ preview(row.key) }}</div>
-              <div class="c-del">
-                <n-button v-if="row.cf" size="tiny" type="error" ghost @click="removeCustom(row.key)">
-                  {{ $t('common.delete') }}
-                </n-button>
+                <div class="c-mode">
+                  <!-- 原生 radio 自绘（替代 NRadioGroup） -->
+                  <div class="flex flex-col gap-1 text-xs">
+                    <label class="flex cursor-pointer items-center gap-1.5">
+                      <input
+                        type="radio"
+                        class="accent-[var(--primary)]"
+                        :name="`mode-${deviceKey}-${row.key}`"
+                        :checked="(modes[row.key] ?? 'bind') === 'bind'"
+                        @change="setMode(row.key, 'bind')"
+                      />
+                      {{ $t('fieldmap.modeBind') }}
+                    </label>
+                    <label class="flex cursor-pointer items-center gap-1.5">
+                      <input
+                        type="radio"
+                        class="accent-[var(--primary)]"
+                        :name="`mode-${deviceKey}-${row.key}`"
+                        :checked="(modes[row.key] ?? 'bind') === 'template'"
+                        @change="setMode(row.key, 'template')"
+                      />
+                      {{ $t('fieldmap.modeTemplate') }}
+                    </label>
+                  </div>
+                </div>
+                <div class="c-value">
+                  <!-- key 绑定 deviceKey：切换实例时销毁重建，杜绝上一个 Device 的内容/高度残留 -->
+                  <div v-if="(modes[row.key] ?? 'bind') === 'bind'" class="flex items-center gap-1">
+                    <Select
+                      :key="`b-${deviceKey}-${row.key}`"
+                      :model-value="bindings[row.key] ?? ''"
+                      @update:model-value="(v: string | null) => (bindings[row.key] = v || null)"
+                    >
+                      <SelectTrigger class="h-7" :placeholder="$t('fieldmap.selectPh')" />
+                      <SelectContent>
+                        <SelectItem v-for="jf in jsonFields" :key="jf" :value="jf">{{ jf }}</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <button
+                      v-if="bindings[row.key]"
+                      class="flex size-5 flex-none items-center justify-center rounded text-muted-foreground hover:text-destructive"
+                      :title="$t('common.delete')"
+                      @click="bindings[row.key] = null"
+                    >×</button>
+                  </div>
+                  <!-- 花括号示例是模板语法本身，必须硬编码（vue-i18n 会把 {x} 当占位符） -->
+                  <div v-else>
+                    <Input
+                      :key="`t-${deviceKey}-${row.key}`"
+                      :model-value="templates[row.key] ?? ''"
+                      class="h-7"
+                      :class="tplInvalid(templates[row.key]) && 'border-destructive'"
+                      :placeholder="'({mapId},{areaId}) 或 ({mapId,areaId})'"
+                      @update:model-value="(v: string | number) => setTpl(row.key, v)"
+                    />
+                    <div v-if="tplInvalid(templates[row.key])" class="text-destructive text-[11px] leading-tight">
+                      {{ $t('fieldmap.tplInvalid') }}
+                    </div>
+                  </div>
+                </div>
+                <div class="c-raw mono break-all">{{ rawValue(row.key) }}</div>
+                <div class="c-vm">
+                  <Textarea
+                    :key="`v-${deviceKey}-${row.key}`"
+                    :model-value="valueMaps[row.key] ?? ''"
+                    :rows="1"
+                    class="min-h-0 py-0.5 text-xs"
+                    :placeholder="$t('fieldmap.vmPh')"
+                    @update:model-value="(v: string | number) => setVm(row.key, v)"
+                  />
+                </div>
+                <div class="c-preview mono break-all">{{ preview(row.key) }}</div>
+                <div class="c-del">
+                  <Button v-if="row.cf" variant="ghost" size="sm" class="text-destructive" @click="removeCustom(row.key)">
+                    {{ $t('common.delete') }}
+                  </Button>
+                </div>
               </div>
             </div>
           </div>
-        </div>
-      </n-spin>
-      <template #footer>
-        <div style="display: flex; align-items: center; gap: 10px; width: 100%">
-          <n-button style="background: #f08c00; color: #fff" @click="openClone">{{ $t('fieldmap.clone') }}</n-button>
-          <div style="flex: 1" />
-          <n-button @click="emit('update:show', false)">{{ $t('common.cancel') }}</n-button>
-          <n-button type="primary" :loading="saving" @click="save">{{ $t('fieldmap.saveMapping') }}</n-button>
-        </div>
-      </template>
-    </n-drawer-content>
-  </n-drawer>
+        </template>
+      </div>
+
+      <div class="flex items-center gap-2.5 pt-2">
+        <Button size="sm" class="bg-[var(--ops-warning)] text-white hover:opacity-90" @click="openClone">{{ $t('fieldmap.clone') }}</Button>
+        <div class="flex-1" />
+        <Button variant="outline" @click="emit('update:show', false)">{{ $t('common.cancel') }}</Button>
+        <Button :disabled="saving" @click="save">{{ $t('fieldmap.saveMapping') }}</Button>
+      </div>
+    </DialogContent>
+  </Dialog>
 
   <!-- 克隆来源选择：列出全部站点的 Device 映射配置 -->
-  <n-modal :mask-closable="false" :close-on-esc="false" v-model:show="cloneShow" preset="card" :title="$t('fieldmap.cloneTitle')" style="width: 520px">
-    <p style="margin-bottom: 10px; color: #666; font-size: 13px">
-      {{ $t('fieldmap.cloneIntro') }}
-    </p>
-    <n-spin :show="cloneLoading">
-      <n-table :single-line="false" size="small" class="clone-table">
-        <thead>
-          <tr><th style="width: 50px">{{ $t('fieldmap.pickCol') }}</th><th style="width: 40%">{{ $t('fieldmap.siteCol') }}</th><th>{{ $t('fieldmap.deviceCol') }}</th></tr>
-        </thead>
-        <tbody>
-          <tr v-for="x in cloneList" :key="x.site_id + '/' + x.device_id"
-            class="clone-row"
-            :class="{ 'clone-selected': cloneSelected === x.site_id + '/' + x.device_id }"
-            @click="cloneSelected = x.site_id + '/' + x.device_id">
-            <td><n-radio :checked="cloneSelected === x.site_id + '/' + x.device_id" /></td>
-            <td>{{ x.site_name }}</td>
-            <td>{{ x.device_name }}</td>
-          </tr>
-          <tr v-if="!cloneList.length && !cloneLoading">
-            <td colspan="2" style="text-align: center; color: #999">{{ $t('fieldmap.noClone') }}</td>
-          </tr>
-        </tbody>
-      </n-table>
-    </n-spin>
-    <template #footer>
-      <n-space justify="end" :size="8">
-        <n-button size="small" @click="cloneShow = false">{{ $t('common.cancel') }}</n-button>
-        <n-button size="small" type="primary" :disabled="!cloneSelected" @click="applyClone">{{ $t('fieldmap.confirmClone') }}</n-button>
-      </n-space>
-    </template>
-  </n-modal>
+  <Dialog v-model:open="cloneShow">
+    <DialogContent class="w-[520px] max-w-[92vw]">
+      <DialogHeader>
+        <DialogTitle>{{ $t('fieldmap.cloneTitle') }}</DialogTitle>
+      </DialogHeader>
+      <p class="text-[13px] text-muted-foreground">{{ $t('fieldmap.cloneIntro') }}</p>
+      <div v-if="cloneLoading" class="flex h-24 items-center justify-center">
+        <div class="size-6 animate-spin rounded-full border-2 border-muted-foreground border-t-transparent" />
+      </div>
+      <div v-else class="max-h-[40vh] overflow-y-auto">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="border-b border-border text-xs text-muted-foreground">
+              <th class="w-[50px] px-2 py-1.5 text-left font-medium">{{ $t('fieldmap.pickCol') }}</th>
+              <th class="w-[40%] px-2 py-1.5 text-left font-medium">{{ $t('fieldmap.siteCol') }}</th>
+              <th class="px-2 py-1.5 text-left font-medium">{{ $t('fieldmap.deviceCol') }}</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr
+              v-for="x in cloneList"
+              :key="x.site_id + '/' + x.device_id"
+              class="cursor-pointer border-b border-border/60 hover:bg-accent/50"
+              :class="{ 'bg-accent/50': cloneSelected === x.site_id + '/' + x.device_id }"
+              @click="cloneSelected = x.site_id + '/' + x.device_id"
+            >
+              <td class="px-2 py-1.5">
+                <input
+                  type="radio"
+                  class="accent-[var(--primary)]"
+                  name="clone-source"
+                  :checked="cloneSelected === x.site_id + '/' + x.device_id"
+                  @click="cloneSelected = x.site_id + '/' + x.device_id"
+                />
+              </td>
+              <td class="px-2 py-1.5">{{ x.site_name }}</td>
+              <td class="px-2 py-1.5">{{ x.device_name }}</td>
+            </tr>
+            <tr v-if="!cloneList.length">
+              <td colspan="3" class="py-8 text-center text-sm text-muted-foreground">{{ $t('fieldmap.noClone') }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="flex justify-end gap-2">
+        <Button variant="outline" size="sm" @click="cloneShow = false">{{ $t('common.cancel') }}</Button>
+        <Button size="sm" :disabled="!cloneSelected" @click="applyClone">{{ $t('fieldmap.confirmClone') }}</Button>
+      </div>
+    </DialogContent>
+  </Dialog>
 </template>
+
 <style scoped>
-.fm-scroll {
-  overflow-x: auto;
-}
-.fm-grid {
-  min-width: 880px;
-}
 .fm-row {
   display: flex;
   gap: 10px;
-  align-items: center;
+  align-items: flex-start;
   padding: 8px 0;
-  border-bottom: 1px solid #f5f6f8;
-}
-.fm-body:last-child {
-  border-bottom: none;
+  border-bottom-width: 1px;
+  border-bottom-style: solid;
 }
 .fm-head {
-  color: #86909c;
-  font-size: 12px;
-  font-weight: 400;
   padding: 2px 0 6px;
-  border-bottom: 1px solid #e5e6eb;
+  align-items: center;
+}
+.fm-row:last-of-type {
+  border-bottom: none;
 }
 .c-name {
   width: 150px;
@@ -429,28 +481,21 @@ async function save() {
   display: flex;
   flex-direction: column;
   gap: 6px;
-}
-.c-name-biz {
-  font-weight: 600;
-  font-size: 13px;
+  padding-top: 4px;
 }
 .c-mode {
   width: 112px;
   flex: none;
+  padding-top: 4px;
 }
 .c-value {
   flex: 1.2;
   min-width: 170px;
 }
-.tpl-hint {
-  color: #d03050;
-  font-size: 11px;
-  line-height: 1.4;
-  margin-top: 2px;
-}
 .c-raw {
   width: 120px;
   flex: none;
+  padding-top: 8px;
 }
 .c-vm {
   flex: 1;
@@ -459,6 +504,7 @@ async function save() {
 .c-preview {
   width: 130px;
   flex: none;
+  padding-top: 8px;
 }
 .c-del {
   width: 52px;
@@ -466,6 +512,5 @@ async function save() {
 }
 .mono {
   font-size: 12px;
-  word-break: break-all;
 }
 </style>

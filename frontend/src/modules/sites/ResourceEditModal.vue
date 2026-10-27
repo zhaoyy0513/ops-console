@@ -1,18 +1,11 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import {
-  NAutoComplete,
-  NButton,
-  NForm,
-  NFormItem,
-  NInput,
-  NInputNumber,
-  NModal,
-  NUpload,
-  useMessage,
-  type UploadFileInfo,
-} from 'naive-ui'
+import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
+import { message } from '@/lib/message'
 import ResourceTestButton from '../../components/ResourceTestButton.vue'
 import OpsSwitch from '../../components/OpsSwitch.vue'
 
@@ -102,16 +95,16 @@ const CREATE_DEFAULTS: Record<string, Record<string, unknown>> = {
   devices: {},
 }
 
-const message = useMessage()
 const { t } = useI18n()
 const form = ref<Record<string, any>>({})
 const saving = ref(false)
+/** 内联校验错误（原 NForm required 星号 + useMessage 校验保留，错误文案就地红字） */
+const fieldError = ref<string | null>(null)
 
 const fields = computed(() => FIELD_DEFS[props.target?.type ?? 'servers'] ?? [])
 const isEdit = computed(() => !!props.target?.id)
 const typeLabel = computed(() => TYPES[props.target?.type ?? ''] ?? '')
 
-import { computed } from 'vue'
 import { sitesApi } from './api'
 
 watch(
@@ -124,55 +117,58 @@ watch(
     } else {
       form.value = { name: '', ...(CREATE_DEFAULTS[target.type] ?? {}) }
     }
+    fieldError.value = null
   },
   { immediate: true },
 )
 
 /** .html 单文件上传：读文本进 form.html；非 .html 一律拒（扩展名 + MIME 双判）。
- *  返回值 false = 不让文件进入 naive 的上传队列（内容已进表单，列表无意义）。 */
-async function onHtmlUpload(data: { file: UploadFileInfo }): Promise<boolean> {
-  const file = data.file
-  const name = (file.name ?? '').toLowerCase()
-  if (!name.endsWith('.html') && file.type !== 'text/html') {
+ *  原生 file input：选中即读内容并清空选择，可重复选同一文件。 */
+async function onHtmlFile(e: Event) {
+  const input = e.target as HTMLInputElement
+  const raw = input.files?.[0]
+  input.value = '' // 先清空，同一文件可再次选择覆盖
+  if (!raw) return
+  const name = raw.name.toLowerCase()
+  if (!name.endsWith('.html') && raw.type !== 'text/html') {
     message.error(t('page.invalidHtml'))
-    return false
+    return
   }
   try {
-    const raw = (file.file as File | undefined) ?? null
-    if (!raw) throw new Error('no file handle')
     form.value.html = await raw.text()
     message.success(t('page.htmlLoaded'))
-  } catch (e) {
-    message.error(t('page.htmlFailed', { msg: (e as Error).message }))
+  } catch (err) {
+    message.error(t('page.htmlFailed', { msg: (err as Error).message }))
   }
-  return false
 }
 
-function onHtmlRemove(): boolean {
-  form.value.html = ''
-  return true
+/** name 联想（原 NAutoComplete）：自由输入 + datalist 候选，选中回填、不选保留输入 */
+function nameListId(key: string) {
+  return `ac-${props.target?.type}-${key}`
 }
 
 async function save() {
   const target = props.target
   if (!target) return
+  fieldError.value = null
   const name = String(form.value.name ?? '').trim()
   if (!name) {
-    message.warning(t('common.nameRequired'))
+    fieldError.value = t('common.nameRequired')
     return
   }
   // 同站点同类型下 name 唯一：编辑时排除自身（原名放行）。后端亦作权威校验。
   const originalName = isEdit.value ? String(props.target?.item?.name ?? '') : ''
   const dup = (props.existingNames ?? []).some((n) => n === name && n !== originalName)
   if (dup) {
-    message.error(t('sites.nameDuplicate', { name }))
+    fieldError.value = t('sites.nameDuplicate', { name })
     return
   }
   for (const f of fields.value) {
     // url-input 是软必填：pages 允许用 HTML 替代链接，空值由下面的二选一校验裁决
     if (f.kind === 'url-input') continue
-    if (f.required && !String(form.value[f.key] ?? '').trim()) {
-      message.warning(t('sites.fieldRequired', { label: t(`fields.${f.key}`) }))
+    // 编辑态密码留空 = 保持原值（后端脱敏回填，明文不可得；必填约束仅创建时生效）
+    if (f.required && !(f.key === 'password' && isEdit.value) && !String(form.value[f.key] ?? '').trim()) {
+      fieldError.value = t('sites.fieldRequired', { label: t(`fields.${f.key}`) })
       return
     }
   }
@@ -180,12 +176,13 @@ async function save() {
   if (target.type === 'pages'
     && !String(form.value.url ?? '').trim()
     && !String(form.value.html ?? '').trim()) {
-    message.warning(t('page.needOne'))
+    fieldError.value = t('page.needOne')
     return
   }
   const data = Object.fromEntries(
     Object.entries(form.value)
-      .filter(([k, v]) => v !== null && v !== undefined && !(k === 'html' && typeof v === 'string' && !v.trim())),
+      .filter(([k, v]) => v !== null && v !== undefined && !(k === 'html' && typeof v === 'string' && !v.trim())
+        && !(k === 'password' && v === '')),
   )
   saving.value = true
   try {
@@ -203,134 +200,125 @@ async function save() {
     saving.value = false
   }
 }
+
+/** NInputNumber -> type=number Input：保持 number 数据类型（空串归 undefined，避免提交 ''）。
+ *  模板编译器不允许 v-model="fn()"，故用 :model-value + @update:model-value setter。 */
+function setNumber(key: string, v: string | number | undefined) {
+  form.value[key] = v === undefined || v === null || v === '' ? undefined : Number(v)
+}
 </script>
 
 <template>
-  <n-modal :mask-closable="false" :close-on-esc="false"
-    :show="props.show"
-    preset="card"
-    :title="isEdit ? $t('sites.editResource', { type: typeLabel }) : $t('sites.newResource', { type: typeLabel })"
-    style="width: 520px"
-    @update:show="emit('update:show', $event)"
-  >
-    <n-form label-placement="left" label-width="110">
-      <n-form-item v-if="props.target?.type === 'servers'" :label="$t('common.name')" required>
-        <n-input v-model:value="form.name" :placeholder="$t('sites.newName')" />
-      </n-form-item>
-      <n-form-item v-if="props.target?.type === 'servers'" :label="$t('common.enabled')">
-        <ops-switch v-model:value="form.enabled" />
-      </n-form-item>
-      <template v-for="(f, fi) in fields" :key="f.key">
-        <n-form-item v-if="fi === 1 && props.target?.type !== 'servers'" :label="$t('common.enabled')">
-          <ops-switch v-model:value="form.enabled" />
-        </n-form-item>
-        <n-form-item
-          :label="$t(`fields.${f.key}`)"
-          :required="f.required"
-        >
-        <n-input-number
-          v-if="f.kind === 'number'"
-          v-model:value="form[f.key]"
-          style="width: 100%"
-          :placeholder="f.ph ? $t(`sites.${f.ph}`) : undefined"
-        />
-        <!-- 输入优先：NAutoComplete 自由输入 + 同站点 Server 名称联想，选中回填、不选直接保留输入 -->
-        <n-auto-complete
-          v-else-if="f.kind === 'name-select'"
-          v-model:value="form[f.key]"
-          :options="props.target?.nameOptions ?? []"
-          :filter="() => true"
-          :input-props="{ autocomplete: 'off' }"
-          :placeholder="$t('sites.nameSelectPh')"
-        />
-        <n-input v-else-if="f.kind === 'host-input'" v-model:value="form[f.key]"
-          :placeholder="$t('sites.hostInputPh')" />
-        <n-auto-complete
-          v-else-if="f.kind === 'host-select'"
-          v-model:value="form[f.key]"
-          :options="props.target?.hostOptions ?? []"
-          :filter="() => true"
-          :input-props="{ autocomplete: 'off' }"
-          :placeholder="(props.target?.hostOptions ?? []).length ? $t('sites.hostSelectPh') : $t('sites.hostInputAddr')"
-        />
-        <!-- pages 链接：与 HTML 二选一，故 required=true 的字段用软校验（save 内判空） -->
-        <n-input v-else-if="f.kind === 'url-input'" v-model:value="form[f.key]"
-          :placeholder="$t('page.urlPh')" />
-        <n-input v-else v-model:value="form[f.key]" />
-        </n-form-item>
-      </template>
-      <!-- pages 专属：HTML 上传 / 粘贴（与 url 二选一，上限单个 .html 文件） -->
-      <template v-if="props.target?.type === 'pages'">
-        <n-form-item :label="$t('page.htmlLabel')">
-          <div class="html-block">
-            <n-upload
-              :max="1"
-              accept=".html"
-              :show-file-list="false"
-              :on-before-upload="onHtmlUpload"
-              :on-remove="onHtmlRemove"
-            >
-              <n-button size="small">{{ $t('page.uploadBtn') }}</n-button>
-            </n-upload>
-            <span class="hint">{{ $t('page.uploadHint') }}</span>
-          </div>
-        </n-form-item>
-        <n-form-item label=" ">
-          <n-input
-            v-model:value="form.html"
-            type="textarea"
-            :rows="6"
-            class="mono"
-            :input-props="{ spellcheck: false }"
-            :placeholder="$t('page.htmlPh')"
-          />
-        </n-form-item>
-      </template>
-      <!-- 无连接测试的类型（pages：不需要连通性探测）不渲染 Test 行 -->
-      <n-form-item v-if="TEST_TYPE[props.target?.type ?? 'servers']" label=" ">
-        <div class="form-test">
-          <resource-test-button :type="TEST_TYPE[props.target?.type ?? 'servers']" :config="form" />
-          <span v-if="props.target?.type === 'mq'" class="hint">
-            {{ $t('sites.jolokiaHint') }}
-          </span>
-        </div>
-      </n-form-item>
-      <n-form-item label=" ">
-        <div class="form-actions">
-          <n-button @click="emit('update:show', false)">{{ $t('common.cancel') }}</n-button>
-          <n-button type="primary" :loading="saving" @click="save">{{ $t('common.save') }}</n-button>
-        </div>
-      </n-form-item>
-    </n-form>
-  </n-modal>
-</template>
+  <Dialog :open="props.show" @update:open="(v: boolean) => emit('update:show', v)">
+    <DialogContent class="w-[520px] max-w-[92vw]" @escape-key-down.prevent @interact-outside.prevent>
+      <DialogHeader>
+        <DialogTitle>{{ isEdit ? $t('sites.editResource', { type: typeLabel }) : $t('sites.newResource', { type: typeLabel }) }}</DialogTitle>
+      </DialogHeader>
 
-<style scoped>
-.html-block {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-.html-block .hint {
-  color: var(--ops-text-3);
-  font-size: 12px;
-}
-.form-test {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-}
-.form-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 10px;
-  width: 100%;
-  margin-top: 34px; /* 与 Test 行隔约一个按钮高度的留白 */
-}
-.hint {
-  color: #999;
-  font-size: 12px;
-}
-</style>
+      <div class="grid gap-3">
+        <div v-if="props.target?.type === 'servers'" class="grid grid-cols-[110px_1fr] items-center gap-3">
+          <label class="text-xs text-muted-foreground">{{ $t('common.name') }} <span class="text-destructive">*</span></label>
+          <Input v-model="form.name" :placeholder="$t('sites.newName')" />
+        </div>
+        <div v-if="props.target?.type === 'servers'" class="grid grid-cols-[110px_1fr] items-center gap-3">
+          <label class="text-xs text-muted-foreground">{{ $t('common.enabled') }}</label>
+          <OpsSwitch v-model:value="form.enabled" />
+        </div>
+        <template v-for="(f, fi) in fields" :key="f.key">
+          <div v-if="fi === 1 && props.target?.type !== 'servers'" class="grid grid-cols-[110px_1fr] items-center gap-3">
+            <label class="text-xs text-muted-foreground">{{ $t('common.enabled') }}</label>
+            <OpsSwitch v-model:value="form.enabled" />
+          </div>
+          <div class="grid grid-cols-[110px_1fr] items-center gap-3">
+            <label class="text-xs text-muted-foreground">
+              {{ $t(`fields.${f.key}`) }} <span v-if="f.required" class="text-destructive">*</span>
+            </label>
+            <Input
+              v-if="f.kind === 'number'"
+              :model-value="typeof form[f.key] === 'number' ? form[f.key] : undefined"
+              type="number"
+              :placeholder="f.ph ? $t(`sites.${f.ph}`) : undefined"
+              @update:model-value="(v: string | number | undefined) => setNumber(f.key, v)"
+            />
+            <!-- 输入优先：自由输入 + datalist 同站点 Server 名称联想，选中回填、不选直接保留输入 -->
+            <span v-else-if="f.kind === 'name-select'" class="relative block">
+              <Input
+                v-model="form[f.key]"
+                autocomplete="off"
+                :list="nameListId(f.key)"
+                :placeholder="$t('sites.nameSelectPh')"
+              />
+              <datalist :id="nameListId(f.key)">
+                <option v-for="o in props.target?.nameOptions ?? []" :key="o.value" :value="o.value" />
+              </datalist>
+            </span>
+            <Input v-else-if="f.kind === 'host-input'" v-model="form[f.key]"
+              :placeholder="$t('sites.hostInputPh')" />
+            <span v-else-if="f.kind === 'host-select'" class="relative block">
+              <Input
+                v-model="form[f.key]"
+                autocomplete="off"
+                :list="nameListId(f.key)"
+                :placeholder="(props.target?.hostOptions ?? []).length ? $t('sites.hostSelectPh') : $t('sites.hostInputAddr')"
+              />
+              <datalist :id="nameListId(f.key)">
+                <option v-for="o in props.target?.hostOptions ?? []" :key="o.value" :value="o.value" />
+              </datalist>
+            </span>
+            <!-- pages 链接：与 HTML 二选一，故 required=true 的字段用软校验（save 内判空） -->
+            <Input v-else-if="f.kind === 'url-input'" v-model="form[f.key]"
+              :placeholder="$t('page.urlPh')" />
+            <Input
+              v-else
+              v-model="form[f.key]"
+              :type="f.key === 'password' ? 'password' : undefined"
+              :placeholder="f.key === 'password' && isEdit ? $t('sites.passwordKeep') : undefined"
+              autocomplete="new-password"
+            />
+          </div>
+        </template>
+        <!-- pages 专属：HTML 上传 / 粘贴（与 url 二选一，上限单个 .html 文件） -->
+        <template v-if="props.target?.type === 'pages'">
+          <div class="grid grid-cols-[110px_1fr] items-center gap-3">
+            <label class="text-xs text-muted-foreground">{{ $t('page.htmlLabel') }}</label>
+            <div class="flex flex-wrap items-center gap-2.5">
+              <label class="inline-flex h-7 cursor-pointer items-center rounded-md border border-border px-2 text-xs font-medium hover:bg-accent">
+                {{ $t('page.uploadBtn') }}
+                <input type="file" accept=".html" class="hidden" @change="onHtmlFile" />
+              </label>
+              <span class="text-xs text-muted-foreground">{{ $t('page.uploadHint') }}</span>
+            </div>
+          </div>
+          <div class="grid grid-cols-[110px_1fr] items-start gap-3">
+            <span />
+            <Textarea
+              v-model="form.html"
+              :rows="6"
+              class="font-mono"
+              spellcheck="false"
+              :placeholder="$t('page.htmlPh')"
+            />
+          </div>
+        </template>
+        <!-- 无连接测试的类型（pages：不需要连通性探测）不渲染 Test 行 -->
+        <div v-if="TEST_TYPE[props.target?.type ?? 'servers']" class="grid grid-cols-[110px_1fr] items-center gap-3">
+          <span />
+          <div class="flex items-center gap-2.5">
+            <ResourceTestButton :type="TEST_TYPE[props.target?.type ?? 'servers']" :config="form" />
+            <span v-if="props.target?.type === 'mq'" class="text-xs text-muted-foreground">
+              {{ $t('sites.jolokiaHint') }}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 校验错误就地红字（原 NForm 提交拦截改自绘，不引 vee-validate） -->
+      <p v-if="fieldError" class="text-xs text-destructive">{{ fieldError }}</p>
+
+      <div class="mt-8 flex justify-end gap-2.5">
+        <Button variant="outline" @click="emit('update:show', false)">{{ $t('common.cancel') }}</Button>
+        <Button :disabled="saving" @click="save">{{ $t('common.save') }}</Button>
+      </div>
+    </DialogContent>
+  </Dialog>
+</template>

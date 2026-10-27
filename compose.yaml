@@ -32,7 +32,7 @@ services:
       dockerfile: deploy/Dockerfile.nginx
     restart: unless-stopped
     ports:
-      - "${OPS_PORT:-8090}:80"
+      - "${OPS_PORT:-25089}:80"
     depends_on:
       - backend
 

@@ -138,14 +138,24 @@ async def _require_site(site_id: str) -> None:
         raise NotFound(f"site not found: {site_id}")
 
 
-async def list_resources(site_id: str, res_type: str, include_password: bool = True) -> list[dict]:
+async def list_resources(site_id: str, res_type: str, include_password: bool = False) -> list[dict]:
+    """列出资源配置。密码默认脱敏（password -> has_password 布尔），接口永不回明文——
+    F12/抓包只见掩码；编辑时留空即保持原值，连接测试走后端 get_resource_raw。
+    include_password=True 仅供**后端内部**使用（overview 聚合直连），不进任何 API 响应。
+    """
     await _require_site(site_id)
     raw = await get_platform_redis().hvals(resource_key(site_id, res_type))
     items = [json.loads(x) for x in raw]
     if not include_password:
-        # ponytail: 兼容旧签名；当前全部调用方都用明文
-        items = [{k: ("" if k == "password" else v) for k, v in c.items()} for c in items]
+        items = [_mask_password(c) for c in items]
     return sorted((_with_kind(res_type, c) for c in items), key=lambda c: c["id"])
+
+
+def _mask_password(cfg: dict) -> dict:
+    c = dict(cfg)
+    if "password" in c:
+        c["has_password"] = bool(c.pop("password"))
+    return c
 
 
 async def get_resource_raw(site_id: str, res_type: str, resource_id: str) -> dict | None:
@@ -156,7 +166,9 @@ async def get_resource_raw(site_id: str, res_type: str, resource_id: str) -> dic
 
 
 async def get_resource(site_id: str, res_type: str, resource_id: str) -> dict | None:
-    return await get_resource_raw(site_id, res_type, resource_id)
+    """单查（编辑回填）：同样脱敏，密码留空即保持。"""
+    item = await get_resource_raw(site_id, res_type, resource_id)
+    return _mask_password(item) if item else item
 
 
 def _res_label(data: dict, resource_id: str) -> str:
@@ -201,7 +213,7 @@ async def create_resource(site_id: str, res_type: str, data: dict) -> dict:
     label = _res_label(stored, resource_id)
     await oplog.record(site_id, f"{res_type}/{label}", "RESOURCE_CONFIG_CREATED",
                        target=label, params={"resource_id": resource_id})
-    return _with_kind(res_type, dict(stored))
+    return _with_kind(res_type, _mask_password(dict(stored)))
 
 
 async def update_resource(site_id: str, res_type: str, resource_id: str, data: dict) -> dict | None:
@@ -222,7 +234,7 @@ async def update_resource(site_id: str, res_type: str, resource_id: str, data: d
     name = _res_label(old, resource_id)
     await oplog.record(site_id, f"{res_type}/{name}", "RESOURCE_CONFIG_UPDATED",
                        target=name, params={"resource_id": resource_id})
-    return _with_kind(res_type, dict(old))
+    return _with_kind(res_type, _mask_password(dict(old)))
 
 
 async def delete_resource(site_id: str, res_type: str, resource_id: str) -> bool:

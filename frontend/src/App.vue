@@ -1,57 +1,26 @@
 <script setup lang="ts">
-import { computed, provide } from 'vue'
-import { useDark } from '@vueuse/core'
-import {
-  NConfigProvider,
-  NDialogProvider,
-  NLoadingBarProvider,
-  NMessageProvider,
-  dateEnUS,
-  dateZhCN,
-  darkTheme,
-  enUS,
-  zhCN,
-  type GlobalThemeOverrides,
-} from 'naive-ui'
-import { naiveDateLocale, naiveLocale } from './i18n'
+import { computed, provide, watchEffect } from 'vue'
+import { Toaster } from 'vue-sonner'
+import { TooltipProvider } from 'reka-ui'
+import { useThemeStore } from './stores/theme'
 import MainLayout from './layouts/MainLayout.vue'
 
-// useDark() 返回 WritableComputedRef<boolean>（getter 读 state、setter 写 store）。
-// 直接 isDark.value = !isDark.value 走 setter → 写底层 store → 切换生效。
-// 不用 useToggle（它内部也是同样赋值，但多一层间接）也不用 useColorMode 的
-// 内部 store/state 解构（版本差异可能导致 store 为 undefined → 白屏）。
-const isDark = useDark()
-const toggleDark = () => { isDark.value = !isDark.value }
-provide('opsDark', { isDark, toggle: toggleDark })
+// 画风状态唯一事实来源是 theme store；此处只负责把它投影到 <html data-theme>。
+// 组件（图表/编辑器）通过 inject('opsTheme') 拿到主题名做自己的深浅判断。
+const theme = useThemeStore()
 
-/** 令牌同源的主题覆盖（§3.2：色值来自 tokens.css 的同一组常量） */
-const themeOverrides = computed<GlobalThemeOverrides>(() => ({
-  common: {
-    primaryColor: '#2563eb',
-    primaryColorHover: '#3b82f6',
-    primaryColorPressed: '#1d4ed8',
-    borderRadius: '4px',
-    fontFamily: " 'Inter Variable', system-ui, 'PingFang SC', 'Microsoft YaHei', sans-serif",
-    ...(isDark.value
-      ? { bodyColor: '#101014', cardColor: '#17171c', modalColor: '#17171c', popoverColor: '#202026' }
-      : {}),
-  },
-}))
+watchEffect(() => {
+  document.documentElement.dataset.theme = theme.theme
+})
+
+provide('opsTheme', computed(() => theme.theme))
 </script>
 
 <template>
-  <n-config-provider
-    :theme="isDark ? darkTheme : undefined"
-    :theme-overrides="themeOverrides"
-    :locale="naiveLocale === 'zh-CN' ? zhCN : enUS"
-    :date-locale="naiveDateLocale === 'zh-CN' ? dateZhCN : dateEnUS"
-  >
-    <n-loading-bar-provider>
-      <n-dialog-provider>
-        <n-message-provider>
-          <MainLayout />
-        </n-message-provider>
-      </n-dialog-provider>
-    </n-loading-bar-provider>
-  </n-config-provider>
+  <!-- 全站唯一 TooltipProvider：reka 的 Tooltip 注入缺 Provider 会抛错并损坏组件树
+      （表现为 patch 阶段 emitsOptions/parentNode null 崩溃），在此统一提供 -->
+  <TooltipProvider :delay-duration="100">
+    <MainLayout />
+    <Toaster :theme="theme.theme === 'light' ? 'light' : 'dark'" position="top-center" rich-colors close-button />
+  </TooltipProvider>
 </template>

@@ -1,19 +1,24 @@
 <script setup lang="ts">
-import { computed, h, inject, onMounted, ref, watch, type Component } from 'vue'
+import { computed, h, onMounted, ref, watch, type Component } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { NButton, NIcon, NMenu, NSelect, useLoadingBar } from 'naive-ui'
 import {
-  ChevronBackOutline, ChevronForwardOutline, CubeOutline, DocumentTextOutline,
-  GridOutline, HardwareChipOutline, LayersOutline, MoonOutline, PulseOutline,
-  ServerOutline, SunnyOutline, TerminalOutline,
+  ChevronLeft, ChevronRight, FolderCog, Languages, Moon, ScrollText, Sun, type LucideIcon,
+} from 'lucide-vue-next'
+import {
+  GridOutline, ServerOutline, DocumentTextOutline, LayersOutline,
+  PulseOutline, HardwareChipOutline, TerminalOutline, CubeOutline,
 } from '@vicons/ionicons5'
+import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/ui/select'
+import { Button } from '@/components/ui/button'
 import { getModules } from '../modules'
 import { locale, setLocale } from '../i18n'
 import { useSiteStore } from '../stores/site'
+import { useThemeStore, type OpsTheme } from '../stores/theme'
 
 const route = useRoute()
 const router = useRouter()
 const siteStore = useSiteStore()
+const themeStore = useThemeStore()
 
 function toggleLocale() {
   setLocale(locale.value === 'zh' ? 'en' : 'zh')
@@ -21,7 +26,7 @@ function toggleLocale() {
 
 const modules = getModules()
 
-/** 模块图标映射（§3.5：outline，两档颜色） */
+/** 模块图标映射（§3.5） */
 const MODULE_ICONS: Record<string, Component> = {
   overview: GridOutline,
   server: ServerOutline,
@@ -33,8 +38,10 @@ const MODULE_ICONS: Record<string, Component> = {
   database: CubeOutline,
 }
 
-// 主题（App.vue provide 的暗色状态）
-const opsDark = inject<{ isDark: { value: boolean }; toggle: () => void }>('opsDark')!
+// 主题明暗二态切换（themeStore 已在上方声明）
+function toggleTheme() {
+  themeStore.set(themeStore.theme === 'light' ? 'dark' : 'light')
+}
 
 // 侧栏折叠（200px ↔ 56px，只藏文字不藏图标）
 const collapsed = ref(false)
@@ -45,20 +52,32 @@ const menuOptions = computed(() =>
     label: m.title,
     key: m.routePath,
     disabled: !siteStore.currentSiteId,
-    icon: MODULE_ICONS[m.id]
-      ? () => h(NIcon, null, { default: () => h(MODULE_ICONS[m.id]!) })
-      : undefined,
+    icon: MODULE_ICONS[m.id] ? () => h(MODULE_ICONS[m.id]!) : undefined,
   })),
 )
 // 路由表按模块生成静态尾段（/console/site/:siteId/redis），不存在 :moduleId 参数，
 // route.params.moduleId 恒为 undefined —— 当前模块只能从 path 末段反查。
-// （旧代码读这个不存在的参数导致：切站点必跳 overview、侧栏高亮从未生效）
 const activeModule = computed(() =>
   modules.find((m) => route.path.endsWith(`/${m.routePath}`)),
 )
 const activeKey = computed(() => activeModule.value?.routePath ?? '')
-const loadingBar = useLoadingBar()
-watch(() => route.fullPath, () => { loadingBar.start(); setTimeout(() => loadingBar.finish(), 150) })
+
+// 自绘 loading bar（替代 naive useLoadingBar）：路由切换 150ms 顶部条
+const barProgress = ref(0)
+const barVisible = ref(false)
+let barTimer: ReturnType<typeof setTimeout> | undefined
+watch(
+  () => route.fullPath,
+  () => {
+    clearTimeout(barTimer)
+    barVisible.value = true
+    barProgress.value = 70
+    barTimer = setTimeout(() => {
+      barProgress.value = 100
+      setTimeout(() => (barVisible.value = false), 120)
+    }, 150)
+  },
+)
 
 /** 校验当前 URL 的 siteId：站点被删后立即踢出（响应式，列表/路由变化都触发） */
 function ensureValidSite() {
@@ -69,8 +88,10 @@ function ensureValidSite() {
   if (options.length) {
     const target = activeModule.value?.routePath ?? modules[0]?.routePath ?? 'overview'
     router.replace(`/console/site/${options[0].value}/${target}`)
-  } else {
-    siteStore.setSite('') // 站点已删，清空选中态（下拉不再显示老 ID）
+  } else if (siteStore.loaded) {
+    // 列表已加载且为空/无匹配 → 站点确实没了；未加载完（loaded=false）时勿误判，
+    // 等 watch(sites) 触发本函数再校验（否则直达链接会在列表返回前被弹回 /sites）
+    siteStore.setSite('')
     router.replace('/sites')
   }
 }
@@ -94,65 +115,95 @@ function onMenuSelect(key: string) {
 }
 
 // 切换站点后停留在当前模块（PRD §21）——从 path 尾段反查，params.moduleId 不存在
-function onSiteSelect(id: string) {
+function onSiteSelect(id: string | null) {
+  if (!id) return
   const target = activeModule.value?.routePath ?? modules[0]?.routePath
   router.push(`/console/site/${id}/${target}`)
 }
+
+const THEME_ICONS: Record<OpsTheme, LucideIcon> = {
+  light: Sun,
+  dark: Moon,
+}
+const themeIcon = computed(() => THEME_ICONS[themeStore.theme])
 </script>
 
 <template>
   <div class="app-shell">
     <header class="app-header">
-      <span class="brand">Ops Console</span>
-      <n-select
-        class="site-select"
-        size="small"
-        :placeholder="$t('layout.selectSite')"
-        :value="siteStore.currentSiteId || null"
-        :options="siteStore.options"
-        @update:value="onSiteSelect"
-      />
-      <div style="flex: 1" />
+      <div class="brand">
+        <div class="brand-mark font-mono">O</div>
+        <span class="font-mono text-[15px] font-bold tracking-tight">Ops Console</span>
+      </div>
+      <Select
+        :model-value="siteStore.currentSiteId || ''"
+        @update:model-value="onSiteSelect"
+      >
+        <SelectTrigger class="site-select" :placeholder="$t('layout.selectSite')" />
+        <SelectContent>
+          <SelectItem v-for="o in siteStore.options" :key="o.value" :value="o.value">
+            {{ o.label }}
+          </SelectItem>
+        </SelectContent>
+      </Select>
+      <div class="flex-1" />
       <div class="header-actions">
-        <n-button size="small" quaternary @click="router.push('/audit')">{{ $t('layout.opsLog') }}</n-button>
-        <n-button size="small" quaternary @click="router.push('/sites')">{{ $t('layout.sites') }}</n-button>
-        <n-button size="small" quaternary @click="toggleLocale">
+        <Button variant="ghost" size="sm" @click="router.push('/audit')">
+          <ScrollText />
+          {{ $t('layout.opsLog') }}
+        </Button>
+        <Button variant="ghost" size="sm" @click="router.push('/sites')">
+          <FolderCog />
+          {{ $t('layout.sites') }}
+        </Button>
+        <Button variant="ghost" size="sm" @click="toggleLocale">
+          <Languages />
           {{ locale === 'zh' ? 'EN' : '中文' }}
-        </n-button>
-        <n-button size="small" quaternary :title="$t('layout.theme')" @click="opsDark.toggle">
-          <n-icon :component="opsDark.isDark.value ? SunnyOutline : MoonOutline" />
-        </n-button>
+        </Button>
+        <!-- 主题切换：明/暗二态 -->
+        <Button variant="ghost" size="icon-sm" :title="$t('layout.theme')" @click="toggleTheme">
+          <component :is="themeIcon" />
+        </Button>
       </div>
     </header>
+    <!-- 自绘顶部 loading bar -->
+    <div v-if="barVisible" class="fixed left-0 top-0 z-[100] h-0.5 w-full bg-transparent pointer-events-none">
+      <div
+        class="h-full bg-primary transition-all duration-150"
+        :style="{ width: `${barProgress}%` }"
+      />
+    </div>
     <div class="app-body">
       <aside class="app-sider" :class="{ collapsed }">
         <div v-if="!siteStore.currentSiteId && !collapsed" class="sider-hint">{{ $t('layout.siderHint') }}</div>
-        <n-menu
-          :value="activeKey"
-          :options="menuOptions"
-          :collapsed="collapsed"
-          :collapsed-width="56"
-          :collapsed-icon-size="18"
-          @update:value="onMenuSelect"
-        />
+        <nav class="sider-menu">
+          <button
+            v-for="m in menuOptions"
+            :key="m.key"
+            class="menu-item"
+            :class="{ active: activeKey === m.key, disabled: m.disabled, 'menu-item--collapsed': collapsed }"
+            :disabled="m.disabled"
+            :title="collapsed ? m.label : undefined"
+            @click="onMenuSelect(m.key)"
+          >
+            <component :is="m.icon?.()" class="menu-icon" />
+            <span v-if="!collapsed" class="menu-label">{{ m.label }}</span>
+          </button>
+        </nav>
         <div class="sider-footer">
           <button class="collapse-btn" :title="collapsed ? $t('layout.expand') : $t('layout.collapse')" @click="collapsed = !collapsed">
-            <n-icon :component="collapsed ? ChevronForwardOutline : ChevronBackOutline" :size="16" />
+            <component :is="collapsed ? ChevronRight : ChevronLeft" class="size-4" />
           </button>
-          <span v-if="!collapsed" class="build-stamp">b1019-1005</span>
+          <span v-if="!collapsed" class="build-stamp font-mono">b1027-1100</span>
         </div>
       </aside>
       <main class="app-main">
-        <!-- 路由/站点切换淡入淡出（out-in：旧视图先退再进，掩盖数据重载白屏）。
-             Transition 必须动画单元素根：视图组件可能是多根 fragment，
-             直接放 component 会导致 out-in 离场无法完成、导航卡死——
-             因此包一层带 key 的 div 作为动画目标。 -->
+        <!-- 不包 Transition：out-in 的 leave 队列与快速导航/弹窗卸载存在竞态
+            （prevTree.el 为 null 的 parentNode 崩溃），导航反馈由顶部 loading bar 承担 -->
         <router-view v-slot="{ Component }">
-          <transition name="ops-fade" mode="out-in">
-            <div :key="route.path" class="route-view">
-              <component :is="Component" />
-            </div>
-          </transition>
+          <div :key="route.path" class="route-view">
+            <component :is="Component" />
+          </div>
         </router-view>
       </main>
     </div>
@@ -160,28 +211,46 @@ function onSiteSelect(id: string) {
 </template>
 
 <style scoped>
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+  white-space: nowrap;
+}
+.brand-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  background: var(--primary);
+  color: var(--primary-foreground);
+  font-size: 13px;
+  font-weight: 700;
+}
 .sider-footer {
   margin-top: auto;
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 12px;
+  padding: 10px 12px;
   border-top: 1px solid var(--ops-border);
 }
 .build-stamp {
   font-size: 10px;
   color: var(--ops-text-3);
-  font-family: var(--ops-font-mono);
 }
 .collapse-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
+  width: 26px;
+  height: 26px;
   flex: none;
   border: none;
-  border-radius: 4px;
+  border-radius: 6px;
   background: transparent;
   color: var(--ops-text-3);
   cursor: pointer;
@@ -197,29 +266,65 @@ function onSiteSelect(id: string) {
   font-size: 12px;
   border-bottom: 1px solid var(--ops-border);
 }
-/* 菜单激活态左侧 2px 主色条（高度 60%） */
-.app-sider :deep(.n-menu-item-content--selected)::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 20%;
-  bottom: 20%;
-  width: 2px;
-  background: var(--ops-primary);
+/* 菜单：shadcn sidebar 规格——active 块底 + 图标主色 */
+.sider-menu {
+  display: flex;
+  flex-direction: column;
+  padding: 10px 14px;
+  gap: 4px;
 }
-/* 顶栏操作条：按钮收进一个浅边框圆角容器，按钮本身去背景，悬停高亮 */
+.menu-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 38px;
+  padding: 0 10px;
+  border: none;
+  border-radius: var(--ops-radius-m);
+  background: transparent;
+  color: color-mix(in srgb, var(--ops-text-1) 80%, transparent);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease, padding-left 150ms ease;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.menu-item:hover:not(.disabled) {
+  background: var(--ops-surface-2);
+  color: var(--ops-text-1);
+}
+.menu-item:hover:not(.disabled):not(.active) {
+  padding-left: 12px;
+}
+.menu-item.active {
+  background: color-mix(in srgb, var(--primary) 10%, transparent);
+  color: var(--primary);
+  font-weight: 500;
+}
+.menu-item.disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.menu-item--collapsed {
+  justify-content: center;
+  padding: 0;
+}
+.menu-icon {
+  width: 20px;
+  height: 20px;
+  flex: none;
+}
+.menu-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* 顶栏操作条：ghost 按钮直接排，去掉外框（shadcn 规格更干净） */
 .header-actions {
   display: flex;
   align-items: center;
-  gap: 4px;
-  border: 1px solid var(--ops-border);
-  border-radius: 6px;
-  padding: 2px 4px;
-  flex: none; /* 操作条整体不压缩，空间不足时由 flex-wrap 折到第二行 */
-}
-.header-actions :deep(.n-button) {
-  --n-color: transparent;
-  --n-color-hover: var(--ops-surface-2);
-  --n-color-pressed: var(--ops-border);
+  gap: 2px;
+  flex: none;
 }
 </style>
