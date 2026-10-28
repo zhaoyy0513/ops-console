@@ -6,13 +6,15 @@
 :root,
 [data-theme='neon'] {
   /* shadcn 语义变量 */
-  --background: #0b1020;
+  --background: #0d0b1c;
   --foreground: #e9f1ff;
   /* 玻璃拟态：卡片/弹层半透明深色 + backdrop-blur 出毛玻璃（Card/Dialog/Select 已挂 blur） */
   --card: rgba(20, 25, 45, 0.55);
   --card-foreground: #e9f1ff;
   --popover: rgba(20, 25, 45, 0.75);
   --popover-foreground: #e9f1ff;
+  /* 弹窗专用高不透明度面：半透明卡叠在黑色遮罩上会糊成脏灰（毛玻璃把遮罩糊进来） */
+  --ops-dialog: rgba(23, 20, 44, 0.92);
   --primary: #00f5ff;
   --primary-foreground: #06121c;
   --secondary: rgba(0, 245, 255, 0.1);
@@ -33,15 +35,15 @@
   --ops-warning: #ffb703;
   --ops-critical: #ff3d81;
   --ops-unknown: #6b7a99;
-  /* 深色霓虹极光：青/紫/品红对角弥漫 + 极细青色网格线（科技质感） */
+  /* 深色霓虹极光：深紫黑基底、紫色弥漫为主、青光收在左上角（对齐 color.png 参考的暗夜氛围） */
   --ops-aurora:
-    radial-gradient(1100px 700px at 10% 0%, rgba(0, 245, 255, 0.14), transparent 55%),
-    radial-gradient(900px 700px at 90% 10%, rgba(124, 60, 255, 0.16), transparent 55%),
-    radial-gradient(1000px 800px at 50% 100%, rgba(255, 43, 214, 0.1), transparent 60%),
-    repeating-linear-gradient(0deg, rgba(0, 245, 255, 0.05) 0 1px, transparent 1px 44px),
-    repeating-linear-gradient(90deg, rgba(0, 245, 255, 0.05) 0 1px, transparent 1px 44px),
-    #0b1020;
-  --ops-bg: #0b1020;
+    radial-gradient(1200px 800px at 12% -10%, rgba(0, 245, 255, 0.1), transparent 55%),
+    radial-gradient(1400px 900px at 85% 110%, rgba(124, 60, 255, 0.22), transparent 60%),
+    radial-gradient(900px 600px at 70% 30%, rgba(124, 60, 255, 0.12), transparent 55%),
+    repeating-linear-gradient(0deg, rgba(0, 245, 255, 0.03) 0 1px, transparent 1px 44px),
+    repeating-linear-gradient(90deg, rgba(0, 245, 255, 0.03) 0 1px, transparent 1px 44px),
+    #0d0b1c;
+  --ops-bg: #0d0b1c;
   --ops-surface: rgba(20, 25, 45, 0.55);
   --ops-surface-2: rgba(0, 245, 255, 0.08);
   --ops-border: rgba(0, 245, 255, 0.16);
@@ -63,12 +65,13 @@
 }
 
 [data-theme='holo'] {
-  --background: #f8faff;
+  --background: #fbfcff;
   --foreground: #1a2030;
   --card: rgba(255, 255, 255, 0.7);
   --card-foreground: #1a2030;
   --popover: rgba(255, 255, 255, 0.9);
   --popover-foreground: #1a2030;
+  --ops-dialog: rgba(255, 255, 255, 0.92);
   --primary: #7c3cff;
   --primary-foreground: #ffffff;
   --secondary: #efeafc;
@@ -88,15 +91,14 @@
   --ops-warning: #f0a020;
   --ops-critical: #d03050;
   --ops-unknown: #909399;
-  /* 全息幻彩：五色柔化径向（幻彩粉/冰蓝/薄荷/薰衣草紫/香槟金），贝壳内壁反光质感 */
+  /* 全息幻彩：近白基底，五色收拢在下缘与角落（薄荷左下/冰蓝右下/幻彩粉左上），贝壳内壁反光质感 */
   --ops-aurora:
-    radial-gradient(1000px 700px at 10% 10%, #ffd6f2 0%, transparent 60%),
-    radial-gradient(1000px 700px at 90% 15%, #d6f0ff 0%, transparent 60%),
-    radial-gradient(900px 700px at 12% 88%, #e8ffe0 0%, transparent 60%),
-    radial-gradient(1100px 800px at 85% 85%, #f0e4ff 0%, transparent 62%),
-    radial-gradient(760px 540px at 50% 48%, #fff4d6 0%, transparent 55%),
-    #f8faff;
-  --ops-bg: #f8faff;
+    radial-gradient(900px 600px at 8% 0%, rgba(255, 214, 242, 0.7), transparent 55%),
+    radial-gradient(1100px 700px at 15% 100%, rgba(232, 255, 224, 0.9), transparent 60%),
+    radial-gradient(1100px 700px at 90% 100%, rgba(214, 240, 255, 0.9), transparent 60%),
+    radial-gradient(800px 500px at 95% 40%, rgba(240, 228, 255, 0.7), transparent 60%),
+    #fbfcff;
+  --ops-bg: #fbfcff;
   --ops-surface: rgba(255, 255, 255, 0.7);
   --ops-surface-2: #f2effc;
   --ops-border: #e5e0f2;
@@ -111,12 +113,13 @@
 }
 
 [data-theme='synth'] {
-  --background: #12002b;
+  --background: #150a30;
   --foreground: #f8f1ff;
   --card: rgba(18, 0, 43, 0.6);
   --card-foreground: #f8f1ff;
   --popover: rgba(24, 0, 52, 0.82);
   --popover-foreground: #f8f1ff;
+  --ops-dialog: rgba(28, 8, 56, 0.92);
   --primary: #ff3d81;
   --primary-foreground: #ffffff;
   --secondary: rgba(255, 61, 129, 0.12);
@@ -136,15 +139,15 @@
   --ops-warning: #ffb703;
   --ops-critical: #ff2b5e;
   --ops-unknown: #9a7fbe;
-  /* synthwave 落日：底部地平线日落（粉→琥珀）+ 青色电光光晕 + 细网格 */
+  /* synthwave 落日：中央地平线落日光柱（琥珀核→品红外缘）+ 青色电光收左上（对齐 color.png） */
   --ops-aurora:
-    radial-gradient(900px 500px at 50% 105%, rgba(255, 61, 129, 0.35), transparent 65%),
-    radial-gradient(700px 380px at 50% 100%, rgba(255, 183, 3, 0.25), transparent 70%),
-    radial-gradient(800px 500px at 15% 10%, rgba(0, 209, 255, 0.16), transparent 60%),
-    repeating-linear-gradient(0deg, rgba(0, 209, 255, 0.05) 0 1px, transparent 1px 48px),
-    repeating-linear-gradient(90deg, rgba(0, 209, 255, 0.05) 0 1px, transparent 1px 48px),
-    #12002b;
-  --ops-bg: #12002b;
+    radial-gradient(500px 700px at 50% 108%, rgba(255, 183, 3, 0.5), transparent 60%),
+    radial-gradient(700px 800px at 50% 112%, rgba(255, 61, 129, 0.55), transparent 65%),
+    radial-gradient(500px 400px at 12% 8%, rgba(0, 209, 255, 0.12), transparent 55%),
+    repeating-linear-gradient(0deg, rgba(0, 209, 255, 0.04) 0 1px, transparent 1px 48px),
+    repeating-linear-gradient(90deg, rgba(0, 209, 255, 0.04) 0 1px, transparent 1px 48px),
+    #150a30;
+  --ops-bg: #150a30;
   --ops-surface: rgba(18, 0, 43, 0.6);
   --ops-surface-2: rgba(255, 61, 129, 0.1);
   --ops-border: rgba(255, 61, 129, 0.28);

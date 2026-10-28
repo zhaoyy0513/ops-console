@@ -1,17 +1,17 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ExternalLink, FileText, Link2, Maximize2, Minimize2, Plus } from 'lucide-vue-next'
+import { FileText, Link2, Plus } from 'lucide-vue-next'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { message } from '@/lib/message'
 import EmptyState from '../../components/EmptyState.vue'
 import TabHelp from '../../components/TabHelp.vue'
 import FadeContent from '../../components/bits/FadeContent.vue'
 import TipCopy from '../../components/TipCopy.vue'
 import CountdownConfirm from '../../components/CountdownConfirm.vue'
+import { openHtmlInNewTab } from '../../utils/sandbox-open'
 import { useSiteStore } from '../../stores/site'
 import PageDialog from './PageDialog.vue'
 import { pageApi, derivePageKind, type PageResource } from './api'
@@ -21,8 +21,6 @@ const siteStore = useSiteStore()
 
 const pages = ref<PageResource[]>([])
 const loading = ref(false)
-const showReader = ref(false)
-const active = ref<PageResource | null>(null)
 
 // 新建/编辑两用弹窗状态
 const showEditor = ref(false)
@@ -64,45 +62,14 @@ async function remove(p: PageResource) {
   await load()
 }
 
-/** 卡片点击：url 型新标签打开（X-Frame-Options 类安全策略无法绕过，最可靠）；
- *  html 型站内弹窗阅读（sandbox 隔离）。 */
+/** 打开一律新标签：链接直开；HTML 文件经 sandbox 壳隔离
+ *  （allow-scripts 可跑、opaque origin 拿不到本域 cookie/storage） */
 function open(p: PageResource) {
-  const k = derivePageKind(p)
-  if (k === 'url' && p.url) {
+  if (derivePageKind(p) === 'url' && p.url) {
     window.open(p.url, '_blank', 'noopener')
     return
   }
-  active.value = p
-  showReader.value = true
-}
-
-/** 新标签打开：url 直开；html 转外层 sandbox 壳 Blob——与阅读弹窗同一隔离底线
- *  （allow-scripts 可跑、opaque origin 拿不到本域 cookie/storage）。内层用 srcdoc 而非
- *  src="blob:"：sandbox 无 allow-same-origin 时 opaque origin 取 blob: 会被浏览器拦截白屏。
- *  Blob 用完即回收（60s 足够浏览器完成打开动作） */
-function openExternal() {
-  const p = active.value
-  if (!p) return
-  const k = derivePageKind(p)
-  if (k === 'url' && p.url) {
-    window.open(p.url, '_blank', 'noopener')
-    return
-  }
-  const html = p.html ?? ''
-  if (!html) return
-  const inner = html.replace(/&/g, '&amp;').replace(/"/g, '&quot;') // srcdoc 属性转义
-  const shell = `<!doctype html><html><head><meta charset="utf-8"><style>html,body{margin:0;height:100%}</style></head><body><iframe sandbox="allow-scripts" srcdoc="${inner}" style="border:0;width:100%;height:100%"></iframe></body></html>`
-  const url = URL.createObjectURL(new Blob([shell], { type: 'text/html;charset=utf-8' }))
-  window.open(url, '_blank', 'noopener')
-  setTimeout(() => URL.revokeObjectURL(url), 60_000)
-}
-
-// ---- 弹窗全屏：CSS 铺屏（page-fullscreen 类），不是浏览器 F11——
-// 弹窗自身铺满当前视口，内容随之拉伸；Esc 关弹窗行为不变 ----
-const isFullscreen = ref(false)
-
-function toggleFullscreen() {
-  isFullscreen.value = !isFullscreen.value
+  if (p.html) openHtmlInNewTab(p.html)
 }
 
 /** 卡片聚光跟随：只写 CSS 变量，不进响应式状态、不触发重渲 */
@@ -112,13 +79,6 @@ function onCardMove(e: MouseEvent) {
   el.style.setProperty('--px', `${e.clientX - r.left}px`)
   el.style.setProperty('--py', `${e.clientY - r.top}px`)
 }
-
-/** 阅读弹窗防误关（对齐原 modal mask-closable=false / close-on-esc=false） */
-function blockDismiss(e: Event) {
-  e.preventDefault()
-}
-
-const activeSrcDoc = computed(() => active.value?.html ?? '')
 
 function kindLabel(p: PageResource) {
   return derivePageKind(p) === 'url' ? t('page.kindUrl') : t('page.kindHtml')
@@ -154,7 +114,8 @@ function kindLabel(p: PageResource) {
                   <FileText v-else class="pc-icon" />
                   {{ p.name }}
                 </span>
-                <Badge size="sm" :variant="derivePageKind(p) === 'url' ? 'default' : 'secondary'">
+                <!-- 链接=紫（primary），HTML 文件=绿（success）：两类一眼可分 -->
+                <Badge size="sm" :variant="derivePageKind(p) === 'url' ? 'default' : 'success'">
                   {{ kindLabel(p) }}
                 </Badge>
               </div>
@@ -181,42 +142,6 @@ function kindLabel(p: PageResource) {
 
   <!-- 新建/编辑两用弹窗：站点只读、url/html 二选一、.html 上传 -->
   <PageDialog v-model:show="showEditor" :site-id="siteStore.currentSiteId ?? ''" :editing="editing" @saved="load" />
-
-  <!-- 阅读弹窗：仅 html 型会进来（url 型 open() 直接新标签）；
-       sandbox 隔离（allow-scripts 但不 allow-same-origin，
-       脚本可运行却拿不到本域 cookie/storage——内部工具嵌入不受信页面的安全底线） -->
-  <Dialog :open="showReader" @update:open="showReader = $event">
-    <DialogContent
-      class="flex h-[88vh] w-[92vw] max-w-none flex-col overflow-hidden"
-      :class="isFullscreen && 'page-fullscreen'"
-      @escape-key-down="blockDismiss"
-      @interact-outside="blockDismiss"
-    >
-      <DialogHeader>
-        <DialogTitle>{{ active?.name ?? '' }}</DialogTitle>
-      </DialogHeader>
-      <iframe
-        v-if="active"
-        class="html-frame min-h-0 w-full flex-1"
-        sandbox="allow-scripts"
-        :srcdoc="activeSrcDoc"
-        :title="active.name"
-      />
-      <DialogFooter class="flex-row items-center justify-between pt-2">
-        <span class="frame-note">{{ $t('page.frameNote') }}</span>
-        <span class="flex items-center gap-2">
-          <Button variant="outline" size="sm" :title="isFullscreen ? $t('page.exitFullscreen') : $t('page.fullscreen')" @click="toggleFullscreen">
-            <Minimize2 v-if="isFullscreen" />
-            <Maximize2 v-else />
-          </Button>
-          <Button v-if="active" variant="outline" size="sm" @click="openExternal">
-            <ExternalLink />
-            {{ $t('page.openExternal') }}
-          </Button>
-        </span>
-      </DialogFooter>
-    </DialogContent>
-  </Dialog>
 </template>
 
 <style scoped>
@@ -371,14 +296,5 @@ function kindLabel(p: PageResource) {
 }
 .ov-del {
   display: inline-flex;
-}
-.html-frame {
-  border: 1px solid var(--ops-border);
-  border-radius: 4px;
-  background: var(--ops-surface);
-}
-.frame-note {
-  color: var(--ops-text-3);
-  font-size: 12px;
 }
 </style>

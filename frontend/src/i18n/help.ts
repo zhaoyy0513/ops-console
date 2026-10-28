@@ -70,11 +70,11 @@ export const helpContent: Record<HelpLang, Record<string, HelpSection>> = {
     knowledge: {
       title: '说明 · 知识库',
       lines: [
-        '站点专属文档库：只收 Markdown 文档，增删改查全在本页完成（不进站点资源抽屉）。',
-        '右上「新建」：粘贴或上传 .md，粘贴/上传图片自动压缩为 base64 内嵌正文；拖拽文件到页面任意位置可直接预填新建。',
-        '文档创建后内容不可改，仅支持重命名 / 删除 / 查看（删除有倒计时确认）。',
-        '阅读视图跟随主题深浅色；「新标签打开」为渲染后快照，脚本沙箱隔离。',
-        '图片以 base64 随文档存储（单篇 1M 字符上限），无独立附件体系。',
+        '站点专属文件库：任意格式文件（单文件 ≤ 1MB），增删改查全在本页完成（不进站点资源抽屉）。',
+        '右上「上传文档」或直接把文件拖到页面任意位置；名称默认取文件名，可改。',
+        '文件内容创建后不可修改，仅支持重命名 / 删除 / 查看（删除有倒计时确认）。',
+        '查看走内置预览（PDF、Word、Excel、PPT、图片、音视频、文本等）；不支持的格式可下载或在新标签打开。',
+        '文件以 base64 存于平台 Redis（元数据与内容分开存），随站点删除一并清理。',
       ],
     },
 
@@ -162,11 +162,11 @@ export const helpContent: Record<HelpLang, Record<string, HelpSection>> = {
     knowledge: {
       title: 'Instructions · Knowledge',
       lines: [
-        'Site-specific document library: Markdown docs only, with full CRUD on this page (not in the Sites resource drawer).',
-        '"New" in the header: paste or upload .md; pasted/uploaded images are compressed and embedded as base64; drop files anywhere on the page to prefill a new doc.',
-        'Doc content is immutable after creation — only rename / delete / view (delete has a countdown confirm).',
-        'The reader follows the active theme; "Open in new tab" renders a sandboxed snapshot.',
-        'Images are stored as base64 within the doc (1M character cap per doc) — no separate attachment store.',
+        'Site-specific file library: any format (≤ 1MB per file), full CRUD on this page (not in the Sites resource drawer).',
+        'Use "Upload doc" or drop a file anywhere on the page; the name defaults to the filename and can be edited.',
+        'File content is immutable after creation — only rename / delete / view (delete has a countdown confirm).',
+        'Viewing uses the built-in previewer (PDF, Word, Excel, PowerPoint, images, audio/video, text); unsupported formats can be downloaded or opened in a new tab.',
+        'Files are stored as base64 in the platform Redis (metadata and content in separate keys) and removed with the site.',
       ],
     },
 

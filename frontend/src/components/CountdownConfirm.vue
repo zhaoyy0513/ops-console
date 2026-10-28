@@ -89,7 +89,7 @@ function blockDismiss(e: Event) {
       <RContent
         role="alertdialog"
         :aria-describedby="undefined"
-        class="fixed left-1/2 top-1/2 z-50 w-[440px] max-w-[92vw] -translate-x-1/2 -translate-y-1/2 gap-4 border border-border bg-card p-5 shadow-lg"
+        class="fixed left-1/2 top-1/2 z-50 w-[440px] max-w-[92vw] -translate-x-1/2 -translate-y-1/2 gap-4 border border-border backdrop-blur-md bg-[color:var(--ops-dialog)] p-5 shadow-lg"
         @escape-key-down="blockDismiss"
         @interact-outside="blockDismiss"
       >
