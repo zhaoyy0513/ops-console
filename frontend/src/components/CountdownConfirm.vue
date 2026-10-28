@@ -79,36 +79,40 @@ function blockDismiss(e: Event) {
       label
     }}</Button>
   </ClickSpark>
+  <!-- 确认弹窗 Teleport 到 body：玻璃主题的 Card 带 backdrop-filter（毛玻璃），
+       会使内部 fixed 元素以卡片为包含块（遮罩只盖卡片、弹窗钉在卡片内）。
+       teleport 回视口基准，任何祖先的 transform/filter/backdrop-filter 都不再影响；
+       触发按钮仍就地渲染（表格单元格内点击）。 -->
   <AlertDialog v-model:open="show">
-    <!-- 就地渲染（不经 Portal/Teleport）：组件常嵌在表格单元格内，fixed 遮罩/内容脱离文档流；
-         祖先无 transform/filter（全站已审计）故定位正确 -->
-    <AlertDialogOverlay class="fixed inset-0 z-50 bg-black/60" @interact-outside="blockDismiss" />
-    <RContent
-      role="alertdialog"
-      :aria-describedby="undefined"
-      class="fixed left-1/2 top-1/2 z-50 w-[440px] max-w-[92vw] -translate-x-1/2 -translate-y-1/2 gap-4 border border-border bg-card p-5 shadow-lg"
-      @escape-key-down="blockDismiss"
-      @interact-outside="blockDismiss"
-    >
-      <div class="flex flex-col gap-3">
-        <AlertDialogTitle class="text-base font-semibold">{{ t('countdown.title') }}</AlertDialogTitle>
-        <p class="text-sm text-muted-foreground">{{ t('countdown.about') }}</p>
-        <p class="font-mono text-sm font-semibold break-all">{{ target }}</p>
-        <p class="text-sm font-medium" style="color: var(--destructive)">{{ t('countdown.warn') }}</p>
-      </div>
-      <div class="flex items-center justify-between gap-3 pt-3">
-        <span v-if="remaining > 0" class="text-xs text-muted-foreground">{{
-          t('countdown.waiting', { n: remaining })
-        }}</span>
-        <span v-else class="text-xs text-muted-foreground">{{ t('countdown.unlocked') }}</span>
-        <div class="flex gap-2">
-          <Button variant="outline" size="sm" :disabled="pending" @click="show = false">{{ t('common.cancel') }}</Button>
-          <Button variant="destructive" size="sm" :disabled="remaining > 0 || pending" @click="onConfirmClick">
-            <LoaderCircle v-if="pending" class="animate-spin" />
-            {{ confirmText ?? t('common.delete') }}
-          </Button>
+    <Teleport to="body">
+      <AlertDialogOverlay class="fixed inset-0 z-50 bg-black/60" @interact-outside="blockDismiss" />
+      <RContent
+        role="alertdialog"
+        :aria-describedby="undefined"
+        class="fixed left-1/2 top-1/2 z-50 w-[440px] max-w-[92vw] -translate-x-1/2 -translate-y-1/2 gap-4 border border-border bg-card p-5 shadow-lg"
+        @escape-key-down="blockDismiss"
+        @interact-outside="blockDismiss"
+      >
+        <div class="flex flex-col gap-3">
+          <AlertDialogTitle class="text-base font-semibold">{{ t('countdown.title') }}</AlertDialogTitle>
+          <p class="text-sm text-muted-foreground">{{ t('countdown.about') }}</p>
+          <p class="font-mono text-sm font-semibold break-all">{{ target }}</p>
+          <p class="text-sm font-medium" style="color: var(--destructive)">{{ t('countdown.warn') }}</p>
         </div>
-      </div>
-    </RContent>
+        <div class="flex items-center justify-between gap-3 pt-3">
+          <span v-if="remaining > 0" class="text-xs text-muted-foreground">{{
+            t('countdown.waiting', { n: remaining })
+          }}</span>
+          <span v-else class="text-xs text-muted-foreground">{{ t('countdown.unlocked') }}</span>
+          <div class="flex gap-2">
+            <Button variant="outline" size="sm" :disabled="pending" @click="show = false">{{ t('common.cancel') }}</Button>
+            <Button variant="destructive" size="sm" :disabled="remaining > 0 || pending" @click="onConfirmClick">
+              <LoaderCircle v-if="pending" class="animate-spin" />
+              {{ confirmText ?? t('common.delete') }}
+            </Button>
+          </div>
+        </div>
+      </RContent>
+    </Teleport>
   </AlertDialog>
 </template>
