@@ -44,7 +44,9 @@ async def test_doc_upload_list_read_delete(client):
     assert r.status_code == 200
     assert r.content == "# 标题\n正文".encode()
     assert r.headers["content-type"].startswith("text/markdown")
-    assert "filename*=UTF-8''" in r.headers["content-disposition"]
+    # 不能带 Content-Disposition：带 filename 的 inline 头会被 IDM 等下载器拦截
+    # （PDF 预览会直接跳本地下载器）。文件名由前端 <a download> 指定。
+    assert "content-disposition" not in r.headers
 
     assert (await client.delete(f"/api/knowledge/sz-test/{doc['id']}")).status_code == 204
     assert (await client.get("/api/knowledge/sz-test")).json() == []

@@ -1,5 +1,4 @@
 import mimetypes
-from urllib.parse import quote
 
 from fastapi import APIRouter, Form, HTTPException, UploadFile
 from fastapi.responses import Response
@@ -73,14 +72,12 @@ async def get_content(site_id: str, doc_id: str) -> Response:
         raise HTTPException(status_code=404, detail=str(e)) from None
     if blob is None:
         raise HTTPException(status_code=404, detail="doc content not found")
-    filename = doc.get("filename") or doc_id
     return Response(
         content=blob,
         media_type=doc.get("mime") or "application/octet-stream",
-        headers={
-            "Content-Disposition": f"inline; filename*=UTF-8''{quote(filename)}",
-            "Cache-Control": "private, max-age=300",
-        },
+        # 不带 Content-Disposition：带 filename 的 inline 头会被 IDM 等下载管理器当成下载任务拦截
+        # （PDF 在预览时直接跳到本地下载器）。文件名由前端 <a download> 属性指定。
+        headers={"Cache-Control": "private, max-age=300"},
     )
 
 

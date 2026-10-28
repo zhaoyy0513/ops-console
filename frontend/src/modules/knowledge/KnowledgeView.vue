@@ -189,10 +189,13 @@ const KIND_LABEL: Record<string, string> = {
               </div>
               <div class="pc-file">
                 <span class="truncate">{{ d.filename }}</span>
-                <span class="pc-size">{{ humanSize(d.size) }}</span>
               </div>
               <div v-if="d.description" class="pc-desc">{{ d.description }}</div>
-              <div class="pc-ext">{{ fileExt(d).toUpperCase() || 'FILE' }}</div>
+              <!-- 底部一行：左侧扩展名、右侧文件大小，同一基线 -->
+              <div class="pc-foot">
+                <span class="pc-ext">{{ fileExt(d).toUpperCase() || 'FILE' }}</span>
+                <span class="pc-size">{{ humanSize(d.size) }}</span>
+              </div>
 
               <!-- hover 遮罩放在位移层内：与卡片一起抬起，不再露出缝隙 -->
               <div class="card-overlay" @click.stop>
@@ -315,8 +318,17 @@ const KIND_LABEL: Record<string, string> = {
   color: var(--ops-text-2);
   min-width: 0;
 }
+/* 底部一行：扩展名（左）+ 文件大小（右） */
+.pc-foot {
+  margin-top: auto;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
 .pc-size {
   flex: none;
+  font-size: 11px;
   color: var(--ops-text-3);
   font-variant-numeric: tabular-nums;
 }
@@ -330,7 +342,6 @@ const KIND_LABEL: Record<string, string> = {
   overflow: hidden;
 }
 .pc-ext {
-  margin-top: auto;
   font-size: 10px;
   letter-spacing: 0.06em;
   color: var(--ops-text-3);
