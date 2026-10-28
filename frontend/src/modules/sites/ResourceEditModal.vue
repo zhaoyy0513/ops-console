@@ -12,7 +12,7 @@ import OpsSwitch from '../../components/OpsSwitch.vue'
 export interface EditTarget {
   /** 编辑已有资源的 id；null = 新增 */
   id: string | null
-  type: 'servers' | 'pages' | 'redis' | 'mq' | 'devices'
+  type: 'servers' | 'knowledge' | 'redis' | 'mq' | 'devices'
   /** 编辑时的初始值（新增时传 {}） */
   item: Record<string, any>
   /** host 联想候选（redis/mq/devices 用） */
@@ -44,7 +44,7 @@ const TEST_TYPE: Record<string, string> = {
 
 const TYPES: Record<string, string> = {
   servers: 'Server',
-  pages: 'Page',
+  knowledge: 'Knowledge',
   redis: 'Redis',
   mq: 'ActiveMQ',
   devices: 'Device',
@@ -61,8 +61,8 @@ const FIELD_DEFS: Record<
     { key: 'username', label: 'Username', required: true },
     { key: 'password', label: 'Password', required: true },
   ],
-  // pages：名称必填、描述选填、链接必填（与 HTML 二选一时 URL 可空）
-  pages: [
+  // knowledge：名称必填、描述选填、链接选填（与 HTML / markdown 多选一时 URL 可空）
+  knowledge: [
     { key: 'name', label: 'Name', required: true },
     { key: 'description', label: 'Description' },
     { key: 'url', label: 'URL', kind: 'url-input', required: false },
@@ -89,7 +89,7 @@ const FIELD_DEFS: Record<
 
 const CREATE_DEFAULTS: Record<string, Record<string, unknown>> = {
   servers: { port: 22 },
-  pages: { url: '', html: '' },
+  knowledge: { url: '', html: '' },
   redis: { port: 6379 },
   mq: { port: 8161, username: 'prime_admin', password: 'hElloPr1me' },
   devices: {},
@@ -106,6 +106,7 @@ const isEdit = computed(() => !!props.target?.id)
 const typeLabel = computed(() => TYPES[props.target?.type ?? ''] ?? '')
 
 import { sitesApi } from './api'
+import { prepareKnowledgeData } from './knowledgeForm'
 
 watch(
   () => [props.show, props.target] as const,
@@ -131,14 +132,15 @@ async function onHtmlFile(e: Event) {
   if (!raw) return
   const name = raw.name.toLowerCase()
   if (!name.endsWith('.html') && raw.type !== 'text/html') {
-    message.error(t('page.invalidHtml'))
+    message.error(t('knowledge.htmlInvalid'))
     return
   }
   try {
     form.value.html = await raw.text()
-    message.success(t('page.htmlLoaded'))
+    message.success(t('knowledge.htmlLoaded'))
   } catch (err) {
-    message.error(t('page.htmlFailed', { msg: (err as Error).message }))
+    // 沿用本文件 save()/load() 的原始错误信息惯例（动态 {msg} 无静态 key）
+    message.error((err as Error).message)
   }
 }
 
@@ -164,7 +166,7 @@ async function save() {
     return
   }
   for (const f of fields.value) {
-    // url-input 是软必填：pages 允许用 HTML 替代链接，空值由下面的二选一校验裁决
+    // url-input 是软必填：knowledge 允许用 HTML/markdown 替代链接，空值由下面的多选一校验裁决
     if (f.kind === 'url-input') continue
     // 编辑态密码留空 = 保持原值（后端脱敏回填，明文不可得；必填约束仅创建时生效）
     if (f.required && !(f.key === 'password' && isEdit.value) && !String(form.value[f.key] ?? '').trim()) {
@@ -172,18 +174,24 @@ async function save() {
       return
     }
   }
-  // pages：url 与 html 至少一个（与后端 PageConfig 同规则）
-  if (target.type === 'pages'
-    && !String(form.value.url ?? '').trim()
-    && !String(form.value.html ?? '').trim()) {
-    fieldError.value = t('page.needOne')
-    return
+  // knowledge 三选一 + html/markdown 空串剔除在纯函数内（knowledgeForm.test.ts 守护）；
+  // 其余类型维持原内联过滤（需通过 name/dup/必填校验，见上）
+  let data: Record<string, unknown>
+  if (target.type === 'knowledge') {
+    const prepared = prepareKnowledgeData(form.value)
+    if (prepared.error) {
+      fieldError.value = prepared.error === 'nameRequired' ? t('common.nameRequired') : t('knowledge.needOne')
+      return
+    }
+    data = prepared.data ?? {}
+  } else {
+    data = Object.fromEntries(
+      Object.entries(form.value)
+        .filter(([k, v]) => v !== null && v !== undefined && !(k === 'html' && typeof v === 'string' && !v.trim())
+          && !(k === 'markdown' && typeof v === 'string' && !v.trim())
+          && !(k === 'password' && v === '')),
+    )
   }
-  const data = Object.fromEntries(
-    Object.entries(form.value)
-      .filter(([k, v]) => v !== null && v !== undefined && !(k === 'html' && typeof v === 'string' && !v.trim())
-        && !(k === 'password' && v === '')),
-  )
   saving.value = true
   try {
     if (target.id) {
@@ -265,9 +273,9 @@ function setNumber(key: string, v: string | number | undefined) {
                 <option v-for="o in props.target?.hostOptions ?? []" :key="o.value" :value="o.value" />
               </datalist>
             </span>
-            <!-- pages 链接：与 HTML 二选一，故 required=true 的字段用软校验（save 内判空） -->
+            <!-- knowledge 链接：与 HTML/markdown 多选一，故 required=true 的字段用软校验（save 内判空） -->
             <Input v-else-if="f.kind === 'url-input'" v-model="form[f.key]"
-              :placeholder="$t('page.urlPh')" />
+              :placeholder="$t('knowledge.urlPh')" />
             <Input
               v-else
               v-model="form[f.key]"
@@ -277,16 +285,18 @@ function setNumber(key: string, v: string | number | undefined) {
             />
           </div>
         </template>
-        <!-- pages 专属：HTML 上传 / 粘贴（与 url 二选一，上限单个 .html 文件） -->
-        <template v-if="props.target?.type === 'pages'">
+        <!-- knowledge 专属：HTML 上传 / 粘贴（与 url 二选一，上限单个 .html 文件） -->
+        <template v-if="props.target?.type === 'knowledge'">
+          <div v-if="props.target?.item?.markdown" class="rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground">
+            {{ $t('knowledge.drawerMdHint') }}
+          </div>
           <div class="grid grid-cols-[110px_1fr] items-center gap-3">
-            <label class="text-xs text-muted-foreground">{{ $t('page.htmlLabel') }}</label>
+            <label class="text-xs text-muted-foreground">{{ $t('knowledge.typeHtml') }}</label>
             <div class="flex flex-wrap items-center gap-2.5">
               <label class="inline-flex h-7 cursor-pointer items-center rounded-md border border-border px-2 text-xs font-medium hover:bg-accent">
-                {{ $t('page.uploadBtn') }}
+                {{ $t('knowledge.uploadHtml') }}
                 <input type="file" accept=".html" class="hidden" @change="onHtmlFile" />
               </label>
-              <span class="text-xs text-muted-foreground">{{ $t('page.uploadHint') }}</span>
             </div>
           </div>
           <div class="grid grid-cols-[110px_1fr] items-start gap-3">
@@ -296,11 +306,11 @@ function setNumber(key: string, v: string | number | undefined) {
               :rows="6"
               class="font-mono"
               spellcheck="false"
-              :placeholder="$t('page.htmlPh')"
+              :placeholder="$t('knowledge.htmlPh')"
             />
           </div>
         </template>
-        <!-- 无连接测试的类型（pages：不需要连通性探测）不渲染 Test 行 -->
+        <!-- 无连接测试的类型（knowledge：不需要连通性探测）不渲染 Test 行 -->
         <div v-if="TEST_TYPE[props.target?.type ?? 'servers']" class="grid grid-cols-[110px_1fr] items-center gap-3">
           <span />
           <div class="flex items-center gap-2.5">

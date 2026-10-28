@@ -17,18 +17,18 @@ export type ResourceConfig = {
   [key: string]: unknown
 }
 
-export type ResourceType = 'servers' | 'pages' | 'redis' | 'mq' | 'devices'
+export type ResourceType = 'servers' | 'knowledge' | 'redis' | 'mq' | 'devices'
 
 /** 资源实例 CRUD 的 URL 段（devices 让位给业务路由 /devices，存储 key 同名） */
 export const URL_SEGMENT: Record<ResourceType, string> = {
   servers: 'servers',
-  pages: 'pages',
+  knowledge: 'knowledge',
   redis: 'redis',
   mq: 'mq',
   devices: 'device-instances',
 }
 
-/** 资源路由类型 -> 连接测试类型（server|redis|mq|device）；pages 无连接测试 */
+/** 资源路由类型 -> 连接测试类型（server|redis|mq|device）；knowledge 无连接测试 */
 export const TEST_TYPE: Partial<Record<ResourceType, string>> = {
   servers: 'server',
   redis: 'redis',
