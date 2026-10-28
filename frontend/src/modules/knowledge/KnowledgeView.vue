@@ -11,21 +11,21 @@ import TabHelp from '../../components/TabHelp.vue'
 import FadeContent from '../../components/bits/FadeContent.vue'
 import TipCopy from '../../components/TipCopy.vue'
 import { useSiteStore } from '../../stores/site'
-import { pageApi, type PageResource } from './api'
+import { knowledgeApi, type KnowledgeResource } from './api'
 
 const siteStore = useSiteStore()
 
-const pages = ref<PageResource[]>([])
+const pages = ref<KnowledgeResource[]>([])
 const loading = ref(false)
 const showHtml = ref(false)
-const active = ref<PageResource | null>(null)
+const active = ref<KnowledgeResource | null>(null)
 
 async function load() {
   const siteId = siteStore.currentSiteId
   if (!siteId) return
   loading.value = true
   try {
-    const all = await pageApi.list(siteId)
+    const all = await knowledgeApi.list(siteId)
     pages.value = all.filter((p) => p.enabled !== false) // 停用的不进卡片墙
   } catch (e) {
     message.error((e as Error).message)
@@ -39,7 +39,7 @@ watch(() => siteStore.currentSiteId, load)
 
 /** 卡片点击：url 型新标签打开（X-Frame-Options 类安全策略无法绕过，最可靠）；
  *  html 型站内弹窗预览（sandbox 隔离）。 */
-function open(p: PageResource) {
+function open(p: KnowledgeResource) {
   if (p.kind === 'url' && p.url) {
     window.open(p.url, '_blank', 'noopener')
     return
@@ -48,7 +48,7 @@ function open(p: PageResource) {
 }
 
 /** 放大图标：站内弹窗预览（url 型会被部分站点拒绝嵌入 → 弹窗内有新标签兜底） */
-function preview(p: PageResource) {
+function preview(p: KnowledgeResource) {
   active.value = p
   showHtml.value = true
 }

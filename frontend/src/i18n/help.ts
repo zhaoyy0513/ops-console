@@ -56,14 +56,14 @@ export const helpContent: Record<HelpLang, Record<string, HelpSection>> = {
       ],
     },
 
-    page: {
-      title: '说明 · Page',
+    knowledge: {
+      title: '说明 · 知识库',
       lines: [
-        '把常用系统入口（ Grafana 、 Kibana 、各业务后台）收拢成卡片墙：点击即达。',
-        '两种页面类型：外链（http/https，新开标签页）与 HTML 单文件（上传或直接粘贴，在站内预览）。两者二选一保存。',
-        'HTML 页面运行于浏览器隔离沙箱：脚本可以执行，但无法读取本平台的登录态与数据（嵌入不受信页面的安全底线）。',
-        '在「站点管理 → 资源 → Page」中新增：名称、描述、链接为必填项——链接可与 HTML 互相替代。',
-        '上传仅接受单个 .html 文件（不支持多文件或压缩包）。',
+        '收拢站点常用入口与文档：外链卡片一键直达，Markdown / HTML 文档站内阅读。',
+        '三种类型：链接（新标签打开）、Markdown 文档（支持上传 .md 或直接粘贴，粘贴图片自动压缩为 base64 内嵌）、HTML 单文件页（沙箱隔离预览）。三者按所选类型保存。',
+        '卡片悬停出现遮罩：打开 / 编辑 / 删除（删除有倒计时确认）；右上「新建」自动关联当前站点。',
+        'HTML 页面运行于浏览器隔离沙箱：脚本可以执行，但无法读取本平台的登录态与数据。',
+        '站点管理 → 资源 → Knowledge 仍可维护链接与 HTML 页；Markdown 文档请在知识库页面编辑。',
       ],
     },
 
@@ -137,14 +137,14 @@ export const helpContent: Record<HelpLang, Record<string, HelpSection>> = {
       ],
     },
 
-    page: {
-      title: 'Instructions · Page',
+    knowledge: {
+      title: 'Instructions · Knowledge',
       lines: [
-        'Collects frequently used system entries (Grafana, Kibana, ops backends) into a card wall — one click away.',
-        'Two page types: external link (http/https, opens in a new tab) and single-file HTML (uploaded or pasted, previewed inside the console). Save exactly one of the two.',
-        'HTML pages run in a browser sandbox: scripts execute, but they cannot read this platform’s session or data (the safe baseline for embedding untrusted pages).',
-        'Add pages in Sites → Resources → Page: name, description and URL are required — the URL and the HTML block can substitute for each other.',
-        'Upload accepts a single .html file only (no multi-file or archives).',
+        'Collects site entries and documents: external links one click away, Markdown / HTML docs readable in place.',
+        'Three types: link (new tab), Markdown doc (upload .md or paste; pasted images are compressed and embedded as base64), single-file HTML (sandboxed preview). Only the selected type is saved.',
+        'Hovering a card shows an overlay: Open / Edit / Delete (delete has a countdown confirm); "New" auto-binds the current site.',
+        'HTML pages run in a browser sandbox: scripts execute but cannot read this platform’s session or data.',
+        'Sites → Resources → Knowledge still manages links and HTML pages; edit Markdown docs on the Knowledge page.',
       ],
     },
 

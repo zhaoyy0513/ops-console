@@ -5,7 +5,7 @@ import {
   ChevronLeft, ChevronRight, FolderCog, Languages, Moon, ScrollText, Sun, type LucideIcon,
 } from 'lucide-vue-next'
 import {
-  GridOutline, ServerOutline, DocumentTextOutline, LayersOutline,
+  GridOutline, ServerOutline, BookOutline, LayersOutline,
   PulseOutline, HardwareChipOutline, TerminalOutline, CubeOutline,
 } from '@vicons/ionicons5'
 import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/ui/select'
@@ -30,7 +30,7 @@ const modules = getModules()
 const MODULE_ICONS: Record<string, Component> = {
   overview: GridOutline,
   server: ServerOutline,
-  page: DocumentTextOutline,
+  knowledge: BookOutline,
   redis: LayersOutline,
   mq: PulseOutline,
   device: HardwareChipOutline,
@@ -194,7 +194,7 @@ const themeIcon = computed(() => THEME_ICONS[themeStore.theme])
           <button class="collapse-btn" :title="collapsed ? $t('layout.expand') : $t('layout.collapse')" @click="collapsed = !collapsed">
             <component :is="collapsed ? ChevronRight : ChevronLeft" class="size-4" />
           </button>
-          <span v-if="!collapsed" class="build-stamp font-mono">b1028-1000</span>
+          <span v-if="!collapsed" class="build-stamp font-mono">b1028-1124</span>
         </div>
       </aside>
       <main class="app-main">
@@ -222,12 +222,14 @@ const themeIcon = computed(() => THEME_ICONS[themeStore.theme])
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
-  height: 22px;
-  border-radius: 6px;
-  background: var(--primary);
-  color: var(--primary-foreground);
-  font-size: 13px;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  /* spec Logo：径向渐变左上亮粉 → 紫 → 右下蓝，带轻微外发光 */
+  background: radial-gradient(circle at 30% 30%, #ec4899 0%, #a855f7 52%, #3b82f6 100%);
+  box-shadow: 0 0 12px rgba(168, 85, 247, 0.35);
+  color: #fff;
+  font-size: 15px;
   font-weight: 700;
 }
 .sider-footer {
