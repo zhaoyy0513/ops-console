@@ -6,14 +6,16 @@ import { useThemeStore } from './stores/theme'
 import MainLayout from './layouts/MainLayout.vue'
 
 // 画风状态唯一事实来源是 theme store；此处只负责把它投影到 <html data-theme>。
-// 组件（图表/编辑器）通过 inject('opsTheme') 拿到主题名做自己的深浅判断。
+// 组件（图表/编辑器）通过 inject('opsTheme') 拿到二值深浅：三主题在此一处收敛映射
+// （holo 唯一浅色，neon/synth 均深色），消费方零改动。
 const theme = useThemeStore()
 
 watchEffect(() => {
   document.documentElement.dataset.theme = theme.theme
 })
 
-provide('opsTheme', computed(() => theme.theme))
+const lightDark = computed<'light' | 'dark'>(() => (theme.theme === 'holo' ? 'light' : 'dark'))
+provide('opsTheme', lightDark)
 </script>
 
 <template>
@@ -21,6 +23,6 @@ provide('opsTheme', computed(() => theme.theme))
       （表现为 patch 阶段 emitsOptions/parentNode null 崩溃），在此统一提供 -->
   <TooltipProvider :delay-duration="100">
     <MainLayout />
-    <Toaster :theme="theme.theme === 'light' ? 'light' : 'dark'" position="top-center" rich-colors close-button />
+    <Toaster :theme="lightDark" position="top-center" rich-colors close-button />
   </TooltipProvider>
 </template>

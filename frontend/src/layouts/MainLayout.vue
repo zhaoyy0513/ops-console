@@ -1,9 +1,7 @@
 <script setup lang="ts">
 import { computed, h, onMounted, ref, watch, type Component } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import {
-  ChevronLeft, ChevronRight, FolderCog, Languages, Moon, ScrollText, Sun, type LucideIcon,
-} from 'lucide-vue-next'
+import { ChevronLeft, ChevronRight, FolderCog, Languages, ScrollText } from 'lucide-vue-next'
 import {
   DocumentTextOutline, GridOutline, ServerOutline, BookOutline, LayersOutline,
   PulseOutline, HardwareChipOutline, TerminalOutline, CubeOutline,
@@ -39,10 +37,12 @@ const MODULE_ICONS: Record<string, Component> = {
   database: CubeOutline,
 }
 
-// 主题明暗二态切换（themeStore 已在上方声明）
-function toggleTheme() {
-  themeStore.set(themeStore.theme === 'light' ? 'dark' : 'light')
-}
+// 主题三选一（neon/holo/synth，圆点切换在侧栏 footer）
+const THEMES: Array<{ key: OpsTheme; label: string }> = [
+  { key: 'neon', label: 'layout.themeNeon' },
+  { key: 'holo', label: 'layout.themeHolo' },
+  { key: 'synth', label: 'layout.themeSynth' },
+]
 
 // 侧栏折叠（200px ↔ 56px，只藏文字不藏图标）
 const collapsed = ref(false)
@@ -122,11 +122,6 @@ function onSiteSelect(id: string | null) {
   router.push(`/console/site/${id}/${target}`)
 }
 
-const THEME_ICONS: Record<OpsTheme, LucideIcon> = {
-  light: Sun,
-  dark: Moon,
-}
-const themeIcon = computed(() => THEME_ICONS[themeStore.theme])
 </script>
 
 <template>
@@ -161,10 +156,7 @@ const themeIcon = computed(() => THEME_ICONS[themeStore.theme])
           <Languages />
           {{ locale === 'zh' ? 'EN' : '中文' }}
         </Button>
-        <!-- 主题切换：明/暗二态 -->
-        <Button variant="ghost" size="icon-sm" :title="$t('layout.theme')" @click="toggleTheme">
-          <component :is="themeIcon" />
-        </Button>
+        <!-- 主题三选一圆点在侧栏 footer -->
       </div>
     </header>
     <!-- 自绘顶部 loading bar -->
@@ -192,10 +184,20 @@ const themeIcon = computed(() => THEME_ICONS[themeStore.theme])
           </button>
         </nav>
         <div class="sider-footer">
-          <button class="collapse-btn" :title="collapsed ? $t('layout.expand') : $t('layout.collapse')" @click="collapsed = !collapsed">
-            <component :is="collapsed ? ChevronRight : ChevronLeft" class="size-4" />
-          </button>
-          <span v-if="!collapsed" class="build-stamp font-mono">b1028-1301</span>
+          <!-- 主题三选一圆点（分割线下、版本号上）：各主题配色微缩，active 高亮环 -->
+          <div class="theme-dots" :class="{ collapsed }">
+            <button
+              v-for="th in THEMES" :key="th.key"
+              class="theme-dot" :class="[`dot-${th.key}`, { active: themeStore.theme === th.key }]"
+              :title="$t(th.label)" @click="themeStore.set(th.key)"
+            />
+          </div>
+          <div class="sider-footer-row">
+            <button class="collapse-btn" :title="collapsed ? $t('layout.expand') : $t('layout.collapse')" @click="collapsed = !collapsed">
+              <component :is="collapsed ? ChevronRight : ChevronLeft" class="size-4" />
+            </button>
+            <span v-if="!collapsed" class="build-stamp font-mono">b1028-1301</span>
+          </div>
         </div>
       </aside>
       <main class="app-main">
@@ -236,10 +238,48 @@ const themeIcon = computed(() => THEME_ICONS[themeStore.theme])
 .sider-footer {
   margin-top: auto;
   display: flex;
-  align-items: center;
+  flex-direction: column;
   gap: 8px;
   padding: 10px 12px;
   border-top: 1px solid var(--ops-border);
+}
+/* 主题三选一圆点：各主题配色微缩；collapsed 时居中收窄 */
+.theme-dots {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.theme-dots.collapsed {
+  justify-content: center;
+}
+.theme-dot {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  cursor: pointer;
+  flex: none;
+  transition: transform 120ms ease, box-shadow 120ms ease;
+}
+.theme-dot:hover {
+  transform: scale(1.12);
+}
+.theme-dot.active {
+  box-shadow: 0 0 0 2px var(--ops-bg), 0 0 0 4px var(--primary);
+}
+.dot-neon {
+  background: radial-gradient(circle at 30% 30%, #00f5ff, #7c3cff 55%, #ff2bd6);
+}
+.dot-holo {
+  background: conic-gradient(#ff2bd6, #7c3cff, #00f5ff, #00f5aa, #ff2bd6);
+}
+.dot-synth {
+  background: linear-gradient(135deg, #ff3d81, #ffb703 55%, #00d1ff);
+}
+.sider-footer-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 .build-stamp {
   font-size: 10px;

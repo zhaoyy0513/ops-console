@@ -1,108 +1,164 @@
-/* 设计令牌：全站唯一色彩/字体/圆角事实来源。明暗二态 = data-theme 属性切换，
-   组件只吃语义变量（bg-background 等），换主题零 JS 重渲染。 */
+/* 设计令牌：全站唯一色彩/字体/圆角事实来源。三主题 = data-theme 属性切换
+   （neon 深色霓虹 / holo 全息幻彩浅色 / synth 复古落日，默认 neon），
+   组件只吃语义变量（bg-background 等），换主题零 JS 重渲染。
+   主题差异全部收敛进 token：--ops-aurora 多层背景（极光/网格线/底色）、
+   --ops-shadow-card 多层投影（含光晕与顶部高光）。 */
 :root,
-[data-theme='light'] {
+[data-theme='neon'] {
   /* shadcn 语义变量 */
-  --background: #fdfcff;
-  --foreground: #181c25;
-  /* 玻璃拟态：卡片/弹层半透明白，配合 backdrop-blur 出毛玻璃（Card/Dialog/Select 已挂 blur） */
-  --card: rgba(255, 255, 255, 0.85);
-  --card-foreground: #181c25;
-  --popover: rgba(255, 255, 255, 0.92);
-  --popover-foreground: #181c25;
-  --primary: #2563eb;
-  --primary-foreground: #ffffff;
-  --secondary: #eef0f3;
-  --secondary-foreground: #3d4351;
-  --muted: #eef0f3;
-  --muted-foreground: #7a8194;
-  --accent: #eef0f3;
-  --accent-foreground: #181c25;
-  --destructive: #d03050;
+  --background: #0b1020;
+  --foreground: #e9f1ff;
+  /* 玻璃拟态：卡片/弹层半透明深色 + backdrop-blur 出毛玻璃（Card/Dialog/Select 已挂 blur） */
+  --card: rgba(20, 25, 45, 0.55);
+  --card-foreground: #e9f1ff;
+  --popover: rgba(20, 25, 45, 0.75);
+  --popover-foreground: #e9f1ff;
+  --primary: #00f5ff;
+  --primary-foreground: #06121c;
+  --secondary: rgba(0, 245, 255, 0.1);
+  --secondary-foreground: #9fd8e8;
+  --muted: rgba(233, 241, 255, 0.06);
+  --muted-foreground: #7f93b8;
+  --accent: rgba(0, 245, 255, 0.12);
+  --accent-foreground: #e9f1ff;
+  --destructive: #ff4d6d;
   --destructive-foreground: #ffffff;
-  --border: #e3e5ea;
-  --input: #dde0e6;
-  --ring: #2563eb;
+  --border: rgba(0, 245, 255, 0.16);
+  --input: rgba(0, 245, 255, 0.22);
+  --ring: #00f5ff;
   --radius: 0.5rem;
 
   /* 项目语义状态色（沿用旧 tokens，StatusBadge 等自有组件还在用 --ops-*） */
-  --ops-healthy: #10b981;
-  --ops-warning: #f0a020;
-  --ops-critical: #d03050;
-  --ops-unknown: #909399;
-  /* 马卡龙极光背景：5 层径向渐变叠加（#FCE7F3/#E0F2FE/#CCFBF1/#EDE9FE/#ECFCCB），
-     挂在 body（style.css），fixed 不随页面滚动 */
+  --ops-healthy: #00f5aa;
+  --ops-warning: #ffb703;
+  --ops-critical: #ff3d81;
+  --ops-unknown: #6b7a99;
+  /* 深色霓虹极光：青/紫/品红对角弥漫 + 极细青色网格线（科技质感） */
   --ops-aurora:
-    radial-gradient(1200px 800px at 8% 8%, #fce7f3 0%, transparent 58%),
-    radial-gradient(1100px 760px at 88% 12%, #e0f2fe 0%, transparent 58%),
-    radial-gradient(1000px 820px at 12% 88%, #ccfbf1 0%, transparent 58%),
-    radial-gradient(1200px 860px at 82% 82%, #ede9fe 0%, transparent 62%),
-    radial-gradient(760px 540px at 50% 48%, #ecfccb 0%, transparent 55%),
-    #fdfcff;
-  --ops-bg: #fdfcff;
-  --ops-surface: rgba(255, 255, 255, 0.78);
-  --ops-surface-2: #f2f3f5;
-  --ops-border: #e5e6eb;
-  /* 玻璃卡片描边（白 60%）与投影：只用于 Card，分隔线仍走 --ops-border */
-  --ops-card-border: rgba(255, 255, 255, 0.6);
-  --ops-shadow-card: 0 4px 16px rgba(0, 0, 0, 0.04);
-  /* 页面标题紫粉渐变文字（CardTitle 用） */
-  --ops-gradient-text: linear-gradient(90deg, #8b5cf6, #ec4899);
-  --ops-text-1: #1f2329;
-  --ops-text-2: #4e5969;
-  --ops-text-3: #86909c;
+    radial-gradient(1100px 700px at 10% 0%, rgba(0, 245, 255, 0.14), transparent 55%),
+    radial-gradient(900px 700px at 90% 10%, rgba(124, 60, 255, 0.16), transparent 55%),
+    radial-gradient(1000px 800px at 50% 100%, rgba(255, 43, 214, 0.1), transparent 60%),
+    repeating-linear-gradient(0deg, rgba(0, 245, 255, 0.05) 0 1px, transparent 1px 44px),
+    repeating-linear-gradient(90deg, rgba(0, 245, 255, 0.05) 0 1px, transparent 1px 44px),
+    #0b1020;
+  --ops-bg: #0b1020;
+  --ops-surface: rgba(20, 25, 45, 0.55);
+  --ops-surface-2: rgba(0, 245, 255, 0.08);
+  --ops-border: rgba(0, 245, 255, 0.16);
+  /* 玻璃卡片描边与投影：只用于 Card；多层投影 = 深投影 + 霓虹光晕 + 顶部高光 */
+  --ops-card-border: rgba(0, 245, 255, 0.28);
+  --ops-shadow-card:
+    0 8px 32px rgba(0, 0, 0, 0.4),
+    0 0 20px rgba(0, 245, 255, 0.07),
+    inset 0 1px 0 rgba(233, 241, 255, 0.06);
+  /* 页面标题霓虹渐变文字（CardTitle 用；外发光见 style.css 的 data-theme 作用域规则） */
+  --ops-gradient-text: linear-gradient(90deg, #00f5ff, #7c3cff, #ff2bd6);
+  --ops-text-1: #e9f1ff;
+  --ops-text-2: #a8b8d8;
+  --ops-text-3: #6b7a99;
   --ops-radius-s: 4px;
   --ops-radius-m: 8px;
   --ops-font-sans: 'Inter Variable', system-ui, 'PingFang SC', 'Microsoft YaHei', sans-serif;
   --ops-font-mono: 'JetBrains Mono Variable', ui-monospace, Consolas, monospace;
 }
 
-[data-theme='dark'] {
-  --background: #0a0a0c;
-  --foreground: #e8e8ec;
-  --card: rgba(18, 18, 22, 0.78);
-  --card-foreground: #e8e8ec;
-  --popover: rgba(23, 23, 28, 0.85);
-  --popover-foreground: #e8e8ec;
-  --primary: #8b8cf7;
-  --primary-foreground: #0a0a0c;
-  --secondary: #1c1c22;
-  --secondary-foreground: #a9a9b3;
-  --muted: #1c1c22;
-  --muted-foreground: #6f6f79;
-  --accent: #1c1c22;
-  --accent-foreground: #e8e8ec;
-  --destructive: #e5484d;
+[data-theme='holo'] {
+  --background: #f8faff;
+  --foreground: #1a2030;
+  --card: rgba(255, 255, 255, 0.7);
+  --card-foreground: #1a2030;
+  --popover: rgba(255, 255, 255, 0.9);
+  --popover-foreground: #1a2030;
+  --primary: #7c3cff;
+  --primary-foreground: #ffffff;
+  --secondary: #efeafc;
+  --secondary-foreground: #4a4660;
+  --muted: #efeafc;
+  --muted-foreground: #8b87a3;
+  --accent: #efeafc;
+  --accent-foreground: #1a2030;
+  --destructive: #d03050;
   --destructive-foreground: #ffffff;
-  --border: #26262e;
-  --input: #26262e;
-  --ring: #8b8cf7;
-  --radius: 0.375rem;
+  --border: #e5e0f2;
+  --input: #dcd6ee;
+  --ring: #7c3cff;
+  --radius: 0.5rem;
 
-  --ops-healthy: #2fbf71;
-  --ops-warning: #f5a623;
-  --ops-critical: #e5484d;
-  --ops-unknown: #6f6f79;
-  /* 暗色极光：同构图，马卡龙色降为低透明度光晕叠在近黑底上 */
+  --ops-healthy: #10b981;
+  --ops-warning: #f0a020;
+  --ops-critical: #d03050;
+  --ops-unknown: #909399;
+  /* 全息幻彩：五色柔化径向（幻彩粉/冰蓝/薄荷/薰衣草紫/香槟金），贝壳内壁反光质感 */
   --ops-aurora:
-    radial-gradient(1200px 800px at 8% 8%, rgba(252, 231, 243, 0.09) 0%, transparent 58%),
-    radial-gradient(1100px 760px at 88% 12%, rgba(224, 242, 254, 0.08) 0%, transparent 58%),
-    radial-gradient(1000px 820px at 12% 88%, rgba(204, 251, 241, 0.07) 0%, transparent 58%),
-    radial-gradient(1200px 860px at 82% 82%, rgba(237, 233, 254, 0.09) 0%, transparent 62%),
-    radial-gradient(760px 540px at 50% 48%, rgba(236, 252, 203, 0.05) 0%, transparent 55%),
-    #0a0a0c;
-  --ops-bg: #0a0a0c;
-  --ops-surface: rgba(18, 18, 22, 0.72);
-  --ops-surface-2: #1c1c22;
-  --ops-border: #26262e;
-  --ops-card-border: rgba(255, 255, 255, 0.08);
-  --ops-shadow-card: 0 4px 16px rgba(0, 0, 0, 0.3);
-  --ops-gradient-text: linear-gradient(90deg, #a78bfa, #f472b6);
-  --ops-text-1: #e8e8ec;
-  --ops-text-2: #a9a9b3;
-  --ops-text-3: #6f6f79;
+    radial-gradient(1000px 700px at 10% 10%, #ffd6f2 0%, transparent 60%),
+    radial-gradient(1000px 700px at 90% 15%, #d6f0ff 0%, transparent 60%),
+    radial-gradient(900px 700px at 12% 88%, #e8ffe0 0%, transparent 60%),
+    radial-gradient(1100px 800px at 85% 85%, #f0e4ff 0%, transparent 62%),
+    radial-gradient(760px 540px at 50% 48%, #fff4d6 0%, transparent 55%),
+    #f8faff;
+  --ops-bg: #f8faff;
+  --ops-surface: rgba(255, 255, 255, 0.7);
+  --ops-surface-2: #f2effc;
+  --ops-border: #e5e0f2;
+  --ops-card-border: rgba(124, 60, 255, 0.18);
+  --ops-shadow-card: 0 8px 24px rgba(124, 60, 255, 0.1);
+  --ops-gradient-text: linear-gradient(90deg, #ff2bd6, #7c3cff, #00c2ff);
+  --ops-text-1: #1a2030;
+  --ops-text-2: #4a4660;
+  --ops-text-3: #8b87a3;
   --ops-radius-s: 4px;
-  --ops-radius-m: 6px;
+  --ops-radius-m: 8px;
+}
+
+[data-theme='synth'] {
+  --background: #12002b;
+  --foreground: #f8f1ff;
+  --card: rgba(18, 0, 43, 0.6);
+  --card-foreground: #f8f1ff;
+  --popover: rgba(24, 0, 52, 0.82);
+  --popover-foreground: #f8f1ff;
+  --primary: #ff3d81;
+  --primary-foreground: #ffffff;
+  --secondary: rgba(255, 61, 129, 0.12);
+  --secondary-foreground: #e8b8cd;
+  --muted: rgba(248, 241, 255, 0.06);
+  --muted-foreground: #9a7fbe;
+  --accent: rgba(255, 61, 129, 0.14);
+  --accent-foreground: #f8f1ff;
+  --destructive: #ff4d6d;
+  --destructive-foreground: #ffffff;
+  --border: rgba(255, 61, 129, 0.28);
+  --input: rgba(255, 61, 129, 0.32);
+  --ring: #ff3d81;
+  --radius: 0.5rem;
+
+  --ops-healthy: #00ff9d;
+  --ops-warning: #ffb703;
+  --ops-critical: #ff2b5e;
+  --ops-unknown: #9a7fbe;
+  /* synthwave 落日：底部地平线日落（粉→琥珀）+ 青色电光光晕 + 细网格 */
+  --ops-aurora:
+    radial-gradient(900px 500px at 50% 105%, rgba(255, 61, 129, 0.35), transparent 65%),
+    radial-gradient(700px 380px at 50% 100%, rgba(255, 183, 3, 0.25), transparent 70%),
+    radial-gradient(800px 500px at 15% 10%, rgba(0, 209, 255, 0.16), transparent 60%),
+    repeating-linear-gradient(0deg, rgba(0, 209, 255, 0.05) 0 1px, transparent 1px 48px),
+    repeating-linear-gradient(90deg, rgba(0, 209, 255, 0.05) 0 1px, transparent 1px 48px),
+    #12002b;
+  --ops-bg: #12002b;
+  --ops-surface: rgba(18, 0, 43, 0.6);
+  --ops-surface-2: rgba(255, 61, 129, 0.1);
+  --ops-border: rgba(255, 61, 129, 0.28);
+  --ops-card-border: rgba(255, 61, 129, 0.45);
+  --ops-shadow-card:
+    0 8px 32px rgba(0, 0, 0, 0.45),
+    0 0 18px rgba(255, 61, 129, 0.15),
+    inset 0 1px 0 rgba(248, 241, 255, 0.05);
+  --ops-gradient-text: linear-gradient(90deg, #ff3d81, #ffb703);
+  --ops-text-1: #f8f1ff;
+  --ops-text-2: #d8c8ec;
+  --ops-text-3: #9a7fbe;
+  --ops-radius-s: 4px;
+  --ops-radius-m: 8px;
 }
 
 

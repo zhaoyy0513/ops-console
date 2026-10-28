@@ -22,6 +22,13 @@ body {
   background-clip: text;
   color: transparent;
 }
+/* 霓虹系主题标题微外发光（holo 浅色不带） */
+[data-theme='neon'] .ops-gradient-text {
+  text-shadow: 0 0 18px rgba(0, 245, 255, 0.35);
+}
+[data-theme='synth'] .ops-gradient-text {
+  text-shadow: 0 0 16px rgba(255, 61, 129, 0.4);
+}
 
 .app-shell {
   display: flex;
