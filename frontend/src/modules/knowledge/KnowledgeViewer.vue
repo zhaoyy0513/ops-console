@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { Download, ExternalLink } from 'lucide-vue-next'
 import { FileViewer } from '@file-viewer/vue3'
 import '@file-viewer/vue3/dist/file-viewer3.css'
@@ -26,22 +26,42 @@ const url = computed(() =>
 const viewerTheme = computed(() => (theme.theme === 'holo' ? 'light' : 'dark'))
 
 // 每次打开重置状态；关闭后卸载组件（v-if），file-viewer 会自行销毁渲染会话
+let watchdog: ReturnType<typeof setTimeout> | null = null
+
+function clearWatchdog() {
+  if (watchdog) clearTimeout(watchdog)
+  watchdog = null
+}
+
 watch(
   () => [props.show, props.doc?.id] as const,
   ([show]) => {
-    if (show) {
-      parsing.value = true
-      failed.value = false
-    }
+    clearWatchdog()
+    if (!show) return
+    parsing.value = true
+    failed.value = false
+    // 兜底：既没有 load-complete 也没有 error 时（worker 拉取失败等），20s 后收起转圈
+    watchdog = setTimeout(() => {
+      parsing.value = false
+    }, 20_000)
   },
   { immediate: true },
 )
 
+onBeforeUnmount(clearWatchdog)
+
+function onLoadStart() {
+  parsing.value = true
+}
+
 function onLoadComplete() {
+  clearWatchdog()
   parsing.value = false
 }
 
-function onLoadError() {
+/** file-viewer 的错误事件名是 error（不是 load-error）；渲染失败给下载兜底 */
+function onViewerError() {
+  clearWatchdog()
   parsing.value = false
   failed.value = true
 }
@@ -60,14 +80,20 @@ function openInNewTab() {
 
       <div class="viewer-wrap min-h-0 flex-1">
         <!-- v-if 而非 v-show：关闭即卸载，file-viewer 会销毁渲染会话（PPT 图表等不留 DOM） -->
+        <!-- 关键：content 端点 URL 不带扩展名，必须显式传 filename/type/size，
+             否则 file-viewer 无法识别格式，会一律提示「不支持在线预览」 -->
         <file-viewer
           v-if="props.show && props.doc && url"
           :key="props.doc.id"
           :url="url"
+          :filename="props.doc.filename"
+          :type="props.doc.mime"
+          :size="props.doc.size"
           :options="{ theme: viewerTheme, toolbar: { position: 'bottom-right' } }"
           style="height: 100%; width: 100%"
+          @load-start="onLoadStart"
           @load-complete="onLoadComplete"
-          @load-error="onLoadError"
+          @error="onViewerError"
         />
 
         <!-- 解析中 -->
