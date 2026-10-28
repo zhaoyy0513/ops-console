@@ -230,6 +230,11 @@ const messages = {
     },
     page: {
       title: '页面',
+      siteLabel: '站点',
+      nameLabel: '名称',
+      descLabel: '描述',
+      typeLabel: '类型',
+      htmlLabel: 'HTML 文件',
       hintShort: '卡片悬停出现打开/编辑/删除；一律在新标签打开',
       new: '新建',
       edit: '编辑',
@@ -778,6 +783,11 @@ const messages = {
     },
     page: {
       title: 'Page',
+      siteLabel: 'Site',
+      nameLabel: 'Name',
+      descLabel: 'Description',
+      typeLabel: 'Type',
+      htmlLabel: 'HTML file',
       hintShort: 'Hover a card for open/edit/delete; everything opens in a new tab',
       new: 'New',
       edit: 'Edit',
