@@ -133,6 +133,26 @@ async def delete_site(site_id: str) -> bool:
 # 推翻 PRD §5.2 的"密码不回显"要求；更新语义为"提交什么存什么"。
 
 
+async def migrate_legacy_pages() -> None:
+    """pages→knowledge 一次性迁移（应用启动时执行）：
+    仅源存在 → RENAME；并存（降级窗口旧代码写过源）→ 源中目标缺失的 id 并入后删源；
+    仅目标存在 → 不动。幂等：跑多次结果一致。"""
+    r = get_platform_redis()
+    for sid in await r.smembers(SITES_KEY):
+        src = resource_key(sid, "pages")
+        dst = resource_key(sid, "knowledge")
+        if not await r.exists(src):
+            continue
+        if not await r.exists(dst):
+            await r.rename(src, dst)
+            continue
+        target_ids = set(await r.hkeys(dst))
+        merged = {rid: raw for rid, raw in (await r.hgetall(src)).items() if rid not in target_ids}
+        if merged:
+            await r.hset(dst, mapping=merged)
+        await r.delete(src)
+
+
 async def _require_site(site_id: str) -> None:
     if not await get_platform_redis().hexists(site_key(site_id), "id"):
         raise NotFound(f"site not found: {site_id}")
@@ -299,6 +319,8 @@ async def import_all(sites: list[dict]) -> int:
         await r.srem(SITES_KEY, *old_ids)
 
     for s in sites:
+        if "pages" in s:  # 旧版导出文件兼容：pages 数组并入 knowledge
+            s["knowledge"] = s.pop("pages") + s.get("knowledge", [])
         resources = {t: s.pop(t, []) for t in RESOURCE_TYPES}
         await create_site(s)
         sid = s["id"]
