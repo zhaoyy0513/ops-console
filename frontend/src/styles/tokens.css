@@ -3,11 +3,12 @@
 :root,
 [data-theme='light'] {
   /* shadcn 语义变量 */
-  --background: #f4f5f7;
+  --background: #fdfcff;
   --foreground: #181c25;
-  --card: #ffffff;
+  /* 玻璃拟态：卡片/弹层半透明白，配合 backdrop-blur 出毛玻璃（Card/Dialog/Select 已挂 blur） */
+  --card: rgba(255, 255, 255, 0.85);
   --card-foreground: #181c25;
-  --popover: #ffffff;
+  --popover: rgba(255, 255, 255, 0.92);
   --popover-foreground: #181c25;
   --primary: #2563eb;
   --primary-foreground: #ffffff;
@@ -25,20 +26,33 @@
   --radius: 0.5rem;
 
   /* 项目语义状态色（沿用旧 tokens，StatusBadge 等自有组件还在用 --ops-*） */
-  --ops-healthy: #18a058;
+  --ops-healthy: #10b981;
   --ops-warning: #f0a020;
   --ops-critical: #d03050;
   --ops-unknown: #909399;
-  --ops-bg: #f6f7f9;
-  --ops-surface: #ffffff;
+  /* 马卡龙极光背景：5 层径向渐变叠加（#FCE7F3/#E0F2FE/#CCFBF1/#EDE9FE/#ECFCCB），
+     挂在 body（style.css），fixed 不随页面滚动 */
+  --ops-aurora:
+    radial-gradient(1200px 800px at 8% 8%, #fce7f3 0%, transparent 58%),
+    radial-gradient(1100px 760px at 88% 12%, #e0f2fe 0%, transparent 58%),
+    radial-gradient(1000px 820px at 12% 88%, #ccfbf1 0%, transparent 58%),
+    radial-gradient(1200px 860px at 82% 82%, #ede9fe 0%, transparent 62%),
+    radial-gradient(760px 540px at 50% 48%, #ecfccb 0%, transparent 55%),
+    #fdfcff;
+  --ops-bg: #fdfcff;
+  --ops-surface: rgba(255, 255, 255, 0.78);
   --ops-surface-2: #f2f3f5;
   --ops-border: #e5e6eb;
+  /* 玻璃卡片描边（白 60%）与投影：只用于 Card，分隔线仍走 --ops-border */
+  --ops-card-border: rgba(255, 255, 255, 0.6);
+  --ops-shadow-card: 0 4px 16px rgba(0, 0, 0, 0.04);
+  /* 页面标题紫粉渐变文字（CardTitle 用） */
+  --ops-gradient-text: linear-gradient(90deg, #8b5cf6, #ec4899);
   --ops-text-1: #1f2329;
   --ops-text-2: #4e5969;
   --ops-text-3: #86909c;
   --ops-radius-s: 4px;
   --ops-radius-m: 8px;
-  --ops-shadow-card: 0 1px 2px rgba(0, 0, 0, 0.04);
   --ops-font-sans: 'Inter Variable', system-ui, 'PingFang SC', 'Microsoft YaHei', sans-serif;
   --ops-font-mono: 'JetBrains Mono Variable', ui-monospace, Consolas, monospace;
 }
@@ -46,9 +60,9 @@
 [data-theme='dark'] {
   --background: #0a0a0c;
   --foreground: #e8e8ec;
-  --card: #121216;
+  --card: rgba(18, 18, 22, 0.78);
   --card-foreground: #e8e8ec;
-  --popover: #17171c;
+  --popover: rgba(23, 23, 28, 0.85);
   --popover-foreground: #e8e8ec;
   --primary: #8b8cf7;
   --primary-foreground: #0a0a0c;
@@ -69,16 +83,26 @@
   --ops-warning: #f5a623;
   --ops-critical: #e5484d;
   --ops-unknown: #6f6f79;
+  /* 暗色极光：同构图，马卡龙色降为低透明度光晕叠在近黑底上 */
+  --ops-aurora:
+    radial-gradient(1200px 800px at 8% 8%, rgba(252, 231, 243, 0.09) 0%, transparent 58%),
+    radial-gradient(1100px 760px at 88% 12%, rgba(224, 242, 254, 0.08) 0%, transparent 58%),
+    radial-gradient(1000px 820px at 12% 88%, rgba(204, 251, 241, 0.07) 0%, transparent 58%),
+    radial-gradient(1200px 860px at 82% 82%, rgba(237, 233, 254, 0.09) 0%, transparent 62%),
+    radial-gradient(760px 540px at 50% 48%, rgba(236, 252, 203, 0.05) 0%, transparent 55%),
+    #0a0a0c;
   --ops-bg: #0a0a0c;
-  --ops-surface: #121216;
+  --ops-surface: rgba(18, 18, 22, 0.72);
   --ops-surface-2: #1c1c22;
   --ops-border: #26262e;
+  --ops-card-border: rgba(255, 255, 255, 0.08);
+  --ops-shadow-card: 0 4px 16px rgba(0, 0, 0, 0.3);
+  --ops-gradient-text: linear-gradient(90deg, #a78bfa, #f472b6);
   --ops-text-1: #e8e8ec;
   --ops-text-2: #a9a9b3;
   --ops-text-3: #6f6f79;
   --ops-radius-s: 4px;
   --ops-radius-m: 6px;
-  --ops-shadow-card: 0 1px 2px rgba(0, 0, 0, 0.3);
 }
 
 

@@ -11,7 +11,16 @@ body {
   font-family: var(--ops-font-sans);
   font-size: 14px;
   color: var(--ops-text-1);
-  background: var(--ops-bg);
+  /* 马卡龙极光：多层径向渐变（token 内含底色），fixed 保证滚动时色块不跟着跑 */
+  background: var(--ops-aurora) fixed;
+}
+
+/* 玻璃卡片渐变标题（CardTitle 用）：紫粉渐变填充文字 */
+.ops-gradient-text {
+  background: var(--ops-gradient-text);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
 }
 
 .app-shell {
@@ -24,14 +33,17 @@ body {
   position: sticky;
   top: 0;
   z-index: 20;
-  min-height: 48px; /* 窄窗口 header-actions 折行时允许增高 */
+  min-height: 56px; /* 窄窗口 header-actions 折行时允许增高 */
   flex: none;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 8px 16px;
   padding: 0 16px;
+  /* 毛玻璃 chrome：token 面色已是半透明，这里补 blur 与细描边 */
   background: var(--ops-surface);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--ops-border);
 }
 
@@ -58,11 +70,13 @@ body {
 }
 .app-sider {
   position: sticky;
-  top: 48px; /* header 高度 */
-  height: calc(100vh - 48px);
-  width: 200px;
+  top: 56px; /* header 高度 */
+  height: calc(100vh - 56px);
+  width: 220px;
   flex: none;
   background: var(--ops-surface);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   border-right: 1px solid var(--ops-border);
   display: flex;
   flex-direction: column;
