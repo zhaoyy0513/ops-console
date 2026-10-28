@@ -37,9 +37,18 @@ async function load() {
 onMounted(load)
 watch(() => siteStore.currentSiteId, load)
 
-/** 预览：URL 型与 HTML 型统一在站内弹窗打开（iframe）。
- *  URL 型走 src（受目标站 X-Frame-Options 限制，可能空白）→ 弹窗内保留"新标签打开"兜底。 */
+/** 卡片点击：url 型新标签打开（X-Frame-Options 类安全策略无法绕过，最可靠）；
+ *  html 型站内弹窗预览（sandbox 隔离）。 */
 function open(p: PageResource) {
+  if (p.kind === 'url' && p.url) {
+    window.open(p.url, '_blank', 'noopener')
+    return
+  }
+  preview(p)
+}
+
+/** 放大图标：站内弹窗预览（url 型会被部分站点拒绝嵌入 → 弹窗内有新标签兜底） */
+function preview(p: PageResource) {
   active.value = p
   showHtml.value = true
 }
@@ -152,7 +161,9 @@ const isUrlKind = computed(() => active.value?.kind === 'url')
         :title="active.name"
       />
       <DialogFooter class="flex-row items-center justify-between pt-2">
-        <span class="frame-note">{{ $t('page.frameNote') }}</span>
+        <span class="frame-note">
+          {{ isUrlKind ? $t('page.frameBlocked') : $t('page.frameNote') }}
+        </span>
         <span class="flex items-center gap-2">
           <Button variant="outline" size="sm" :title="isFullscreen ? $t('page.exitFullscreen') : $t('page.fullscreen')" @click="toggleFullscreen">
             <Minimize2 v-if="isFullscreen" />
@@ -259,6 +270,24 @@ const isUrlKind = computed(() => active.value?.kind === 'url')
   color: var(--ops-text-3);
 }
 /* 放大图标：默认淡显，卡片 hover 时提亮，提示可点开预览 */
+.pc-preview {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  color: var(--ops-primary);
+  background: color-mix(in srgb, var(--primary) 12%, transparent);
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+.page-card:hover .pc-preview {
+  opacity: 1;
+}
+.pc-preview:hover {
+  background: color-mix(in srgb, var(--primary) 25%, transparent);
+}
 .pc-expand {
   width: 14px;
   height: 14px;

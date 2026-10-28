@@ -8,10 +8,8 @@ import { Button } from '@/components/ui/button'
 import OpsSwitch from '../../components/OpsSwitch.vue'
 import {
   AlertDialog,
-  AlertDialogAction,
   AlertDialogTitle,
   AlertDialogBody,
-  AlertDialogCancel,
   AlertDialogContent,
 } from '@/components/ui/alert-dialog'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -173,11 +171,13 @@ async function remove(item: ResourceConfig) {
   }
 }
 
-/** 同 SitesView：AlertDialogAction 关窗先清 deleteTarget，先取快照再删 */
+/** 确认删除：显式关窗按钮直接调这里（不再依赖 reka Action 的自动关闭——
+ *  其内部 close 先于 fallthrough @click 执行，会提前清空 deleteTarget） */
 function confirmDelete() {
+  if (deleting.value || !deleteTarget.value) return
   const target = deleteTarget.value
   deleteTarget.value = null
-  if (target) void remove(target)
+  void remove(target)
 }
 
 function displayValue(item: ResourceConfig, key: string): string {
@@ -323,13 +323,17 @@ const columns = computed<any[]>(() => {
         <p class="text-sm text-muted-foreground">{{ $t('sites.deleteResourceConfirm', { name: deleteTarget?.name ?? '' }) }}</p>
       </AlertDialogBody>
       <div class="flex justify-end gap-2 pt-3">
-        <AlertDialogCancel :disabled="deleting">{{ $t('common.cancel') }}</AlertDialogCancel>
-        <AlertDialogAction :disabled="deleting" @click="confirmDelete">
+        <!-- 显式关窗（不用 reka Action/Cancel 的自动关闭）：其内部 close 先于
+             fallthrough @click 执行，会把 confirmDelete 要读的 deleteTarget 提前清空 -->
+        <Button variant="outline" size="sm" :disabled="deleting" @click="deleteTarget = null">
+          {{ $t('common.cancel') }}
+        </Button>
+        <Button variant="destructive" size="sm" :disabled="deleting" @click="confirmDelete">
           <span class="inline-flex items-center gap-1.5">
             <LoaderCircle v-if="deleting" class="size-3.5 animate-spin" />
             {{ deleting ? $t('common.processing') : $t('common.delete') }}
           </span>
-        </AlertDialogAction>
+        </Button>
       </div>
     </AlertDialogContent>
   </AlertDialog>

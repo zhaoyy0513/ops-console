@@ -1,7 +1,7 @@
 services:
   ops-backend:
     image:  dck0.prime/prime-ops-console-backend:acda36f
-    restart: unless-stopped
+    restart: "no"
     environment:
       OPS_REDIS_URL: redis://10.102.129.30:26379/5
       OPS_LOG_LEVEL: ${OPS_LOG_LEVEL:-INFO}
@@ -21,7 +21,7 @@ services:
 
   ops-nginx:
     image: dck0.prime/prime-ops-console-nginx:acda36f
-    restart: unless-stopped
+    restart: "no"
     ports:
       - "${OPS_PORT:-25089}:80"
     depends_on:

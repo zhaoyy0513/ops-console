@@ -244,6 +244,7 @@ const messages = {
       invalidHtml: '仅支持 .html 文件',
       needOne: '请填写链接或上传/粘贴 HTML（二选一）',
       frameNote: '页面运行于隔离沙箱，无法访问本站数据',
+      frameBlocked: '部分站点（如 Atlassian）禁止被嵌入显示空白——请用右侧「新标签打开」',
     },
     device: {
       instance: '设备实例',

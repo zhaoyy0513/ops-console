@@ -7,10 +7,8 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   AlertDialog,
-  AlertDialogAction,
   AlertDialogTitle,
   AlertDialogBody,
-  AlertDialogCancel,
   AlertDialogContent,
 } from '@/components/ui/alert-dialog'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -211,13 +209,15 @@ function goConsole(site: Site) {
         <p class="text-sm text-muted-foreground">{{ $t('sites.deleteConfirm', { name: deleteTarget?.name ?? '' }) }}</p>
       </AlertDialogBody>
       <div class="flex justify-end gap-2 pt-3">
-        <AlertDialogCancel :disabled="deleting">{{ $t('common.cancel') }}</AlertDialogCancel>
-        <AlertDialogAction :disabled="deleting" @click="confirmDelete">
+        <Button variant="outline" size="sm" :disabled="deleting" @click="deleteTarget = null">
+          {{ $t('common.cancel') }}
+        </Button>
+        <Button variant="destructive" size="sm" :disabled="deleting" @click="confirmDelete">
           <span class="inline-flex items-center gap-1.5">
             <LoaderCircle v-if="deleting" class="size-3.5 animate-spin" />
             {{ deleting ? $t('common.processing') : $t('common.delete') }}
           </span>
-        </AlertDialogAction>
+        </Button>
       </div>
     </AlertDialogContent>
   </AlertDialog>

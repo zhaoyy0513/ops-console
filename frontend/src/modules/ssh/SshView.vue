@@ -3,13 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Expand, LoaderCircle, Shrink } from 'lucide-vue-next'
 import { message } from '@/lib/message'
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogBody,
-  AlertDialogCancel,
-  AlertDialogContent,
-} from '@/components/ui/alert-dialog'
+import { AlertDialog, AlertDialogBody, AlertDialogContent } from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -584,8 +578,8 @@ function startRun(confirmRisk: boolean) {
           <p class="text-sm">{{ $t('ssh.deleteConfirm', { name: removeTarget?.name ?? '' }) }}</p>
         </AlertDialogBody>
         <div class="flex justify-end gap-2 pt-2">
-          <AlertDialogCancel>{{ $t('common.cancel') }}</AlertDialogCancel>
-          <AlertDialogAction @click="removeTarget ? remove(removeTarget) : undefined">{{ $t('common.delete') }}</AlertDialogAction>
+          <Button variant="outline" size="sm" @click="removeTarget = null">{{ $t('common.cancel') }}</Button>
+          <Button variant="destructive" size="sm" @click="removeTarget ? remove(removeTarget) : undefined">{{ $t('common.delete') }}</Button>
         </div>
       </AlertDialogContent>
     </AlertDialog>
@@ -601,10 +595,10 @@ function startRun(confirmRisk: boolean) {
           </ul>
         </AlertDialogBody>
         <div class="flex justify-end gap-2 pt-3">
-          <AlertDialogCancel>{{ $t('common.cancel') }}</AlertDialogCancel>
-          <AlertDialogAction variant="destructive" @click="riskConfirmRun">
+          <Button variant="outline" size="sm" @click="riskConfirm = null">{{ $t('common.cancel') }}</Button>
+          <Button variant="destructive" size="sm" @click="riskConfirmRun">
             {{ $t('ssh.riskConfirm') }}
-          </AlertDialogAction>
+          </Button>
         </div>
       </AlertDialogContent>
     </AlertDialog>

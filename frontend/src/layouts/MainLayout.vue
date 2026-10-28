@@ -194,7 +194,7 @@ const themeIcon = computed(() => THEME_ICONS[themeStore.theme])
           <button class="collapse-btn" :title="collapsed ? $t('layout.expand') : $t('layout.collapse')" @click="collapsed = !collapsed">
             <component :is="collapsed ? ChevronRight : ChevronLeft" class="size-4" />
           </button>
-          <span v-if="!collapsed" class="build-stamp font-mono">b1027-1100</span>
+          <span v-if="!collapsed" class="build-stamp font-mono">b1028-1000</span>
         </div>
       </aside>
       <main class="app-main">
