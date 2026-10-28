@@ -4,7 +4,7 @@ import KnowledgeView from './KnowledgeView.vue'
 export default defineOpsModule({
   id: 'knowledge',
   title: 'Knowledge',
-  order: 3,
+  order: 4,
   icon: 'document-text-outline',
   routePath: 'knowledge',
   view: KnowledgeView,

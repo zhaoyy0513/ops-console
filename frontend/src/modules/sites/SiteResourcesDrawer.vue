@@ -31,7 +31,7 @@ const router = useRouter()
 
 const TYPES: Array<{ key: ResourceType; label: string }> = [
   { key: 'servers', label: 'Server' },
-  { key: 'knowledge', label: 'Knowledge' },
+  { key: 'pages', label: 'Page' },
   { key: 'redis', label: 'Redis' },
   { key: 'mq', label: 'ActiveMQ' },
   { key: 'devices', label: 'Device' },
@@ -45,7 +45,7 @@ const COLUMN_DEFS: Record<ResourceType, Array<{ key: string; label: string }>> =
     { key: 'username', label: '用户名' },
     { key: 'password', label: '密码' },
   ],
-  knowledge: [
+  pages: [
     { key: 'description', label: '描述' },
     { key: 'url', label: '链接' },
   ],
@@ -189,14 +189,14 @@ function displayValue(item: ResourceConfig, key: string): string {
   return String(v)
 }
 
-/** 知识资源"进入"：url 型直接开外链，html/markdown 型进 console 的 knowledge 模块查看渲染 */
-function enterKnowledge(row: ResourceConfig) {
+/** 页面资源"进入"：url 型直接开外链，html 型进 console 的 page 模块查看渲染 */
+function enterPage(row: ResourceConfig) {
   const url = row.url ? String(row.url) : ''
   if (url) {
     window.open(url, '_blank', 'noopener')
     return
   }
-  router.push(`/console/site/${siteId.value}/knowledge`)
+  router.push(`/console/site/${siteId.value}/page`)
 }
 
 /** 行内启停：与站点列表一致走局部更新，None 表示不改（后端部分更新语义） */
@@ -209,12 +209,12 @@ async function toggleEnabled(row: ResourceConfig) {
 
 /** 每个 tab 一组列（启用 + name + 类型字段 + [类别] + 操作）；操作列不排 */
 const columns = computed<any[]>(() => {
-  const isKnowledge = activeType.value === 'knowledge'
+  const isPage = activeType.value === 'pages'
   const actionButtons = (row: ResourceConfig) => {
     const btns: ReturnType<typeof h>[] = []
-    if (isKnowledge && (row.url || row.html || row.markdown)) {
+    if (isPage && (row.url || row.html)) {
       btns.push(
-        h(Button, { variant: 'ghost', size: 'sm', onClick: () => enterKnowledge(row) }, () => t('sites.enterBtn')),
+        h(Button, { variant: 'ghost', size: 'sm', onClick: () => enterPage(row) }, () => t('sites.enterBtn')),
       )
     }
     if (activeType.value === 'devices' && row.id) {
@@ -237,9 +237,9 @@ const columns = computed<any[]>(() => {
     return btns
   }
   const kindBadge = (row: ResourceConfig) => {
-    // 与后端 _with_kind 同规则派生（url > markdown > html 三档），
+    // 与后端 kind 派生同规则派生（url > html 两档），
     // 不依赖后端版本是否带回 kind 字段
-    const kind = row.url ? 'url' : row.markdown ? 'markdown' : row.html ? 'html' : null
+    const kind = row.url ? 'url' : row.html ? 'html' : null
     return kind
       ? h(Badge, { variant: kind === 'url' ? 'secondary' : 'default', size: 'sm' }, () => kind)
       : h('span', { class: 'text-muted-foreground' }, '-')
@@ -265,7 +265,7 @@ const columns = computed<any[]>(() => {
         return h('span', { class: 'block max-w-[180px] truncate', title: v }, v)
       },
     })),
-    ...(isKnowledge
+    ...(isPage
       ? [
           {
             id: 'kind',

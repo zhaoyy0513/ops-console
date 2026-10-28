@@ -4,7 +4,7 @@ import SshView from './SshView.vue'
 export default defineOpsModule({
   id: 'ssh',
   title: 'SSH',
-  order: 7,
+  order: 8,
   icon: 'terminal-outline',
   routePath: 'ssh',
   view: SshView,

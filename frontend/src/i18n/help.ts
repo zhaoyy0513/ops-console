@@ -56,14 +56,25 @@ export const helpContent: Record<HelpLang, Record<string, HelpSection>> = {
       ],
     },
 
+    page: {
+      title: '说明 · Page',
+      lines: [
+        '把常用系统入口（Grafana、Kibana、各业务后台）收拢成卡片墙：点击即达。',
+        '两种类型：外链（新标签打开）与 HTML 单文件页（站内沙箱预览），二选一保存。',
+        '卡片悬停出现遮罩：打开 / 编辑 / 删除（删除有倒计时确认）；右上「新建」自动关联当前站点。',
+        '站点管理 → 资源 → Page 同样可维护；两处入口数据同源。',
+        'HTML 页面运行于浏览器隔离沙箱：脚本可以执行，但无法读取本平台的登录态与数据。',
+      ],
+    },
+
     knowledge: {
       title: '说明 · 知识库',
       lines: [
-        '收拢站点常用入口与文档：外链卡片一键直达，Markdown / HTML 文档站内阅读。',
-        '三种类型：链接（新标签打开）、Markdown 文档（支持上传 .md 或直接粘贴，粘贴图片自动压缩为 base64 内嵌）、HTML 单文件页（沙箱隔离预览）。三者按所选类型保存。',
-        '卡片悬停出现遮罩：打开 / 编辑 / 删除（删除有倒计时确认）；右上「新建」自动关联当前站点。',
-        'HTML 页面运行于浏览器隔离沙箱：脚本可以执行，但无法读取本平台的登录态与数据。',
-        '站点管理 → 资源 → Knowledge 仍可维护链接与 HTML 页；Markdown 文档请在知识库页面编辑。',
+        '站点专属文档库：只收 Markdown 文档，增删改查全在本页完成（不进站点资源抽屉）。',
+        '右上「新建」：粘贴或上传 .md，粘贴/上传图片自动压缩为 base64 内嵌正文；拖拽文件到页面任意位置可直接预填新建。',
+        '文档创建后内容不可改，仅支持重命名 / 删除 / 查看（删除有倒计时确认）。',
+        '阅读视图跟随主题深浅色；「新标签打开」为渲染后快照，脚本沙箱隔离。',
+        '图片以 base64 随文档存储（单篇 1M 字符上限），无独立附件体系。',
       ],
     },
 
@@ -137,14 +148,25 @@ export const helpContent: Record<HelpLang, Record<string, HelpSection>> = {
       ],
     },
 
+    page: {
+      title: 'Instructions · Page',
+      lines: [
+        'Collects frequently used system entries (Grafana, Kibana, ops backends) into a card wall — one click away.',
+        'Two types: external link (new tab) and single-file HTML page (in-console sandboxed preview); exactly one is saved.',
+        'Hovering a card shows an overlay: Open / Edit / Delete (delete has a countdown confirm); "New" auto-binds the current site.',
+        'Sites → Resources → Page manages the same data — both entries share one source.',
+        'HTML pages run in a browser sandbox: scripts execute but cannot read this platform’s session or data.',
+      ],
+    },
+
     knowledge: {
       title: 'Instructions · Knowledge',
       lines: [
-        'Collects site entries and documents: external links one click away, Markdown / HTML docs readable in place.',
-        'Three types: link (new tab), Markdown doc (upload .md or paste; pasted images are compressed and embedded as base64), single-file HTML (sandboxed preview). Only the selected type is saved.',
-        'Hovering a card shows an overlay: Open / Edit / Delete (delete has a countdown confirm); "New" auto-binds the current site.',
-        'HTML pages run in a browser sandbox: scripts execute but cannot read this platform’s session or data.',
-        'Sites → Resources → Knowledge still manages links and HTML pages; edit Markdown docs on the Knowledge page.',
+        'Site-specific document library: Markdown docs only, with full CRUD on this page (not in the Sites resource drawer).',
+        '"New" in the header: paste or upload .md; pasted/uploaded images are compressed and embedded as base64; drop files anywhere on the page to prefill a new doc.',
+        'Doc content is immutable after creation — only rename / delete / view (delete has a countdown confirm).',
+        'The reader follows the active theme; "Open in new tab" renders a sandboxed snapshot.',
+        'Images are stored as base64 within the doc (1M character cap per doc) — no separate attachment store.',
       ],
     },
 

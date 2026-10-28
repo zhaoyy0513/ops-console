@@ -5,7 +5,7 @@ import {
   ChevronLeft, ChevronRight, FolderCog, Languages, Moon, ScrollText, Sun, type LucideIcon,
 } from 'lucide-vue-next'
 import {
-  GridOutline, ServerOutline, BookOutline, LayersOutline,
+  DocumentTextOutline, GridOutline, ServerOutline, BookOutline, LayersOutline,
   PulseOutline, HardwareChipOutline, TerminalOutline, CubeOutline,
 } from '@vicons/ionicons5'
 import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/ui/select'
@@ -30,6 +30,7 @@ const modules = getModules()
 const MODULE_ICONS: Record<string, Component> = {
   overview: GridOutline,
   server: ServerOutline,
+  page: DocumentTextOutline,
   knowledge: BookOutline,
   redis: LayersOutline,
   mq: PulseOutline,
