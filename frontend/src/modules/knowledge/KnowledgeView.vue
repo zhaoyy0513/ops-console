@@ -1,34 +1,33 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ExternalLink, FileText, Link2, Maximize2, Minimize2, Plus } from 'lucide-vue-next'
+import { ExternalLink, FileText, Maximize2, Minimize2, Plus } from 'lucide-vue-next'
 import DOMPurify from 'dompurify'
 import { marked } from 'marked'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { message } from '@/lib/message'
 import EmptyState from '../../components/EmptyState.vue'
 import TabHelp from '../../components/TabHelp.vue'
 import FadeContent from '../../components/bits/FadeContent.vue'
-import TipCopy from '../../components/TipCopy.vue'
 import CountdownConfirm from '../../components/CountdownConfirm.vue'
 import { useSiteStore } from '../../stores/site'
 import KnowledgeDialog from './KnowledgeDialog.vue'
-import { knowledgeApi, deriveKind, type KnowledgeResource } from './api'
+import { classifyDropFiles, compressImage, knowledgeApi, type KnowledgeDoc } from './api'
 
 const { t } = useI18n()
 const siteStore = useSiteStore()
 
-const pages = ref<KnowledgeResource[]>([])
+const docs = ref<KnowledgeDoc[]>([])
 const loading = ref(false)
 const showReader = ref(false)
-const active = ref<KnowledgeResource | null>(null)
+const active = ref<KnowledgeDoc | null>(null)
 
-// 新建/编辑两用弹窗状态
+// 新建/改名两用弹窗状态；prefill = 拖拽预填
 const showEditor = ref(false)
-const editing = ref<KnowledgeResource | null>(null)
+const editing = ref<KnowledgeDoc | null>(null)
+const prefill = ref<{ name?: string; markdown?: string } | null>(null)
 
 async function load() {
   const siteId = siteStore.currentSiteId
@@ -36,7 +35,7 @@ async function load() {
   loading.value = true
   try {
     const all = await knowledgeApi.list(siteId)
-    pages.value = all.filter((p) => p.enabled !== false) // 停用的不进卡片墙
+    docs.value = all.filter((d) => d.enabled !== false) // 停用的不进卡片墙
   } catch (e) {
     message.error((e as Error).message)
   } finally {
@@ -49,50 +48,75 @@ watch(() => siteStore.currentSiteId, load)
 
 function startNew() {
   editing.value = null
+  prefill.value = null
   showEditor.value = true
 }
 
-function startEdit(p: KnowledgeResource) {
-  editing.value = p
+function startRename(d: KnowledgeDoc) {
+  editing.value = d
+  prefill.value = null
   showEditor.value = true
 }
 
 /** 删除确认后执行：抛错时 CountdownConfirm 复位 pending 并保持弹窗，列表不重载 */
-async function remove(p: KnowledgeResource) {
+async function remove(d: KnowledgeDoc) {
   const siteId = siteStore.currentSiteId
   if (!siteId) return
-  await knowledgeApi.remove(siteId, p.id)
+  await knowledgeApi.remove(siteId, d.id)
   message.success(t('knowledge.deleted'))
   await load()
 }
 
-/** 卡片点击：url 型新标签打开（X-Frame-Options 类安全策略无法绕过，最可靠）；
- *  markdown/html 型站内弹窗阅读（html 走 sandbox 隔离）。 */
-function open(p: KnowledgeResource) {
-  const k = deriveKind(p)
-  if (k === 'url' && p.url) {
-    window.open(p.url, '_blank', 'noopener')
-    return
-  }
-  active.value = p
+/** 查看文档（阅读弹窗，应用内渲染） */
+function open(d: KnowledgeDoc) {
+  active.value = d
   showReader.value = true
 }
 
-/** 新标签打开：url 直开；markdown/html 转外层 sandbox 壳 Blob——与阅读弹窗同一隔离底线
+// ---- 整域拖放：.md 为正文、图片压缩内嵌 → 预填新建弹窗 ----
+const dragging = ref(false)
+
+function onDragLeave(e: DragEvent) {
+  // 子元素间移动会触发 dragleave，仅真正离开容器时收起提示
+  if (!(e.currentTarget as HTMLElement).contains(e.relatedTarget as Node)) dragging.value = false
+}
+
+async function onDrop(e: DragEvent) {
+  dragging.value = false
+  const files = [...(e.dataTransfer?.files ?? [])]
+  if (!files.length) return
+  const { markdownFiles, imageFiles } = classifyDropFiles(files)
+  if (!markdownFiles.length && !imageFiles.length) return
+  let markdown = ''
+  let name = ''
+  if (markdownFiles.length) {
+    try {
+      markdown = await markdownFiles[0].text()
+      name = markdownFiles[0].name.replace(/\.(md|markdown)$/i, '')
+    } catch (err) {
+      message.error((err as Error).message)
+      return
+    }
+  }
+  for (const img of imageFiles) {
+    try {
+      markdown = markdown ? `${markdown}\n\n![](${await compressImage(img)})` : `![](${await compressImage(img)})`
+      if (!name) name = img.name.replace(/\.[^.]+$/, '')
+    } catch { /* 压缩失败忽略该张 */ }
+  }
+  if (!markdown) return
+  editing.value = null
+  prefill.value = { name, markdown }
+  showEditor.value = true
+}
+
+/** 新标签打开：渲染后 HTML 装进外层 sandbox 壳 Blob——与阅读弹窗同一隔离底线
  *  （allow-scripts 可跑、opaque origin 拿不到本域 cookie/storage）。内层用 srcdoc 而非
  *  src="blob:"：sandbox 无 allow-same-origin 时 opaque origin 取 blob: 会被浏览器拦截白屏。
  *  Blob 用完即回收（60s 足够浏览器完成打开动作） */
 function openExternal() {
-  const p = active.value
-  if (!p) return
-  const k = deriveKind(p)
-  if (k === 'url' && p.url) {
-    window.open(p.url, '_blank', 'noopener')
-    return
-  }
-  const html = k === 'markdown' ? renderedMd.value : p.html ?? ''
-  if (!html) return
-  const inner = html.replace(/&/g, '&amp;').replace(/"/g, '&quot;') // srcdoc 属性转义
+  if (!renderedMd.value) return
+  const inner = renderedMd.value.replace(/&/g, '&amp;').replace(/"/g, '&quot;') // srcdoc 属性转义
   const shell = `<!doctype html><html><head><meta charset="utf-8"><style>html,body{margin:0;height:100%}</style></head><body><iframe sandbox="allow-scripts" srcdoc="${inner}" style="border:0;width:100%;height:100%"></iframe></body></html>`
   const url = URL.createObjectURL(new Blob([shell], { type: 'text/html;charset=utf-8' }))
   window.open(url, '_blank', 'noopener')
@@ -101,13 +125,12 @@ function openExternal() {
 
 /** markdown 渲染：marked 解析后必须过 DOMPurify 白名单（内容来自用户粘贴的任意文本） */
 const renderedMd = computed(() =>
-  active.value && deriveKind(active.value) === 'markdown'
+  active.value
     ? DOMPurify.sanitize(marked.parse(active.value.markdown ?? '', { async: false }) as string)
     : '',
 )
 
-// ---- 弹窗全屏：CSS 铺屏（page-fullscreen 类），不是浏览器 F11——
-// 弹窗自身铺满当前视口，内容随之拉伸；Esc 关弹窗行为不变 ----
+// ---- 弹窗全屏：CSS 铺屏（page-fullscreen 类），不是浏览器 F11；Esc 关弹窗行为不变 ----
 const isFullscreen = ref(false)
 
 function toggleFullscreen() {
@@ -126,14 +149,6 @@ function onCardMove(e: MouseEvent) {
 function blockDismiss(e: Event) {
   e.preventDefault()
 }
-
-const activeSrcDoc = computed(() => active.value?.html ?? '')
-const isMdKind = computed(() => !!active.value && deriveKind(active.value) === 'markdown')
-
-function kindLabel(p: KnowledgeResource) {
-  const k = deriveKind(p)
-  return k === 'url' ? t('knowledge.kindUrl') : k === 'markdown' ? t('knowledge.kindMarkdown') : t('knowledge.kindHtml')
-}
 </script>
 
 <template>
@@ -149,38 +164,41 @@ function kindLabel(p: KnowledgeResource) {
         </Button>
       </span>
     </CardHeader>
-    <CardContent>
+    <!-- 整域 dropzone：拖入 .md / 图片直接预填新建 -->
+    <CardContent
+      class="relative"
+      @dragover.prevent="dragging = true"
+      @dragleave="onDragLeave"
+      @drop.prevent="onDrop"
+    >
+      <div v-if="dragging" class="drop-hint" data-test="drop-hint">
+        <FileText class="size-6" />
+        {{ $t('knowledge.dragHint') }}
+      </div>
       <div v-if="loading" class="flex justify-center py-12">
         <span class="inline-block size-6 animate-spin rounded-full border-2 border-border border-t-muted-foreground" />
       </div>
-      <div v-else-if="pages.length" class="page-grid">
-        <fade-content v-for="(p, i) in pages" :key="p.id" :delay="i * 60" class="page-fade">
+      <div v-else-if="docs.length" class="page-grid">
+        <fade-content v-for="(d, i) in docs" :key="d.id" :delay="i * 60" class="page-fade">
           <!-- page-card 只做定位容器（无 transform）：删除确认弹窗 fixed 定位不能落在
                带 transform 的祖先里，悬停位移全部移入 .card-lift 内层 -->
-          <div class="page-card" @click="open(p)" @mousemove="onCardMove">
+          <div class="page-card" @click="open(d)" @mousemove="onCardMove">
             <div class="card-lift">
               <div class="pc-head">
                 <span class="pc-title">
-                  <Link2 v-if="deriveKind(p) === 'url'" class="pc-icon" />
-                  <FileText v-else class="pc-icon" />
-                  {{ p.name }}
+                  <FileText class="pc-icon" />
+                  {{ d.name }}
                 </span>
-                <Badge size="sm" :variant="deriveKind(p) === 'url' ? 'default' : 'secondary'">
-                  {{ kindLabel(p) }}
-                </Badge>
               </div>
-              <div class="pc-desc">{{ p.description }}</div>
-              <div v-if="deriveKind(p) === 'url' && p.url" class="pc-url">
-                <tip-copy :text="p.url" :max="280" :copy="false" />
-              </div>
+              <div class="pc-desc">{{ d.description }}</div>
             </div>
 
-            <!-- hover 遮罩：打开 / 编辑 / 删除（:focus-within 保证键盘可达） -->
+            <!-- hover 遮罩：查看 / 重命名 / 删除（:focus-within 保证键盘可达） -->
             <div class="card-overlay" @click.stop>
-              <button type="button" class="ov-btn" @click="open(p)">{{ $t('knowledge.open') }}</button>
-              <button type="button" class="ov-btn" @click="startEdit(p)">{{ $t('knowledge.edit') }}</button>
+              <button type="button" class="ov-btn" @click="open(d)">{{ $t('knowledge.open') }}</button>
+              <button type="button" class="ov-btn" @click="startRename(d)">{{ $t('knowledge.rename') }}</button>
               <span class="ov-del">
-                <countdown-confirm :label="$t('knowledge.del')" :target="p.name" :on-confirm="() => remove(p)" />
+                <countdown-confirm :label="$t('knowledge.del')" :target="d.name" :on-confirm="() => remove(d)" />
               </span>
             </div>
           </div>
@@ -190,12 +208,16 @@ function kindLabel(p: KnowledgeResource) {
     </CardContent>
   </Card>
 
-  <!-- 新建/编辑两用弹窗：站点只读、三类型切换、.md 上传、粘贴图内嵌 -->
-  <KnowledgeDialog v-model:show="showEditor" :site-id="siteStore.currentSiteId ?? ''" :editing="editing" @saved="load" />
+  <!-- 新建/改名两用弹窗：新建含 Markdown 编辑器（上传 .md / 上传图片 / 粘贴图内嵌） -->
+  <KnowledgeDialog
+    v-model:show="showEditor"
+    :site-id="siteStore.currentSiteId ?? ''"
+    :editing="editing"
+    :prefill="prefill"
+    @saved="load"
+  />
 
-  <!-- 阅读弹窗：markdown 应用内渲染（DOMPurify 消毒）；
-       html 型 sandbox 隔离（allow-scripts 但不 allow-same-origin，
-       脚本可运行却拿不到本域 cookie/storage——内部工具嵌入不受信页面的安全底线） -->
+  <!-- 阅读弹窗：应用内渲染（DOMPurify 消毒），跟随主题 -->
   <Dialog :open="showReader" @update:open="showReader = $event">
     <DialogContent
       class="flex h-[88vh] w-[92vw] max-w-none flex-col overflow-hidden"
@@ -206,24 +228,14 @@ function kindLabel(p: KnowledgeResource) {
       <DialogHeader>
         <DialogTitle>{{ active?.name ?? '' }}</DialogTitle>
       </DialogHeader>
-      <!-- markdown：应用内渲染，跟随主题 -->
-      <div v-if="active && isMdKind" class="md-reader min-h-0 flex-1 overflow-y-auto" v-html="renderedMd" />
-      <iframe
-        v-else-if="active"
-        class="html-frame min-h-0 w-full flex-1"
-        sandbox="allow-scripts"
-        :srcdoc="activeSrcDoc"
-        :title="active.name"
-      />
-      <DialogFooter class="flex-row items-center justify-between pt-2">
-        <!-- markdown 为应用内渲染（无沙箱语义），不显示提示 -->
-        <span v-if="!isMdKind" class="frame-note">{{ $t('knowledge.frameNote') }}</span>
+      <div class="md-reader min-h-0 flex-1 overflow-y-auto" v-html="renderedMd" />
+      <DialogFooter class="flex-row items-center justify-end pt-2">
         <span class="flex items-center gap-2">
           <Button variant="outline" size="sm" :title="isFullscreen ? $t('knowledge.exitFullscreen') : $t('knowledge.fullscreen')" @click="toggleFullscreen">
             <Minimize2 v-if="isFullscreen" />
             <Maximize2 v-else />
           </Button>
-          <Button v-if="active" variant="outline" size="sm" @click="openExternal">
+          <Button variant="outline" size="sm" @click="openExternal">
             <ExternalLink />
             {{ $t('knowledge.openExternal') }}
           </Button>
@@ -340,11 +352,21 @@ function kindLabel(p: KnowledgeResource) {
   -webkit-line-clamp: 2;
   overflow: hidden;
 }
-.pc-url {
-  margin-top: auto;
-  font-size: 12px;
-  color: var(--ops-text-3);
-  overflow: hidden;
+/* ---- 拖放提示层 ---- */
+.drop-hint {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  border: 2px dashed color-mix(in srgb, var(--primary) 55%, transparent);
+  border-radius: var(--ops-radius-m);
+  background: color-mix(in srgb, var(--primary) 8%, transparent);
+  color: var(--primary);
+  font-size: 14px;
+  pointer-events: none;
 }
 /* ---- hover 遮罩：深色纱 + 半透明胶囊按钮（两主题通吃） ---- */
 .card-overlay {
@@ -386,14 +408,8 @@ function kindLabel(p: KnowledgeResource) {
 .ov-del {
   display: inline-flex;
 }
-.html-frame {
-  border: 1px solid var(--ops-border);
-  border-radius: 4px;
-  background: var(--ops-surface);
-}
-.frame-note {
-  color: var(--ops-text-3);
-  font-size: 12px;
+.ov-del :deep(button) {
+  border-radius: 999px;
 }
 /* ---- 应用内 markdown 阅读样式（最小 prose，跟随主题 token） ---- */
 .md-reader {
