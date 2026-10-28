@@ -100,12 +100,18 @@ class DeviceConfig(ResourceBase):
     custom_fields: Annotated[list[DeviceCustomField], _MAX_CUSTOM_FIELDS] | None = None
 
 
-class PageConfig(ResourceBase):
-    """页面资源：名称必填、描述选填、链接必填（与 HTML 二选一——
-    有 HTML 时 URL 可以不填）。"""
+_MD_MAX = 1_000_000
+
+
+class KnowledgeConfig(ResourceBase):
+    """知识库资源：链接（url）/ Markdown 文档（markdown）/ HTML 页（html）三选一。
+    markdown 以 base64 内嵌图片（前端压缩后写入），上限 1M 字符防配置膨胀。"""
 
     description: str = ""
     url: str | None = None
+    # 1MB 上限放 Annotated 元数据（非 field_validator）：_update_model 裸派生 update 模型时
+    # 类级 validator 不随身，注解约束才在创建与编辑两条路径都生效（同 DeviceCustomField 模式）
+    markdown: Annotated[str | None, Field(max_length=_MD_MAX)] = None
     html: str | None = None
 
     @field_validator("url")
@@ -116,6 +122,13 @@ class PageConfig(ResourceBase):
         v = v.strip()
         if not v.startswith(("http://", "https://")):
             raise ValueError("url must start with http:// or https://")
+        return v
+
+    @field_validator("markdown")
+    @classmethod
+    def _validate_markdown(cls, v: str | None) -> str | None:
+        if v is None or not v.strip():
+            return None
         return v
 
     @field_validator("html")
@@ -130,18 +143,25 @@ class PageConfig(ResourceBase):
         return v
 
     @model_validator(mode="after")
-    def _need_url_or_html(self) -> "PageConfig":
-        # 只填了空串/空白的 url 与 html 等同于都没填
-        if not (self.url or self.html):
-            raise ValueError("page requires url or html")
+    def _need_one_content(self) -> "KnowledgeConfig":
+        # 只填了空串/空白的字段等同于都没填
+        if not (self.url or self.markdown or self.html):
+            raise ValueError("knowledge item requires url, markdown or html")
         return self
 
 
 def _update_model(model: type[BaseModel]) -> type[BaseModel]:
-    """全字段可选的更新模型。"""
+    """全字段可选的更新模型。Annotated 约束必须随行——None 写在 Annotated 内侧时
+    pydantic 把约束拆进 FieldInfo.metadata（如 markdown 1M 上限），裸取
+    annotation 会丢约束；一并复制 metadata 后两种声明形态都生效
+    （custom_fields 的 None 在外侧，约束本就随注解走）。"""
     return create_model(
         f"{model.__name__}Update",
-        **{n: (f.annotation | None, None) for n, f in model.model_fields.items()},
+        **{
+            n: (Annotated[f.annotation | None, *f.metadata] if f.metadata
+                else f.annotation | None, None)
+            for n, f in model.model_fields.items()
+        },
     )
 
 
@@ -149,7 +169,7 @@ RESOURCE_MODELS: dict[str, tuple[type[BaseModel], type[BaseModel]]] = {
     res_type: (model, _update_model(model))
     for res_type, model in {
         "servers": ServerConfig,
-        "pages": PageConfig,
+        "knowledge": KnowledgeConfig,
         "redis": RedisConfig,
         "mq": MqConfig,
         "devices": DeviceConfig,

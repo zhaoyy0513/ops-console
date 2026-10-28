@@ -6,7 +6,7 @@ from backend.app.core import oplog
 from backend.app.core.redis import get_platform_redis
 
 SITES_KEY = "ops:sites"  # Set: 全部站点 id（PRD §6.2）
-RESOURCE_TYPES = ("servers", "pages", "redis", "mq", "devices")
+RESOURCE_TYPES = ("servers", "knowledge", "redis", "mq", "devices")
 # 删除站点时一并清理的附属 key：overview 健康 hash、ssh 脚本 hash（字面量直写，避免跨模块循环导入）
 HEALTH_KEY = "ops:health:{site_id}"  # overview/service.py health_key 同格式
 SSH_SCRIPTS_KEY = "ops:site:{site_id}:ssh_scripts"  # ssh/service.py _key 同格式
@@ -177,13 +177,15 @@ def _res_label(data: dict, resource_id: str) -> str:
 
 
 def _with_kind(res_type: str, item: dict) -> dict:
-    """pages 资源的派生字段 kind：有 url 即链接型（url），否则 HTML 型（html）。
+    """knowledge 资源的派生字段 kind：url > markdown > html 三档。
 
-    存储不落 kind（后端/前端都可能写配置），读取时按当前 url/html 派生——
+    存储不落 kind（后端/前端都可能写配置），读取时按当前内容派生——
     老数据与手改数据同样得到正确分类，零迁移成本。其他资源类型原样返回。
     """
-    if res_type == "pages":
-        item["kind"] = "url" if item.get("url") else ("html" if item.get("html") else None)
+    if res_type == "knowledge":
+        item["kind"] = ("url" if item.get("url")
+                        else "markdown" if item.get("markdown")
+                        else "html" if item.get("html") else None)
     return item
 
 

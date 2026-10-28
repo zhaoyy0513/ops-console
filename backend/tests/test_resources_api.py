@@ -3,6 +3,7 @@ import json
 import pytest
 from httpx import ASGITransport, AsyncClient
 
+from backend.app.core.redis import get_platform_redis
 from backend.app.main import app
 from backend.app.modules.sites.service import resource_key
 
@@ -101,53 +102,63 @@ async def test_delete_site_cascades_resources(client, fake_platform_redis):
     assert not await fake_platform_redis.hexists(resource_key("sz-test", "redis"), "redis-01")
 
 
-async def test_page_resource_url_or_html_and_kind(client):
-    """pages 资源：url 与 html 二选一；kind 读取时派生（url 优先）。"""
+async def test_knowledge_resource_three_kinds_and_markdown(client):
+    """knowledge 资源：url/markdown/html 三选一；kind 派生优先级 url > markdown > html。"""
     await _make_site(client)
 
-    # url 型
-    r = await client.post("/api/sites/sz-test/pages", json={
-        "id": "p-url", "name": "Grafana", "description": "监控大盘",
-        "url": "https://10.102.129.12:3000",
-    })
+    r = await client.post("/api/sites/sz-test/knowledge", json={
+        "id": "k-url", "name": "Grafana", "url": "https://grafana.example.com"})
     assert r.status_code == 201
     assert r.json()["kind"] == "url"
 
-    # html 型（单文件内联）
-    r = await client.post("/api/sites/sz-test/pages", json={
-        "id": "p-html", "name": "说明页", "description": "内嵌页面",
-        "html": "<!doctype html><html><body><h1>Ops Runbook</h1></body></html>",
-    })
+    r = await client.post("/api/sites/sz-test/knowledge", json={
+        "id": "k-md", "name": "运维手册", "markdown": "# 标题\n正文", "description": "d"})
+    assert r.status_code == 201
+    assert r.json()["kind"] == "markdown"
+
+    r = await client.post("/api/sites/sz-test/knowledge", json={
+        "id": "k-html", "name": "旧页", "html": "<!doctype html><html><body>x</body></html>"})
     assert r.status_code == 201
     assert r.json()["kind"] == "html"
 
-    # 两者都无 -> 422（pydantic model_validator）
-    r = await client.post("/api/sites/sz-test/pages", json={
-        "id": "p-none", "name": "空", "description": "无内容",
-    })
+    # 三者皆空 → 422
+    r = await client.post("/api/sites/sz-test/knowledge", json={"id": "k-empty", "name": "空"})
     assert r.status_code == 422
 
-    # url 非法（非 http/https）-> 422
-    r = await client.post("/api/sites/sz-test/pages", json={
-        "id": "p-bad", "name": "坏链", "description": "x", "url": "ftp://x",
-    })
+    # markdown 超 1MB → 422
+    r = await client.post("/api/sites/sz-test/knowledge", json={
+        "id": "k-big", "name": "大文档", "markdown": "x" * 1_000_001})
     assert r.status_code == 422
 
-    # 列表顺序固定 url 优先（两个都有时）
-    r = await client.put("/api/sites/sz-test/pages/p-html", json={
-        "url": "http://example.com", "html": None,
-    })
-    assert r.status_code == 200
-    assert r.json()["kind"] == "url"  # url 优先于 html
+    # 1MB 边界内可存
+    r = await client.post("/api/sites/sz-test/knowledge", json={
+        "id": "k-edge", "name": "边界", "markdown": "x" * 1_000_000})
+    assert r.status_code == 201
 
-    # kind 不落存储：存储层无 kind 键，读取时重新派生
-    from backend.app.core.redis import get_platform_redis
-    from backend.app.modules.sites.service import resource_key
+    # url 优先于 markdown（派生）
+    r = await client.post("/api/sites/sz-test/knowledge", json={
+        "id": "k-both", "name": "双填", "url": "https://a.b", "markdown": "# m"})
+    assert r.status_code == 201
+    assert r.json()["kind"] == "url"
 
-    raw = await get_platform_redis().hget(resource_key("sz-test", "pages"), "p-html")
+    # kind 不落存储
+    raw = await get_platform_redis().hget(resource_key("sz-test", "knowledge"), "k-md")
     assert "kind" not in json.loads(raw)
-    listed = (await client.get("/api/sites/sz-test/pages")).json()
-    assert {p["id"]: p["kind"] for p in listed} == {"p-url": "url", "p-html": "url"}
+    listed = (await client.get("/api/sites/sz-test/knowledge")).json()
+    assert {p["id"]: p["kind"] for p in listed} == {
+        "k-url": "url", "k-md": "markdown", "k-html": "html",
+        "k-edge": "markdown", "k-both": "url"}
+
+    # 编辑：切换类型（markdown → url）后 kind 跟随
+    r = await client.put("/api/sites/sz-test/knowledge/k-md",
+                         json={"url": "https://new.example.com", "markdown": ""})
+    assert r.status_code == 200
+    assert r.json()["kind"] == "url"
+
+    # 编辑路径同样受 1MB 上限约束（Annotated 元数据随 update 模型生效）
+    r = await client.put("/api/sites/sz-test/knowledge/k-edge",
+                         json={"markdown": "x" * 1_000_001})
+    assert r.status_code == 422
 
 
 async def test_resource_name_must_be_unique_per_type(client):
@@ -173,7 +184,7 @@ async def test_resource_name_must_be_unique_per_type(client):
     r = await client.put("/api/sites/sz-test/servers/s3", json={"name": "ALPHA"})
     assert r.status_code == 200
 
-    # 不同类型不互斥：pages 可叫 SAME
-    r = await client.post("/api/sites/sz-test/pages", json={
+    # 不同类型不互斥：knowledge 可叫 SAME
+    r = await client.post("/api/sites/sz-test/knowledge", json={
         "id": "pg", "name": "SAME", "description": "", "url": "https://x.example"})
     assert r.status_code == 201
