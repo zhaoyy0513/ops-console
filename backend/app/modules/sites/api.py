@@ -1,7 +1,7 @@
 from typing import Annotated
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, Field, create_model, field_validator, model_validator
+from pydantic import AfterValidator, BaseModel, Field, create_model, field_validator, model_validator
 
 from . import service
 
@@ -100,53 +100,39 @@ class DeviceConfig(ResourceBase):
     custom_fields: Annotated[list[DeviceCustomField], _MAX_CUSTOM_FIELDS] | None = None
 
 
-_MD_MAX = 1_000_000
+def _validate_url(v: str | None) -> str | None:
+    if v is None or not v.strip():
+        return None
+    v = v.strip()
+    if not v.startswith(("http://", "https://")):
+        raise ValueError("url must start with http:// or https://")
+    return v
 
 
-class KnowledgeConfig(ResourceBase):
-    """知识库资源：链接（url）/ Markdown 文档（markdown）/ HTML 页（html）三选一。
-    markdown 以 base64 内嵌图片（前端压缩后写入），上限 1M 字符防配置膨胀。"""
+def _validate_html(v: str | None) -> str | None:
+    if v is None or not v.strip():
+        return None
+    v = v.strip()
+    # 明显不是 HTML 的（如粘贴了纯文本/JSON）直接拒，避免渲染出空白页
+    if len(v) < 20 or ("<" not in v and "&lt;" not in v):
+        raise ValueError("html must be an HTML document")
+    return v
+
+
+class PageConfig(ResourceBase):
+    """页面资源：链接（url）/ HTML 页（html）二选一，随站点资源抽屉管理。
+    校验放 Annotated 元数据（AfterValidator 而非 field_validator）：_update_model
+    裸派生 update 模型时类级 validator 不随身、注解 metadata 随行，
+    这样创建与编辑两条路径都生效（同 custom_fields ≤10 模式）。"""
 
     description: str = ""
-    url: str | None = None
-    # 1MB 上限放 Annotated 元数据（非 field_validator）：_update_model 裸派生 update 模型时
-    # 类级 validator 不随身，注解约束才在创建与编辑两条路径都生效（同 DeviceCustomField 模式）
-    markdown: Annotated[str | None, Field(max_length=_MD_MAX)] = None
-    html: str | None = None
-
-    @field_validator("url")
-    @classmethod
-    def _validate_url(cls, v: str | None) -> str | None:
-        if v is None or not v.strip():
-            return None
-        v = v.strip()
-        if not v.startswith(("http://", "https://")):
-            raise ValueError("url must start with http:// or https://")
-        return v
-
-    @field_validator("markdown")
-    @classmethod
-    def _validate_markdown(cls, v: str | None) -> str | None:
-        if v is None or not v.strip():
-            return None
-        return v
-
-    @field_validator("html")
-    @classmethod
-    def _validate_html(cls, v: str | None) -> str | None:
-        if v is None or not v.strip():
-            return None
-        v = v.strip()
-        # 明显不是 HTML 的（如粘贴了纯文本/JSON）直接拒，避免渲染出空白页
-        if len(v) < 20 or ("<" not in v and "&lt;" not in v):
-            raise ValueError("html must be an HTML document")
-        return v
+    url: Annotated[str | None, AfterValidator(_validate_url)] = None
+    html: Annotated[str | None, AfterValidator(_validate_html)] = None
 
     @model_validator(mode="after")
-    def _need_one_content(self) -> "KnowledgeConfig":
-        # 只填了空串/空白的字段等同于都没填
-        if not (self.url or self.markdown or self.html):
-            raise ValueError("knowledge item requires url, markdown or html")
+    def _need_url_or_html(self) -> "PageConfig":
+        if not (self.url or self.html):
+            raise ValueError("page requires url or html")
         return self
 
 
@@ -169,7 +155,7 @@ RESOURCE_MODELS: dict[str, tuple[type[BaseModel], type[BaseModel]]] = {
     res_type: (model, _update_model(model))
     for res_type, model in {
         "servers": ServerConfig,
-        "knowledge": KnowledgeConfig,
+        "pages": PageConfig,
         "redis": RedisConfig,
         "mq": MqConfig,
         "devices": DeviceConfig,

@@ -6,10 +6,12 @@ from backend.app.core import oplog
 from backend.app.core.redis import get_platform_redis
 
 SITES_KEY = "ops:sites"  # Set: 全部站点 id（PRD §6.2）
-RESOURCE_TYPES = ("servers", "knowledge", "redis", "mq", "devices")
-# 删除站点时一并清理的附属 key：overview 健康 hash、ssh 脚本 hash（字面量直写，避免跨模块循环导入）
+RESOURCE_TYPES = ("servers", "pages", "redis", "mq", "devices")
+# 删除站点时一并清理的附属 key：overview 健康 hash、ssh 脚本 hash、knowledge 文档 hash
+# （字面量直写，避免跨模块循环导入）
 HEALTH_KEY = "ops:health:{site_id}"  # overview/service.py health_key 同格式
 SSH_SCRIPTS_KEY = "ops:site:{site_id}:ssh_scripts"  # ssh/service.py _key 同格式
+KNOWLEDGE_KEY = "ops:knowledge:{site_id}"  # knowledge/service.py knowledge_key 同格式
 
 
 def site_key(site_id: str) -> str:
@@ -110,6 +112,7 @@ async def delete_site(site_id: str) -> bool:
     keys = [site_key(site_id), SSH_SCRIPTS_KEY.format(site_id=site_id),
             HEALTH_KEY.format(site_id=site_id)]
     keys += [resource_key(site_id, t) for t in RESOURCE_TYPES]
+    keys.append(KNOWLEDGE_KEY.format(site_id=site_id))  # 知识库文档随站点删除（独立存储，字面量直写避循环 import）
     await r.delete(*keys)
     # 采样序列随站点删除：该站点的趋势样本再无读者，留着只会成为孤儿 key
     # （写时 TTL 只救活被继续推送的序列，删站后无人推送）。站点段位置随
@@ -133,14 +136,14 @@ async def delete_site(site_id: str) -> bool:
 # 推翻 PRD §5.2 的"密码不回显"要求；更新语义为"提交什么存什么"。
 
 
-async def migrate_legacy_pages() -> None:
-    """pages→knowledge 一次性迁移（应用启动时执行）：
-    仅源存在 → RENAME；并存（降级窗口旧代码写过源）→ 源中目标缺失的 id 并入后删源；
-    仅目标存在 → 不动。幂等：跑多次结果一致。"""
+async def migrate_knowledge_back_to_pages() -> None:
+    """knowledge→pages 反向迁移（拆分回退，应用启动时执行）：
+    仅 knowledge 存在 → RENAME 为 pages；并存 → pages 缺失 id 从 knowledge 并入后删源；
+    仅 pages → 不动。幂等。"""
     r = get_platform_redis()
     for sid in await r.smembers(SITES_KEY):
-        src = resource_key(sid, "pages")
-        dst = resource_key(sid, "knowledge")
+        src = resource_key(sid, "knowledge")
+        dst = resource_key(sid, "pages")
         if not await r.exists(src):
             continue
         if not await r.exists(dst):
@@ -197,15 +200,13 @@ def _res_label(data: dict, resource_id: str) -> str:
 
 
 def _with_kind(res_type: str, item: dict) -> dict:
-    """knowledge 资源的派生字段 kind：url > markdown > html 三档。
+    """pages 资源的派生字段 kind：url > html 两档。
 
     存储不落 kind（后端/前端都可能写配置），读取时按当前内容派生——
     老数据与手改数据同样得到正确分类，零迁移成本。其他资源类型原样返回。
     """
-    if res_type == "knowledge":
-        item["kind"] = ("url" if item.get("url")
-                        else "markdown" if item.get("markdown")
-                        else "html" if item.get("html") else None)
+    if res_type == "pages":
+        item["kind"] = "url" if item.get("url") else ("html" if item.get("html") else None)
     return item
 
 
@@ -319,8 +320,6 @@ async def import_all(sites: list[dict]) -> int:
         await r.srem(SITES_KEY, *old_ids)
 
     for s in sites:
-        if "pages" in s:  # 旧版导出文件兼容：pages 数组并入 knowledge
-            s["knowledge"] = s.pop("pages") + s.get("knowledge", [])
         resources = {t: s.pop(t, []) for t in RESOURCE_TYPES}
         await create_site(s)
         sid = s["id"]
