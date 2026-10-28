@@ -104,8 +104,7 @@ function kindLabel(p: PageResource) {
       </div>
       <div v-else-if="pages.length" class="page-grid">
         <fade-content v-for="(p, i) in pages" :key="p.id" :delay="i * 60" class="page-fade">
-          <!-- page-card 只做定位容器（无 transform）：删除确认弹窗 fixed 定位不能落在
-               带 transform 的祖先里，悬停位移全部移入 .card-lift 内层 -->
+          <!-- 悬停位移作用在 .card-lift 上；遮罩嵌在其内一起位移（删除确认弹窗已 Teleport 到 body，不受 transform 影响） -->
           <div class="page-card" @click="open(p)" @mousemove="onCardMove">
             <div class="card-lift">
               <div class="pc-head">
@@ -123,16 +122,17 @@ function kindLabel(p: PageResource) {
               <div v-if="derivePageKind(p) === 'url' && p.url" class="pc-url">
                 <tip-copy :text="p.url" :max="280" :copy="false" />
               </div>
+
+              <!-- hover 遮罩放在位移层内：与卡片一起抬起，不再露出缝隙 -->
+              <div class="card-overlay" @click.stop>
+                <button type="button" class="ov-btn" @click="open(p)">{{ $t('page.open') }}</button>
+                <button type="button" class="ov-btn" @click="startEdit(p)">{{ $t('page.edit') }}</button>
+                <span class="ov-del">
+                  <countdown-confirm :label="$t('page.del')" :target="p.name" :on-confirm="() => remove(p)" />
+                </span>
+              </div>
             </div>
 
-            <!-- hover 遮罩：打开 / 编辑 / 删除（:focus-within 保证键盘可达） -->
-            <div class="card-overlay" @click.stop>
-              <button type="button" class="ov-btn" @click="open(p)">{{ $t('page.open') }}</button>
-              <button type="button" class="ov-btn" @click="startEdit(p)">{{ $t('page.edit') }}</button>
-              <span class="ov-del">
-                <countdown-confirm :label="$t('page.del')" :target="p.name" :on-confirm="() => remove(p)" />
-              </span>
-            </div>
           </div>
         </fade-content>
       </div>
@@ -158,7 +158,7 @@ function kindLabel(p: PageResource) {
 .page-fade :deep(.fade-content) {
   height: 100%;
 }
-/* 定位容器：不携带 transform/overflow——删除确认弹窗 fixed 依赖它 */
+/* 卡片：视觉与位移都在 .card-lift；遮罩嵌在其内，随卡片一起抬起（不再露缝） */
 .page-card {
   position: relative;
   height: 100%;
@@ -207,7 +207,7 @@ function kindLabel(p: PageResource) {
 .page-card:hover .card-lift {
   transform: translateY(-3px) scale(1.012);
   border-color: var(--primary);
-  box-shadow: 0 10px 24px rgba(31, 35, 41, 0.1);
+  box-shadow: 0 12px 28px color-mix(in srgb, var(--ops-text-1) 16%, transparent);
 }
 .page-card:hover .card-lift::before,
 .page-card:hover .card-lift::after {
@@ -272,8 +272,9 @@ function kindLabel(p: PageResource) {
   pointer-events: none;
   transition: opacity 140ms ease;
 }
+/* 仅键盘聚焦（:focus-visible）显形：点开弹窗再关闭不会残留遮罩态 */
 .page-card:hover .card-overlay,
-.page-card:focus-within .card-overlay {
+.page-card:has(:focus-visible) .card-overlay {
   opacity: 1;
   pointer-events: auto;
 }

@@ -31,6 +31,8 @@ export const knowledgeApi = {
 
 /** 单文件上限，与后端 MAX_FILE_BYTES 对齐（前端先行拦截，给出即时提示） */
 export const MAX_FILE_BYTES = 1_000_000
+/** 展示用上限文案：1_000_000 字节按 1024 进制是 976.6 KB，但产品口径就是 1 MB，直接写死 */
+export const MAX_FILE_LABEL = '1 MB'
 
 /** 扩展名（小写，无点）——用于图标与分类；MIME 不可靠时以扩展名为准 */
 export function fileExt(doc: Pick<KnowledgeDoc, 'filename' | 'mime'>): string {

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
   ChevronLeft, ChevronRight, File, FileText, Image, Music, Plus, Video,
@@ -16,7 +16,7 @@ import { useSiteStore } from '../../stores/site'
 import KnowledgeDialog from './KnowledgeDialog.vue'
 import KnowledgeViewer from './KnowledgeViewer.vue'
 import {
-  fileExt, humanSize, knowledgeApi, previewKind, validateUpload, type KnowledgeDoc,
+  fileExt, humanSize, knowledgeApi, MAX_FILE_LABEL, previewKind, validateUpload, type KnowledgeDoc,
 } from './api'
 
 const { t } = useI18n()
@@ -102,13 +102,34 @@ function onDrop(e: DragEvent) {
   if (!file) return
   const err = validateUpload(file)
   if (err) {
-    message.error(t(err, { max: humanSize(1_000_000) }))
+    message.error(t(err, { max: MAX_FILE_LABEL }))
     return
   }
   editing.value = null
   prefillFile.value = file
   showEditor.value = true
 }
+
+// 兜底：拖到卡片/弹窗之外的区域松手时，浏览器默认会「打开该文件」把页面顶掉。
+// 全局拦截并在未处理过的情况下按拖入处理——任何位置拖进来都有反馈。
+function onWindowDragOver(e: DragEvent) {
+  e.preventDefault()
+}
+
+function onWindowDrop(e: DragEvent) {
+  if (e.defaultPrevented) return // 卡片/弹窗内已处理（@drop.prevent）
+  e.preventDefault()
+  onDrop(e)
+}
+
+onMounted(() => {
+  window.addEventListener('dragover', onWindowDragOver)
+  window.addEventListener('drop', onWindowDrop)
+})
+onBeforeUnmount(() => {
+  window.removeEventListener('dragover', onWindowDragOver)
+  window.removeEventListener('drop', onWindowDrop)
+})
 
 const KIND_ICON = {
   image: Image, pdf: FileText, video: Video, audio: Music, text: FileText, office: FileText, other: File,
@@ -156,8 +177,7 @@ const KIND_LABEL: Record<string, string> = {
       </div>
       <div v-else-if="docs.length" class="page-grid">
         <fade-content v-for="(d, i) in paged" :key="d.id" :delay="i * 40" class="page-fade">
-          <!-- page-card 只做定位容器（无 transform）：删除确认弹窗 fixed 定位不能落在
-               带 transform 的祖先里，悬停位移全部移入 .card-lift 内层 -->
+          <!-- 悬停位移作用在 .card-lift 上；遮罩嵌在其内一起位移（删除确认弹窗已 Teleport 到 body，不受 transform 影响） -->
           <div class="page-card" @click="open(d)">
             <div class="card-lift">
               <div class="pc-head">
@@ -173,16 +193,17 @@ const KIND_LABEL: Record<string, string> = {
               </div>
               <div v-if="d.description" class="pc-desc">{{ d.description }}</div>
               <div class="pc-ext">{{ fileExt(d).toUpperCase() || 'FILE' }}</div>
+
+              <!-- hover 遮罩放在位移层内：与卡片一起抬起，不再露出缝隙 -->
+              <div class="card-overlay" @click.stop>
+                <button type="button" class="ov-btn" @click="open(d)">{{ $t('knowledge.open') }}</button>
+                <button type="button" class="ov-btn" @click="startRename(d)">{{ $t('knowledge.rename') }}</button>
+                <span class="ov-del">
+                  <countdown-confirm :label="$t('knowledge.del')" :target="d.name" :on-confirm="() => remove(d)" />
+                </span>
+              </div>
             </div>
 
-            <!-- hover 遮罩：查看 / 重命名 / 删除（:focus-within 保证键盘可达） -->
-            <div class="card-overlay" @click.stop>
-              <button type="button" class="ov-btn" @click="open(d)">{{ $t('knowledge.open') }}</button>
-              <button type="button" class="ov-btn" @click="startRename(d)">{{ $t('knowledge.rename') }}</button>
-              <span class="ov-del">
-                <countdown-confirm :label="$t('knowledge.del')" :target="d.name" :on-confirm="() => remove(d)" />
-              </span>
-            </div>
           </div>
         </fade-content>
       </div>
@@ -230,7 +251,7 @@ const KIND_LABEL: Record<string, string> = {
 .page-fade :deep(.fade-content) {
   height: 100%;
 }
-/* 定位容器：不携带 transform/overflow——删除确认弹窗 fixed 依赖它 */
+/* 卡片：视觉与位移都在 .card-lift；遮罩嵌在其内，随卡片一起抬起（不再露缝） */
 .page-card {
   position: relative;
   height: 100%;
@@ -256,7 +277,7 @@ const KIND_LABEL: Record<string, string> = {
 .page-card:hover .card-lift {
   transform: translateY(-3px) scale(1.012);
   border-color: var(--primary);
-  box-shadow: 0 10px 24px rgba(31, 35, 41, 0.1);
+  box-shadow: 0 12px 28px color-mix(in srgb, var(--ops-text-1) 16%, transparent);
 }
 @media (prefers-reduced-motion: reduce) {
   .card-lift { transition: border-color 160ms ease; }
@@ -356,8 +377,9 @@ const KIND_LABEL: Record<string, string> = {
   pointer-events: none;
   transition: opacity 140ms ease;
 }
+/* 仅键盘聚焦显形：点开查看弹窗再关闭不会残留遮罩态 */
 .page-card:hover .card-overlay,
-.page-card:focus-within .card-overlay {
+.page-card:has(:focus-visible) .card-overlay {
   opacity: 1;
   pointer-events: auto;
 }

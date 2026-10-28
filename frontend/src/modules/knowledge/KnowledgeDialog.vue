@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { message } from '@/lib/message'
-import { humanSize, knowledgeApi, validateUpload, type KnowledgeDoc } from './api'
+import { humanSize, knowledgeApi, MAX_FILE_LABEL, validateUpload, type KnowledgeDoc } from './api'
 
 const props = defineProps<{
   show: boolean
@@ -46,15 +46,15 @@ watch(
   { immediate: true },
 )
 
-/** 选中/拖入文件：校验大小与空文件，名称默认取文件名去扩展名 */
+/** 选中/拖入文件：校验大小与空文件；名称始终跟随文件名（去扩展名）自动填充 */
 function acceptFile(f: File) {
   const err = validateUpload(f)
   if (err) {
-    message.error(t(err, { max: humanSize(1_000_000) }))
+    message.error(t(err, { max: MAX_FILE_LABEL }))
     return
   }
   file.value = f
-  if (!name.value.trim()) name.value = f.name.replace(/\.[^.]+$/, '')
+  name.value = f.name.replace(/\.[^.]+$/, '')
 }
 
 function onPick(e: Event) {
@@ -156,7 +156,7 @@ async function save() {
               <span class="text-xs text-muted-foreground">{{ $t('knowledge.dropHere') }}</span>
             </template>
           </div>
-          <p class="text-xs text-muted-foreground">{{ $t('knowledge.anyFormatHint', { max: humanSize(1_000_000) }) }}</p>
+          <p class="text-xs text-muted-foreground">{{ $t('knowledge.anyFormatHint', { max: MAX_FILE_LABEL }) }}</p>
         </template>
       </div>
 

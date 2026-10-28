@@ -19,7 +19,7 @@ const forwarded = useForwardPropsEmits(props, emits)
 
 <template>
   <DialogPortal>
-    <DialogOverlay class="fixed inset-0 z-50 bg-black/60 backdrop-blur-[2px]" />
+    <DialogOverlay class="fixed inset-0 z-50 bg-black/35 backdrop-blur-[2px]" />
     <DialogContent
       v-bind="forwarded"
       :aria-describedby="undefined"

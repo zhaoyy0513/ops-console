@@ -16,7 +16,7 @@ const { t } = useI18n()
 const props = defineProps<{
   label: string
   target: string
-  seconds?: number
+  seconds?: number // 解锁倒计时秒数，默认 3
   confirmText?: string
   width?: string
   onConfirm?: () => Promise<unknown> | void
@@ -24,7 +24,7 @@ const props = defineProps<{
 const emit = defineEmits<{ (e: 'confirm'): void }>()
 
 const show = ref(false)
-const remaining = ref(props.seconds ?? 5)
+const remaining = ref(props.seconds ?? 3)
 /** 确认执行中：按钮禁用 + 转圈，防连点重复触发（onConfirm 返回 Promise 才能感知完成）。
  *  成功路径保持锁定直到下次打开弹窗（避免极快的响应窗口内被连点第二次）；失败才解锁允许重试。 */
 const pending = ref(false)
@@ -42,7 +42,7 @@ async function onConfirmClick() {
 
 watch(show, (v) => {
   if (v) {
-    remaining.value = props.seconds ?? 5
+    remaining.value = props.seconds ?? 3
     pending.value = false // 每次重新打开复位执行锁
   }
 })
@@ -85,7 +85,7 @@ function blockDismiss(e: Event) {
        触发按钮仍就地渲染（表格单元格内点击）。 -->
   <AlertDialog v-model:open="show">
     <Teleport to="body">
-      <AlertDialogOverlay class="fixed inset-0 z-50 bg-black/60" @interact-outside="blockDismiss" />
+      <AlertDialogOverlay class="fixed inset-0 z-50 bg-black/35" @interact-outside="blockDismiss" />
       <RContent
         role="alertdialog"
         :aria-describedby="undefined"
