@@ -108,13 +108,16 @@ async function save() {
     message.error(t('knowledge.needName'))
     return
   }
-  // 只写所选类型字段，其余置空串（后端空白视同未填；编辑切换类型不残留旧内容）
+  // 条目本就 url+markdown 并存（kind 翻转场景，如抽屉给文档补了链接）时，
+  // 用户未切类型 → 未选中的字段按回填值透传，防止静默清掉文档/链接；
+  // 主动切换类型 → 其余字段清空（有意替换，维持原语义）
+  const switched = !!props.editing && deriveKind(props.editing) !== kind.value
   const data = {
     name,
     description: form.value.description.trim(),
-    url: kind.value === 'url' ? form.value.url.trim() : '',
-    markdown: kind.value === 'markdown' ? form.value.markdown : '',
-    html: kind.value === 'html' ? form.value.html : '',
+    url: kind.value === 'url' || !switched ? form.value.url.trim() : '',
+    markdown: kind.value === 'markdown' || !switched ? form.value.markdown : '',
+    html: kind.value === 'html' || !switched ? form.value.html : '',
   }
   if (!data.url && !data.markdown && !data.html) {
     message.error(t('knowledge.needOne'))
