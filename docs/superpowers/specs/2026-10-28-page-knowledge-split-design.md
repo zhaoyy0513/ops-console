@@ -78,3 +78,21 @@ AlertDialog（Overlay + Content）包 `<Teleport to="body">`：fixed 定位回�
 ## 明确不做
 
 知识库进 export/import 备份（future）、视频/大文件存储（future 立项）、知识库多级目录/标签。
+
+## 追加需求（同日用户补充）
+
+### 知识库交互补充
+
+- **拖拽上传**：知识库视图整域为 dropzone——拖入 `.md` 读为正文、拖入图片压缩后生成 `![](data:…)`，预填「新建」弹窗（name 取文件名去扩展名，多图按序追加）；弹窗内编辑器同样接受拖放（语义同粘贴，插入光标处），拖入时显示高亮提示。
+- **编辑仅名称**：文档创建后内容不可改——编辑弹窗只有名称字段（PUT 只提交 `{name}`，后端全可选 update 语义天然支持）；描述与正文仅在创建时录入。操作集 = 重命名 / 删除 / 查看。
+- **markdown 回显与图片展示**：沿用现有管线（marked + DOMPurify 内联渲染，prose 样式 img 自适应；纯图片文档即一张居中大图），新标签走 sandbox 壳。
+
+### 主题系统重做（取代现有明暗二态）
+
+- 三套完整主题，token 骨架共用，`data-theme` 三值：`neon`（默认）/ `holo` / `synth`。
+  - **neon 深色霓虹玻璃**：基底 #0B1020，青/紫/品红对角极光（#00F5FF/#7C3CFF/#FF2BD6）+ 极细青网格线 rgba(0,245,255,0.06)；卡片 rgba(20,25,45,0.55) + blur 16px + 霓虹光边与深投影；状态点 #00F5AA；渐变标题 #00F5FF→#7C3CFF→#FF2BD6 带微外发光；正文冰白 #E9F1FF。
+  - **holo 全息幻彩浅色**：基底 #F8FAFF，五色幻彩径向（#FFD6F2/#D6F0FF/#E8FFE0/#F0E4FF/#FFF4D6）；卡片 rgba(255,255,255,0.7) + 淡紫投影；渐变标题 #FF2BD6→#7C3CFF→#00C2FF。
+  - **synth 复古落日**：基底 #12002B，底部落日径向（#FF3D81→#FFB703）+ 青色电光光晕 + 细网格；卡片 rgba(18,0,43,0.6) 粉描边光晕；渐变标题 #FF3D81→#FFB703；状态点 #00FF9D。
+- theme store：`OpsTheme = 'neon'|'holo'|'synth'`，默认 neon，localStorage 旧值兼容（light→holo、dark→neon）。
+- 切换 UI：侧栏 footer 分割线下、版本号上，3 个渐变圆形圆点（各主题配色微缩），active 高亮环 + i18n tooltip；header 现有明暗切换按钮删除。
+- 玻璃卡片泛光/网格线等主题差异全部收敛进 token（`--ops-aurora` 多层背景、`--ops-shadow-card` 多层投影含光晕）+ 个别 `[data-theme]` 作用域规则（标题外发光）。
