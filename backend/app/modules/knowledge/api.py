@@ -1,43 +1,28 @@
-from typing import Annotated
+import mimetypes
+from urllib.parse import quote
 
-from fastapi import APIRouter, HTTPException
-from pydantic import AfterValidator, BaseModel, Field, create_model, model_validator
+from fastapi import APIRouter, Form, HTTPException, UploadFile
+from fastapi.responses import Response
+from pydantic import BaseModel, create_model
 
 from . import service
 
 router = APIRouter(tags=["knowledge"])
 
-_MD_MAX = 1_000_000
 
+class DocRename(BaseModel):
+    """编辑仅改名（文件内容创建后不可变）。"""
 
-def _normalize_markdown(v: str | None) -> str | None:
-    """空白串归一为 None（AfterValidator 放 Annotated 元数据，随 _doc_update_model
-    的 metadata 复制进入编辑路径——sites/_update_model 同款机制）。"""
-    return v if v is not None and v.strip() else None
-
-
-class DocIn(BaseModel):
     name: str
-    description: str = ""
-    # 1M 字符上限放 Annotated 元数据（同 sites._update_model 模式），创建/编辑双路径生效
-    markdown: Annotated[str | None, Field(max_length=_MD_MAX), AfterValidator(_normalize_markdown)] = None
-    enabled: bool = True
-
-    @model_validator(mode="after")
-    def _need_markdown(self) -> "DocIn":
-        if not self.markdown:
-            raise ValueError("doc requires markdown content")
-        return self
+    description: str | None = None
 
 
-# 全字段可选的更新模型（Annotated metadata 随行，1M 上限/空白归一双路径生效）。
-# 刻意省略 `| None`：编辑多为仅改名场景，显式 null 的 markdown 会在 service 层
-# 被剔除而非静默清正文；enabled 显式 null 会被 bool 校验拒为 422。
+# 全字段可选更新模型（Annotated metadata 随行，同 sites/_update_model 模式）
 DocUpdate = create_model(
     "DocUpdate",
     **{
-        n: (Annotated[f.annotation, *f.metadata] if f.metadata else f.annotation, None)
-        for n, f in DocIn.model_fields.items()
+        n: (f.annotation | None if f.annotation is not str else str | None, None)
+        for n, f in DocRename.model_fields.items()
     },
 )
 
@@ -51,13 +36,52 @@ async def list_docs(site_id: str) -> list[dict]:
 
 
 @router.post("/knowledge/{site_id}", status_code=201)
-async def create_doc(site_id: str, data: DocIn) -> dict:
+async def create_doc(
+    site_id: str,
+    file: UploadFile,
+    name: str = Form(""),
+    description: str = Form(""),
+) -> dict:
+    """上传任意格式文件（≤1MB）。name 留空则取文件名去扩展名。"""
+    content = await file.read()
+    filename = (file.filename or "file").strip()
+    mime = file.content_type or mimetypes.guess_type(filename)[0] or "application/octet-stream"
+    doc_name = name.strip() or filename.rsplit(".", 1)[0]
     try:
-        return await service.create_doc(site_id, data.model_dump(exclude_none=True))
+        return await service.create_doc(
+            site_id,
+            {"name": doc_name, "description": description.strip(), "filename": filename, "mime": mime},
+            content,
+        )
     except service.NotFound as e:
         raise HTTPException(status_code=404, detail=str(e)) from None
     except service.DuplicateDoc as e:
         raise HTTPException(status_code=409, detail=str(e)) from None
+    except service.FileTooLarge as e:
+        raise HTTPException(status_code=413, detail=str(e)) from None
+
+
+@router.get("/knowledge/{site_id}/{doc_id}/content")
+async def get_content(site_id: str, doc_id: str) -> Response:
+    """文件原始字节。inline + UTF-8 文件名：浏览器/pdf 阅读器可直接内嵌打开。"""
+    try:
+        doc = await service.get_doc(site_id, doc_id)
+        if doc is None:
+            raise HTTPException(status_code=404, detail="doc not found")
+        blob = await service.get_blob(site_id, doc_id)
+    except service.NotFound as e:
+        raise HTTPException(status_code=404, detail=str(e)) from None
+    if blob is None:
+        raise HTTPException(status_code=404, detail="doc content not found")
+    filename = doc.get("filename") or doc_id
+    return Response(
+        content=blob,
+        media_type=doc.get("mime") or "application/octet-stream",
+        headers={
+            "Content-Disposition": f"inline; filename*=UTF-8''{quote(filename)}",
+            "Cache-Control": "private, max-age=300",
+        },
+    )
 
 
 @router.put("/knowledge/{site_id}/{doc_id}")

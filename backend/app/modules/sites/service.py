@@ -121,7 +121,9 @@ async def delete_site(site_id: str) -> bool:
     stale: list[str] = []
     for pat in (f"ops:sample:server:{site_id}:*",
                 f"ops:sample:mq:{site_id}:*",
-                f"ops:sample:{site_id}:*"):
+                f"ops:sample:{site_id}:*",
+                # 知识库文件内容（每文档一个 key，只能按前缀扫；元数据 hash 已在上面整删）
+                f"ops:knowledge:{site_id}:blob:*"):
         stale += [k async for k in r.scan_iter(pat)]
     if stale:
         await r.delete(*stale)
