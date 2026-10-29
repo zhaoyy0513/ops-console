@@ -12,4 +12,5 @@ frontend/dist/
 .env
 .idea/
 /logs/
+/backend/app/logs/
 layout/
