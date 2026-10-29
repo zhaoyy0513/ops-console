@@ -25,6 +25,8 @@ COMMANDS: dict[str, str] = {
     "disk_usage": "LC_ALL=C df -hP",
     "disk_inode": "LC_ALL=C df -iP",
     "network": "cat /proc/net/dev",
+    # 磁盘 IO：读计数/扇区（/proc/diskstats 常驻内存，无额外负载）
+    "disk_io": "cat /proc/diskstats",
     # top -bn2 第二帧才是瞬时 CPU%（ps aux 的 %CPU 是进程生命周期平均，基本不动）
     # -c 显示完整命令行（默认会截断）
     "processes": "LC_ALL=C top -bn2 -c -w 512",
@@ -132,6 +134,64 @@ def parse_network(text: str) -> dict[str, int]:
         except ValueError:
             continue
     return {"rx": rx, "tx": tx, "errors": errors, "dropped": dropped}
+
+
+# 非物理盘前缀：loop（回环）/ ram / sr（光驱）/ fd（软驱）——计入会污染 IO 统计
+VIRTUAL_DISK = re.compile(r"^(?:loop|ram|sr|fd)\d")
+
+
+def _is_partition(name: str, all_names: set[str]) -> bool:
+    """name 是否为另一个已存在设备的分区。
+
+    兼容两种命名：sda -> sda1（数字后缀）、nvme0n1 -> nvme0n1p1（p+数字）。
+    用「同批输出里存在基设备」判定，而非硬编码设备名前缀——容器里常见
+    dm-0 / overlay 这类名字，白名单会直接漏采。
+    """
+    m = re.match(r"^(.+?)(p?)(\d+)$", name)
+    if not m:
+        return False
+    base = m.group(1)
+    if base in all_names:
+        return True
+    # nvme0n1p1：去掉 "p" 后的前缀也要试（nvme0n1 本身以数字结尾）
+    return m.group(2) == "p" and base.rstrip("p") in all_names
+
+
+def parse_diskstats(text: str) -> dict[str, int] | None:
+    """/proc/diskstats -> 全盘聚合 {read_bytes, write_bytes, read_iops, write_iops}。
+
+    扇区固定 512B（内核口径）。字段位：name=2、读完成=3、读扇区=5、写完成=7、写扇区=9。
+    过滤规则：跳过 loop/ram/sr/fd；跳过分区（否则与整盘双重计数）。
+    无任何可用设备（受限容器）返回 None，前端显示 ?。
+    """
+    rows: list[tuple[str, int, int, int, int]] = []
+    for line in text.splitlines():
+        parts = line.split()
+        if len(parts) < 14:
+            continue
+        try:
+            rows.append((parts[2], int(parts[3]), int(parts[5]), int(parts[7]), int(parts[9])))
+        except ValueError:
+            continue
+    names = {r[0] for r in rows}
+    reads = writes = riops = wiops = 0
+    counted = 0
+    for name, r_completed, r_sectors, w_completed, w_sectors in rows:
+        if VIRTUAL_DISK.match(name) or _is_partition(name, names):
+            continue
+        reads += r_sectors
+        writes += w_sectors
+        riops += r_completed
+        wiops += w_completed
+        counted += 1
+    if not counted:
+        return None
+    return {
+        "read_bytes": reads * 512,
+        "write_bytes": writes * 512,
+        "read_iops": riops,
+        "write_iops": wiops,
+    }
 
 
 def parse_zombies(text: str) -> list[dict[str, Any]]:
@@ -289,7 +349,7 @@ class SSHServerMetricsProvider(ServerMetricsProvider):
 
     async def get_metrics(self) -> dict[str, Any]:
         out = await self._collect(
-            ["cpu", "load", "cores", "memory", "network", "disk_usage", "disk_inode", "zombies"]
+            ["cpu", "load", "cores", "memory", "network", "disk_usage", "disk_inode", "disk_io", "zombies"]
         )
         cores_raw = out.get("cores", "")
         zombie_rows = parse_zombies(out["zombies"])
@@ -299,6 +359,7 @@ class SSHServerMetricsProvider(ServerMetricsProvider):
             "memory": parse_memory(out["memory"]),
             "network": parse_network(out["network"]),
             "disk": merge_disk(parse_df(out["disk_usage"]), parse_df(out["disk_inode"])),
+            "disk_io": parse_diskstats(out.get("disk_io", "")),
             "zombie_count": sum(1 for r in zombie_rows if r["stat"].startswith("Z")),
         }
 

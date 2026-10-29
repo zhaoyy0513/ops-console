@@ -31,6 +31,13 @@ export interface ServerMetrics {
     swap_used: number | null
   }
   network: { rx: number; tx: number; errors: number; dropped: number }
+  /** 磁盘 IO 累计计数（/proc/diskstats 全盘聚合，扇区×512B）；受限环境为 null */
+  disk_io?: {
+    read_bytes: number
+    write_bytes: number
+    read_iops: number
+    write_iops: number
+  } | null
   disk: DiskRow[]
   diagnosis: { status: string; issues: Issue[] }
   /** 僵尸进程数（metrics 同一 SSH 会话采集；后端未提供时为 undefined） */

@@ -37,6 +37,41 @@ const error = ref('')
 const cpuSeries = ref<SamplePoint[]>([])
 const memSeries = ref<SamplePoint[]>([])
 
+// ---- 磁盘 IO 速率：/proc/diskstats 是累计计数，速率 = 相邻两次 3s 轮询的差值 / 间隔 ----
+const diskIo = ref<{ read: number | null; write: number | null; riops: number | null; wiops: number | null }>({
+  read: null, write: null, riops: null, wiops: null,
+})
+let lastDiskIo: { t: number; read: number; write: number; riops: number; wiops: number } | null = null
+
+function updateDiskIo(io: ServerMetrics['disk_io']) {
+  if (!io) {
+    diskIo.value = { read: null, write: null, riops: null, wiops: null }
+    lastDiskIo = null
+    return
+  }
+  const now = Date.now()
+  const prev = lastDiskIo
+  lastDiskIo = { t: now, read: io.read_bytes, write: io.write_bytes, riops: io.read_iops, wiops: io.write_iops }
+  if (!prev || now <= prev.t) return // 首轮无参照
+  const dt = (now - prev.t) / 1000
+  const dr = io.read_bytes - prev.read
+  const dw = io.write_bytes - prev.write
+  // 后端 metrics 有 3s 缓存、前端也是 3s 轮询，两次可能拿到同一份快照：
+  // 计数完全没变时不是「零 IO」而是「没有新样本」，沿用上次速率，避免卡片闪 0.0B
+  if (dr === 0 && dw === 0 && io.read_iops === prev.riops && io.write_iops === prev.wiops) return
+  if (dr < 0 || dw < 0) {
+    // 计数器回绕（服务器重启）→ 本轮丢弃，显示 ?
+    diskIo.value = { read: null, write: null, riops: null, wiops: null }
+    return
+  }
+  diskIo.value = {
+    read: dr / dt,
+    write: dw / dt,
+    riops: Math.max(0, (io.read_iops - prev.riops) / dt),
+    wiops: Math.max(0, (io.write_iops - prev.wiops) / dt),
+  }
+}
+
 // 只读原则（验收 8）：本页面唯一写入口为僵尸进程终止（kill -9 走后端，记 oplog）
 async function loadServers() {
   try {
@@ -68,6 +103,7 @@ async function load(silent = false) {
     ])
     metrics.value = m
     processes.value = p
+    updateDiskIo(m.disk_io)
     // 趋势（读取时采样，3s 轮询 = 3s 一个点；rid 带站点维度）
     const rid = `server:${siteStore.currentSiteId}:${serverId.value}`
     getSamples(rid, 'cpu').then((s) => (cpuSeries.value = [...s].reverse())).catch(() => {})
@@ -117,7 +153,10 @@ watch(() => siteStore.currentSiteId, () => {
   serverId.value = null
   loadServers()
 })
-watch(serverId, () => load(false))
+watch(serverId, () => {
+  lastDiskIo = null
+  load(false)
+})
 
 // reka Select 的值恒为字符串；空值不回写保持占位符显示
 function pickServer(v: unknown) {
@@ -483,6 +522,16 @@ const zombieColumns = computed<any[]>(() => [
           </div>
           <div class="metric-sub">
             {{ $t('server.netErrors') }} {{ metrics.network.errors }} · {{ $t('server.netDropped') }} {{ metrics.network.dropped }}
+          </div>
+        </metric-card>
+        <metric-card :title="$t('server.diskIo')">
+          <div class="net-lines mono">
+            <div>{{ diskIo.read != null ? fmtBytes(diskIo.read) : '?' }}<span class="unit">{{ $t('server.ioRead') }}/s</span></div>
+            <div>{{ diskIo.write != null ? fmtBytes(diskIo.write) : '?' }}<span class="unit">{{ $t('server.ioWrite') }}/s</span></div>
+          </div>
+          <div class="metric-sub">
+            {{ $t('server.iopsCol') }} {{ diskIo.riops != null ? Math.round(diskIo.riops) : '?' }} /
+            {{ diskIo.wiops != null ? Math.round(diskIo.wiops) : '?' }}
           </div>
         </metric-card>
         <metric-card

@@ -7,6 +7,42 @@ from backend.app.main import app
 from backend.app.modules.server import service as server_service
 from backend.app.shared.errors import OpsError
 
+from backend.app.modules.server.provider import parse_diskstats
+
+
+def test_parse_diskstats_excludes_partitions_and_loop():
+    """分区（sda1 / nvme0n1p1）与 loop 不计入，避免与整盘双重计数。"""
+    sample = (
+        "   8       0 sda 100 0 2000 5 200 0 4000 8 0 10 10\n"
+        "   8       1 sda1 50 0 1000 2 100 0 2000 4 0 5 5\n"
+        "   7       0 loop0 5 0 10 1 0 0 0 0 0 1 1\n"
+        " 259       0 nvme0n1 300 0 6000 9 400 0 8000 12 0 20 20\n"
+        " 259       1 nvme0n1p1 50 0 1000 2 100 0 2000 4 0 5 5\n"
+    )
+    assert parse_diskstats(sample) == {
+        "read_bytes": (2000 + 6000) * 512,
+        "write_bytes": (4000 + 8000) * 512,
+        "read_iops": 100 + 300,
+        "write_iops": 200 + 400,
+    }
+
+
+def test_parse_diskstats_counts_dm_device_when_it_is_the_only_disk():
+    """容器/device-mapper 场景：设备名不在 sda/nvme 白名单时也要采集（否则整卡永远 ?）。"""
+    sample = " 253       0 dm-0 10 0 2000 5 20 0 4000 8 0 10 10 0 0 0 0\n"
+    assert parse_diskstats(sample) == {
+        "read_bytes": 2000 * 512,
+        "write_bytes": 4000 * 512,
+        "read_iops": 10,
+        "write_iops": 20,
+    }
+
+
+def test_parse_diskstats_empty_returns_none():
+    """完全无可用设备 → None（前端显示 ?，不误报 0）。"""
+    assert parse_diskstats("") is None
+    assert parse_diskstats("   7       0 loop0 5 0 10 1 0 0 0 0 0 1 1\n") is None
+
 
 @pytest.fixture
 async def client(fake_platform_redis):
