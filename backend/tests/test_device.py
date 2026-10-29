@@ -1,9 +1,15 @@
+import httpx
 import pytest
 from httpx import ASGITransport, AsyncClient
 
 from backend.app.main import app
 from backend.app.modules.device import service
-from backend.app.modules.device.provider import HttpDeviceProvider, normalize_device
+from backend.app.modules.device.provider import (
+    HttpDeviceProvider,
+    find_missing_fields,
+    normalize_device,
+)
+from backend.app.shared.errors import OpsError
 from samples_device import ENV12_BODY, ENV50_BODY
 
 
@@ -82,6 +88,8 @@ def test_template_multi_field_braces():
 
 
 class StubProvider:
+    last_latency_ms = 12
+
     def __init__(self, config):
         pass
 
@@ -204,6 +212,99 @@ async def test_custom_field_in_list_response(client, fake_platform_redis, monkey
     r = await client.get("/api/sites/sz/devices?instance=rc1")
     assert r.status_code == 200
     assert r.json()[0]["cf_t1"] == "deliver"
+
+
+# ---------- P1：接口响应耗时 + 字段映射失效检测 ----------
+
+
+class _FakeResp:
+    status_code = 200
+
+    def json(self):
+        return {"ok": 1}
+
+
+class _OkClient:
+    async def get(self, path):
+        return _FakeResp()
+
+
+class _FailClient:
+    async def get(self, path):
+        raise httpx.ConnectError("boom")
+
+
+async def test_provider_records_latency():
+    p = HttpDeviceProvider({"base_url": "http://x"})
+    assert await p._get(_OkClient(), "/") == {"ok": 1}
+    assert isinstance(p.last_latency_ms, int) and p.last_latency_ms >= 0
+
+
+async def test_provider_records_latency_on_failure():
+    p = HttpDeviceProvider({"base_url": "http://x"})
+    with pytest.raises(OpsError):
+        await p._get(_FailClient(), "/")
+    assert isinstance(p.last_latency_ms, int) and p.last_latency_ms >= 0
+
+
+def test_find_missing_fields_dot_paths():
+    raw = {"a": {"b": {"c": 1}, "v": None}, "list": [{"k": 1}]}
+    assert find_missing_fields(raw, {"x": "a.b.c"}) == []  # 存在
+    assert find_missing_fields(raw, {"x": "a.b.nope"}) == [{"field": "x", "source": "a.b.nope"}]
+    assert find_missing_fields(raw, {"x": "a.v"}) == []  # 值为 null 但路径存在 -> 不算失效
+    assert find_missing_fields(raw, {"x": "a.v.deep"}) == [{"field": "x", "source": "a.v.deep"}]  # 中间层 null
+    assert find_missing_fields(raw, {"x": "list.0.k"}) == []  # 数组下标
+    assert find_missing_fields(raw, {"x": "list.5.k"}) == [{"field": "x", "source": "list.5.k"}]
+
+
+def test_find_missing_fields_field_map_and_custom_fields():
+    raw = {"st": 1, "x": 2, "y": 3}
+    out = find_missing_fields(
+        raw,
+        {"status": "st", "battery": "power"},
+        [
+            {"key": "cf_1", "bind": "x"},
+            {"key": "cf_2", "template": "({x},{y})"},
+            {"key": "cf_3", "bind": "gone"},
+        ],
+    )
+    assert {"field": "battery", "source": "power"} in out
+    assert {"field": "cf_3", "source": "gone"} in out
+    assert {"field": "status", "source": "st"} not in out
+    assert {"field": "cf_2", "source": "({x},{y})"} not in out
+    assert len(out) == 2
+
+
+def test_find_missing_fields_no_config():
+    assert find_missing_fields({"a": 1}) == []
+    assert find_missing_fields({"a": 1}, {}, []) == []
+    assert find_missing_fields(None, {"x": "a"}) == []
+
+
+async def test_instance_health_endpoint(client):
+    r = await client.get("/api/sites/sz/device-instances/rc1/health")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["ok"] is True
+    assert isinstance(body["latency_ms"], int) and body["latency_ms"] >= 0
+    assert body["missing_fields"] == []
+
+
+async def test_instance_health_missing_fields(client, monkeypatch):
+    class RawProvider(StubProvider):
+        async def get_device_list(self):
+            return [{"id": "R1", "_raw": {"st": 1, "x": 2}}]
+
+    monkeypatch.setattr(service, "_build_provider", lambda config: RawProvider(config))
+    r = await client.put("/api/sites/sz/device-instances/rc1", json={
+        "field_map": {"status": "st", "battery": "power"},
+        "custom_fields": [{"key": "cf_1", "label_zh": "任务", "label_en": "Task", "bind": "gone"}],
+    })
+    assert r.status_code == 200
+    r = await client.get("/api/sites/sz/device-instances/rc1/health")
+    assert r.status_code == 200
+    fields = {(m["field"], m["source"]) for m in r.json()["missing_fields"]}
+    assert fields == {("battery", "power"), ("cf_1", "gone")}
 
 
 async def test_device_mappings_global_listing(client, fake_platform_redis, monkeypatch):

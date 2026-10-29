@@ -6,7 +6,7 @@ import time
 from datetime import datetime, timezone
 from typing import Any
 
-from backend.app.core import oplog
+from backend.app.core import events, oplog
 from backend.app.core.redis import get_platform_redis
 from backend.app.shared.concurrency import get_semaphore
 
@@ -86,9 +86,40 @@ async def check_site(site_id: str) -> int:
 
     if entries:
         r = get_platform_redis()
+        # 上一轮结果必须在覆盖前读走：状态跳变（进入/恢复 CRITICAL）靠它判定，
+        # 同一 CRITICAL 持续 30s 重查不会重复记事件（边沿触发即去重）。
+        prev_raw = await r.hgetall(health_key(site_id))
+        prev: dict[str, dict] = {}
+        for field, payload in prev_raw.items():
+            try:
+                prev[field] = json.loads(payload)
+            except (TypeError, ValueError):
+                pass
         await r.delete(health_key(site_id))
         await r.hset(health_key(site_id), mapping=entries)
+        await _record_transitions(site_id, prev, entries)
     return len(entries)
+
+
+async def _record_transitions(site_id: str, prev: dict[str, dict], entries: dict[str, str]) -> None:
+    """诊断状态跳变 → diag 事件（首次检查无旧值，不记）。"""
+    for field, payload in entries.items():
+        old = prev.get(field)
+        if not old:
+            continue
+        cur = json.loads(payload)
+        old_status, new_status = old.get("status"), cur.get("status")
+        if old_status == new_status:
+            continue
+        if new_status == "CRITICAL" and old_status != "CRITICAL":
+            title = f"{cur.get('name') or field}: {old_status} → CRITICAL"
+        elif old_status == "CRITICAL" and new_status != "CRITICAL":
+            title = f"{cur.get('name') or field}: CRITICAL → {new_status}"
+        else:
+            continue
+        await events.record_event(
+            site_id, "diag", title, detail=f"{field} {cur.get('message', '')}".strip()
+        )
 
 
 async def check_all_sites() -> None:
@@ -147,3 +178,76 @@ async def get_overview(site_id: str) -> dict[str, Any]:
         "recent_ops": await oplog.read_recent(20),
         "checked_at": max((i["checked_at"] for i in items), default=None),
     }
+
+
+# ---------- 配置卫生清单（P1）：纯静态判定，零采集 ----------
+
+
+def hygiene_issues(site: dict, resources: dict[str, list[dict]]) -> list[dict[str, Any]]:
+    """按站点/资源配置静态判定卫生问题。纯函数（不 IO），便于直接构造数据测试。
+
+    detail 仅作前端 i18n 缺失时的兜底文案；正常展示按 type 走 i18n。
+    """
+    issues: list[dict[str, Any]] = []
+
+    def add(kind: str, severity: str, rtype: str, cfg: dict, detail: str) -> None:
+        issues.append({
+            "type": kind,
+            "severity": severity,
+            "resource_type": rtype,
+            "resource_name": str(cfg.get("name") or cfg.get("id") or ""),
+            "detail": detail,
+        })
+
+    def enabled(cfgs: list[dict]) -> list[dict]:
+        return [c for c in cfgs if c.get("enabled", True)]
+
+    # 站点无阈值时，未覆盖阈值的 Server 全部吃全局默认——提示但不告警
+    if not site.get("thresholds"):
+        for cfg in enabled(resources.get("servers", [])):
+            if not cfg.get("thresholds"):
+                add("server_no_thresholds", "info", "server", cfg,
+                    "no thresholds on resource or site; global defaults apply")
+
+    for cfg in enabled(resources.get("devices", [])):
+        if not cfg.get("field_map") and not cfg.get("custom_fields"):
+            add("device_no_field_map", "info", "device", cfg,
+                "no field mapping or custom fields configured")
+
+    for rtype in ("redis", "mq"):
+        for cfg in enabled(resources.get(rtype, [])):
+            if not cfg.get("password"):
+                add(f"{rtype}_no_password", "warning", rtype, cfg, "password is empty")
+
+    for cfg in enabled(resources.get("pages", [])):
+        if not cfg.get("url") and not cfg.get("html"):
+            add("page_empty", "warning", "page", cfg, "neither url nor html configured")
+
+    # 警告在前（前端按返回顺序渲染）
+    issues.sort(key=lambda i: i["severity"] != "warning")
+    return issues
+
+
+async def get_hygiene(site_id: str) -> list[dict[str, Any]]:
+    from backend.app.modules.sites import service as sites_service
+
+    site = await sites_service.get_site(site_id)
+    if not site:
+        from backend.app.modules.sites.service import NotFound
+
+        raise NotFound(f"site not found: {site_id}")
+    resources = {
+        t: await sites_service.list_resources(site_id, t, include_password=True)
+        for t in ("servers", "devices", "redis", "mq", "pages")
+    }
+    return hygiene_issues(site, resources)
+
+
+async def get_events(site_id: str, limit: int = 50) -> list[dict[str, Any]]:
+    from backend.app.modules.sites import service as sites_service
+
+    if not await sites_service.get_site(site_id):
+        from backend.app.modules.sites.service import NotFound
+
+        raise NotFound(f"site not found: {site_id}")
+    return await events.read_events(site_id, limit)

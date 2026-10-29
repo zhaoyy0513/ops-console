@@ -4,7 +4,7 @@ import time
 from typing import Any
 
 from backend.app.core.cache import cached
-from backend.app.modules.device.provider import HttpDeviceProvider
+from backend.app.modules.device.provider import HttpDeviceProvider, find_missing_fields
 from backend.app.modules.sites.service import NotFound
 from backend.app.shared import testconn
 from backend.app.shared.concurrency import get_semaphore
@@ -27,15 +27,46 @@ async def _require_device_config(site_id: str, device_id: str) -> dict[str, Any]
     return config
 
 
-async def list_devices(site_id: str, device_id: str) -> list[dict[str, Any]]:
-    config = await _require_device_config(site_id, device_id)
-    provider = _build_provider(config)
+async def _instance_payload(
+    site_id: str,
+    device_id: str,
+    config: dict[str, Any] | None = None,
+    provider: HttpDeviceProvider | None = None,
+) -> dict[str, Any]:
+    """一次拉取的完整结果：设备列表 + 耗时 + 字段映射失效（同一份响应，共用缓存）。"""
+    config = config or await _require_device_config(site_id, device_id)
+    provider = provider or _build_provider(config)
 
     async def factory():
         async with get_semaphore("device"):
-            return await provider.get_device_list()
+            items = await provider.get_device_list()
+        first = items[0] if items else None
+        return {
+            "items": items,
+            "latency_ms": getattr(provider, "last_latency_ms", None),
+            "missing_fields": find_missing_fields(
+                first.get("_raw") if isinstance(first, dict) else None,
+                config.get("field_map"),
+                config.get("custom_fields"),
+            ),
+        }
 
     return await cached(f"ops:cache:device:{device_id}:status", CACHE_TTL, with_retry(factory))
+
+
+async def list_devices(site_id: str, device_id: str) -> list[dict[str, Any]]:
+    return (await _instance_payload(site_id, device_id))["items"]
+
+
+async def get_instance_health(site_id: str, device_id: str) -> dict[str, Any]:
+    """实例信息条用：响应耗时 + 字段映射失效检测。上游失败也带回耗时（ok=false）。"""
+    config = await _require_device_config(site_id, device_id)
+    provider = _build_provider(config)
+    try:
+        payload = await _instance_payload(site_id, device_id, config, provider)
+    except OpsError:
+        return {"ok": False, "latency_ms": getattr(provider, "last_latency_ms", None), "missing_fields": []}
+    return {"ok": True, "latency_ms": payload["latency_ms"], "missing_fields": payload["missing_fields"]}
 
 
 async def get_device(site_id: str, device_id: str, rid: str) -> dict[str, Any]:
@@ -83,4 +114,4 @@ def register_tester() -> None:
     testconn.register_tester("device", device_tester)
 
 
-__all__ = ["list_devices", "get_device", "device_tester", "register_tester", "OpsError"]
+__all__ = ["list_devices", "get_instance_health", "get_device", "device_tester", "register_tester", "OpsError"]

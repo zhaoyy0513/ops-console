@@ -24,6 +24,24 @@ async def refresh(site_id: str) -> dict:
     return {"checked": count}
 
 
+@router.get("/overview/{site_id}/hygiene")
+async def get_hygiene(site_id: str) -> list[dict]:
+    """配置卫生清单：纯静态检查，不发任何外呼。"""
+    try:
+        return await service.get_hygiene(site_id)
+    except NotFound as e:
+        raise HTTPException(status_code=404, detail=str(e)) from None
+
+
+@router.get("/overview/{site_id}/events")
+async def get_events(site_id: str, limit: int = 50) -> list[dict]:
+    """站点事件时间轴（新→旧，服务端自动记录，只读）。"""
+    try:
+        return await service.get_events(site_id, limit)
+    except NotFound as e:
+        raise HTTPException(status_code=404, detail=str(e)) from None
+
+
 @router.get("/samples")
 async def get_samples(rid: str, series: str, limit: int = 60) -> list[dict]:
     """采样序列查询（趋势图数据源）：rid 形如 server:<site>:<id> / mq:<site>:<id>。"""

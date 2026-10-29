@@ -15,6 +15,15 @@ async def get_sample_fields(site_id: str, device_id: str) -> dict:
         raise HTTPException(status_code=404, detail=str(e)) from None
 
 
+@router.get("/sites/{site_id}/device-instances/{device_id}/health")
+async def get_instance_health(site_id: str, device_id: str) -> dict:
+    """实例信息条：响应耗时 + 字段映射失效（复用列表同一次拉取）。"""
+    try:
+        return await service.get_instance_health(site_id, device_id)
+    except NotFound as e:
+        raise HTTPException(status_code=404, detail=str(e)) from None
+
+
 @router.get("/devices/mappings")
 async def list_device_mappings() -> list[dict]:
     """全局列出所有站点 Device 实例的字段映射配置（克隆功能用，不分站点）。"""

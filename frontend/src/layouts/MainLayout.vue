@@ -5,6 +5,7 @@ import { ChevronLeft, ChevronRight, FolderCog, Languages, ScrollText } from 'luc
 import {
   DocumentTextOutline, GridOutline, ServerOutline, BookOutline, LayersOutline,
   PulseOutline, HardwareChipOutline, TerminalOutline, CubeOutline,
+  DocumentsOutline, GitNetworkOutline,
 } from '@vicons/ionicons5'
 import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/ui/select'
 import { Button } from '@/components/ui/button'
@@ -35,6 +36,8 @@ const MODULE_ICONS: Record<string, Component> = {
   device: HardwareChipOutline,
   ssh: TerminalOutline,
   database: CubeOutline,
+  logs: DocumentsOutline,
+  netdiag: GitNetworkOutline,
 }
 
 // 主题三选一（neon/holo/synth，圆点切换在侧栏 footer）
@@ -196,7 +199,7 @@ function onSiteSelect(id: string | null) {
             <button class="collapse-btn" :title="collapsed ? $t('layout.expand') : $t('layout.collapse')" @click="collapsed = !collapsed">
               <component :is="collapsed ? ChevronRight : ChevronLeft" class="size-4" />
             </button>
-            <span v-if="!collapsed" class="build-stamp font-mono">b1029-1430</span>
+            <span v-if="!collapsed" class="build-stamp font-mono">b1029-1456</span>
           </div>
         </div>
       </aside>

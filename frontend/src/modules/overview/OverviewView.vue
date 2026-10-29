@@ -15,6 +15,8 @@ import MetricCard from '../../components/MetricCard.vue'
 import { useSiteStore } from '../../stores/site'
 import { overviewApi, type OverviewData } from './api'
 import { buildInspectionReport } from './inspection-report'
+import HygieneCard from './HygieneCard.vue'
+import EventTimeline from './EventTimeline.vue'
 
 const siteStore = useSiteStore()
 const router = useRouter()
@@ -177,6 +179,9 @@ function selectReport(e: FocusEvent) {
       </CardContent>
     </Card>
 
+    <!-- 配置建议 / 事件时间轴：各自独立加载与降级，互不影响 -->
+    <hygiene-card :site-id="siteStore.currentSiteId" />
+
     <Card v-if="data">
       <CardHeader class="flex-row items-center justify-between">
         <CardTitle>{{ $t('overview.recentOps') }}</CardTitle>
@@ -212,6 +217,8 @@ function selectReport(e: FocusEvent) {
         </div>
       </CardContent>
     </Card>
+
+    <event-timeline :site-id="siteStore.currentSiteId" />
 
     <Dialog v-model:open="reportOpen">
       <DialogContent class="w-[640px] max-w-[92vw]">

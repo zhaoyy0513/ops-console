@@ -32,6 +32,12 @@ export interface OomEvent {
   detail: string
 }
 
+/** PSI 单类资源压力（/proc/pressure/<res> 的 avg10，单位 %）；该行缺失为 null */
+export interface PressureRow {
+  some: number | null
+  full: number | null
+}
+
 /** 同一次采集内的能力探测：false = 该项不可用，前端显示「不可用」而不是 0 */
 export interface ServerCapabilities {
   root: boolean
@@ -77,6 +83,8 @@ export interface ServerMetrics {
   /** 最近 OOM 击杀记录；三路日志源都不可读为 null */
   oom_events?: OomEvent[] | null
   oom_unavailable?: string | null
+  /** PSI 压力（avg10）；内核不支持 / 不可读为 null（前端整卡隐藏） */
+  psi?: Record<'cpu' | 'io' | 'memory', PressureRow | null> | null
   capabilities?: ServerCapabilities | null
 }
 

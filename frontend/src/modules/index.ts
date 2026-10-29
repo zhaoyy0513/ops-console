@@ -8,5 +8,7 @@ import './mq'
 import './device'
 import './ssh'
 import './database'
+import './logs'
+import './netdiag'
 
 export { getModules } from './registry'

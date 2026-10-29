@@ -8,6 +8,8 @@ V1 约定：GET {base_url} 列表（或 list_path），返回 JSON。字段映�
 线上字段名（wire contract），不属于本平台命名，保持原样。
 """
 
+import re
+import time
 from typing import Any
 
 import httpx
@@ -80,6 +82,62 @@ def _apply_vm(v: Any, vm: dict[str, str] | None) -> Any:
     return v
 
 
+_MISSING = object()  # 路径不存在（与「值本身是 null」区分）
+_PLACEHOLDER_RE = re.compile(r"\{([\w.,]+)\}")
+
+
+def _lookup(raw: Any, path: str) -> Any:
+    """点号路径取值：dict 按键、list 按数字下标；不存在返回 _MISSING。"""
+    cur = raw
+    for part in path.split("."):
+        if isinstance(cur, dict):
+            if part not in cur:
+                return _MISSING
+            cur = cur[part]
+        elif isinstance(cur, list):
+            if not part.isdigit() or int(part) >= len(cur):
+                return _MISSING
+            cur = cur[int(part)]
+        else:
+            return _MISSING
+    return cur
+
+
+def _source_paths(src: str) -> list[str]:
+    """声明值里的上游路径：模板取全部 {..} 占位符，否则整串即路径。"""
+    groups = _PLACEHOLDER_RE.findall(src)
+    if not groups:
+        return [src]
+    return [p.strip() for g in groups for p in g.split(",") if p.strip()]
+
+
+def find_missing_fields(
+    raw: dict[str, Any] | None,
+    field_map: dict[str, str] | None = None,
+    custom_fields: list[dict[str, Any]] | None = None,
+) -> list[dict[str, str]]:
+    """字段映射失效检测：声明的源路径在最近一次响应里是否取得到。
+
+    只判「路径不存在」；键存在但值为 null 不算失效。返回
+    [{field: 业务字段名, source: 声明的上游路径}]，无映射/无数据返回 []。"""
+    if not isinstance(raw, dict):
+        return []
+    declared: dict[str, str] = {}
+    for field, upstream in (field_map or {}).items():
+        if upstream:
+            declared[field] = upstream
+    for cf in custom_fields or []:
+        key = cf.get("key")
+        src = cf.get("template") or cf.get("bind")
+        if key and src:
+            declared[key] = src
+    missing: list[dict[str, str]] = []
+    for field, src in declared.items():
+        if any(_lookup(raw, p) is _MISSING for p in _source_paths(src)):
+            missing.append({"field": field, "source": src})
+    return missing
+
+
 def normalize_device(
     raw: dict[str, Any],
     field_map: dict[str, str] | None = None,
@@ -100,18 +158,19 @@ def normalize_device(
     custom_fields（实例级自定义展示字段）：每项 {key, label_zh, label_en,
     bind, template, value_map}，取值规则与内置字段相同（模板优先于绑定），
     计算结果写入行内该项的稳定 key（cf_xxxxx）下。"""
-    import re
-
     def eval_value(upstream: str) -> Any:
         # {field} 单字段、{f1,f2} 多字段（值用逗号连接）均为占位符；
-        # 整串不含合法占位符时按字段名直取
-        if re.search(r"\{[\w,]+\}", upstream):
-            return re.sub(
-                r"\{([\w,]+)\}",
-                lambda m: ",".join(str(raw.get(f, "")) for f in m.group(1).split(",")),
+        # 整串不含合法占位符时按字段名直取。路径支持点号嵌套（a.b / list.0.k）。
+        if _PLACEHOLDER_RE.search(upstream):
+            return _PLACEHOLDER_RE.sub(
+                lambda m: ",".join(
+                    "" if (v := _lookup(raw, f.strip())) is _MISSING else str(v)
+                    for f in m.group(1).split(",")
+                ),
                 upstream,
             )
-        return raw.get(upstream)
+        v = _lookup(raw, upstream)
+        return None if v is _MISSING else v
 
     def mapped(field: str) -> Any:
         if field_map:
@@ -215,6 +274,8 @@ class HttpDeviceProvider(DeviceProvider):
         self._value_map: dict[str, dict[str, str]] | None = config.get("value_map") or None
         # 实例级自定义展示字段（key 稳定，取值规则同 field_map/value_map）
         self._custom_fields: list[dict[str, Any]] | None = config.get("custom_fields") or None
+        # 最近一次 HTTP 请求耗时（毫秒）；失败也记录，用于区分「慢」与「不通」
+        self.last_latency_ms: int | None = None
 
     def _client(self) -> httpx.AsyncClient:
         return httpx.AsyncClient(
@@ -224,6 +285,7 @@ class HttpDeviceProvider(DeviceProvider):
         )
 
     async def _get(self, c: httpx.AsyncClient, path: str) -> Any:
+        started = time.perf_counter()
         try:
             resp = await with_timeout(
                 c.get(path), settings.http_read_timeout, resource=self._base_url
@@ -232,6 +294,8 @@ class HttpDeviceProvider(DeviceProvider):
             raise
         except httpx.HTTPError as e:
             raise OpsError("REMOTE_CONNECTION_FAILED", f"Device API request failed: {e}", self._base_url) from None
+        finally:
+            self.last_latency_ms = int((time.perf_counter() - started) * 1000)
         if resp.status_code in (401, 403):
             raise OpsError("AUTH_FAILED", "Device API authentication failed", self._base_url, status_code=502)
         if resp.status_code >= 400:

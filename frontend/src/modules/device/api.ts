@@ -23,6 +23,19 @@ export interface DeviceRow {
   [key: string]: unknown
 }
 
+/** 字段映射失效项：业务字段名 + 声明的上游路径 */
+export interface DeviceMissingField {
+  field: string
+  source: string
+}
+
+/** 实例健康：最近一次响应耗时 + 映射失效（ok=false 表示上游不可达，耗时仍可能带回） */
+export interface DeviceHealth {
+  ok: boolean
+  latency_ms: number | null
+  missing_fields: DeviceMissingField[]
+}
+
 export const deviceApi = {
   /** instance 指定单实例（页面下拉选择）；缺省聚合全部启用实例（走全局 15s 超时） */
   list: (siteId: string, instance?: string) =>
@@ -30,6 +43,11 @@ export const deviceApi = {
   detail: (siteId: string, deviceId: string, instance?: string) =>
     api.get<DeviceRow>(
       `/sites/${siteId}/devices/${encodeURIComponent(deviceId)}${instance ? `?instance=${instance}` : ''}`,
+    ),
+  /** 实例健康：响应耗时 + 字段映射失效（与列表共用同一次上游拉取） */
+  health: (siteId: string, deviceId: string) =>
+    api.get<DeviceHealth>(
+      `/sites/${siteId}/device-instances/${encodeURIComponent(deviceId)}/health`,
     ),
   /** 获取一条原始 JSON 数据及其字段名列表（字段映射配置用） */
   sampleFields: (siteId: string, deviceId: string) =>

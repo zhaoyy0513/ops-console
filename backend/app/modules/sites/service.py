@@ -12,6 +12,8 @@ RESOURCE_TYPES = ("servers", "pages", "redis", "mq", "devices")
 HEALTH_KEY = "ops:health:{site_id}"  # overview/service.py health_key 同格式
 SSH_SCRIPTS_KEY = "ops:site:{site_id}:ssh_scripts"  # ssh/service.py _key 同格式
 KNOWLEDGE_KEY = "ops:knowledge:{site_id}"  # knowledge/service.py knowledge_key 同格式
+LOGS_KEY = "ops:logs:{site_id}"  # logs/service.py 日志源配置同格式
+EVENTS_KEY = "ops:events:{site_id}"  # core/events.py 事件时间轴同格式
 
 
 def site_key(site_id: str) -> str:
@@ -113,6 +115,8 @@ async def delete_site(site_id: str) -> bool:
             HEALTH_KEY.format(site_id=site_id)]
     keys += [resource_key(site_id, t) for t in RESOURCE_TYPES]
     keys.append(KNOWLEDGE_KEY.format(site_id=site_id))  # 知识库文档随站点删除（独立存储，字面量直写避循环 import）
+    keys.append(LOGS_KEY.format(site_id=site_id))  # 日志源配置
+    keys.append(EVENTS_KEY.format(site_id=site_id))  # 事件时间轴
     await r.delete(*keys)
     # 采样序列随站点删除：该站点的趋势样本再无读者，留着只会成为孤儿 key
     # （写时 TTL 只救活被继续推送的序列，删站后无人推送）。站点段位置随

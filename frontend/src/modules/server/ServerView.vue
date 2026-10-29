@@ -22,6 +22,7 @@ import CountUp from '../../components/bits/CountUp.vue'
 import { useSiteStore } from '../../stores/site'
 import { getSamples, type SamplePoint } from '../overview/api'
 import { serverApi, type DiskRow, type Issue, type ProcessRow, type ServerMetrics, type ZombieGroup } from './api'
+import { forecastDays, type DiskSample } from './forecast'
 import { fmtBytes, pctColor } from '../../utils/format'
 
 const siteStore = useSiteStore()
@@ -73,6 +74,22 @@ function updateDiskIo(io: ServerMetrics['disk_io']) {
   }
 }
 
+// ---- 磁盘写满预测：后端只采样 cpu/mem，没有磁盘序列 → 页面在场期间自记（≤40 点） ----
+// 页面关闭/切换服务器即清空：跨会话不做持久化，避免用陈旧样本外推
+const DISK_HIST_MAX = 40
+const diskHist = new Map<string, DiskSample[]>()
+
+function recordDiskHistory(rows: DiskRow[]) {
+  const now = Date.now()
+  for (const r of rows) {
+    if (typeof r.use_percent !== 'number') continue
+    const arr = diskHist.get(r.mount) ?? []
+    arr.push({ t: now, v: r.use_percent })
+    if (arr.length > DISK_HIST_MAX) arr.shift()
+    diskHist.set(r.mount, arr)
+  }
+}
+
 // 只读原则（验收 8）：本页面唯一写入口为僵尸进程终止（kill -9 走后端，记 oplog）
 async function loadServers() {
   try {
@@ -102,6 +119,7 @@ async function load(silent = false) {
       serverApi.metrics(siteStore.currentSiteId, serverId.value),
       serverApi.processes(siteStore.currentSiteId, serverId.value).catch(() => []),
     ])
+    recordDiskHistory(m.disk)
     metrics.value = m
     processes.value = p
     updateDiskIo(m.disk_io)
@@ -156,6 +174,7 @@ watch(() => siteStore.currentSiteId, () => {
 })
 watch(serverId, () => {
   lastDiskIo = null
+  diskHist.clear() // 换服务器：旧样本属于另一台机器，不能混算
   load(false)
 })
 
@@ -278,6 +297,35 @@ const healthRows = computed<HealthRow[]>(() => {
   return rows
 })
 
+// ---- 系统压力（PSI）：cpu/io/memory 的 some avg10；>20% 黄、>50% 红 ----
+// psi 为 null（内核无 CONFIG_PSI / 不可读）→ 整卡隐藏，不显示「不可用」噪音
+const PSI_WARN = 20
+const PSI_CRIT = 50
+const psiRows = computed(() => {
+  const p = metrics.value?.psi
+  const rows: Array<{
+    key: string
+    label: string
+    some: number
+    full: number | null
+    color?: string
+    barColor: string
+  }> = []
+  if (!p) return rows
+  const labels: Record<'cpu' | 'io' | 'memory', string> = {
+    cpu: t('server.pressureCpu'),
+    io: t('server.pressureIo'),
+    memory: t('server.pressureMem'),
+  }
+  for (const key of ['cpu', 'io', 'memory'] as const) {
+    const row = p[key]
+    if (!row || row.some == null) continue
+    const color = row.some > PSI_CRIT ? CRIT_COLOR : row.some > PSI_WARN ? WARN_COLOR : undefined
+    rows.push({ key, label: labels[key], some: row.some, full: row.full, color, barColor: color ?? 'var(--primary)' })
+  }
+  return rows
+})
+
 // 刻度统一 HH:mm:ss（手动补零，不受浏览器 locale 影响，en-US 会带 AM/PM）。
 // 每 5 个样本显示一个标签（3s 采样 × 5 = 15s 一个），40 样本窗口不拥挤；hideOverlap 兜底防挤
 function axisLabels(points: SamplePoint[]): string[] {
@@ -350,6 +398,22 @@ const topDisk = computed(() => {
   return rows.reduce((a, b) => (b.use_percent > a.use_percent ? b : a))
 })
 
+// 写满预测（天）：metrics.value 每次轮询都是新对象，历史同刻已追加，故随轮询重算
+const diskForecast = computed(() => {
+  const out = new Map<string, number | null>()
+  for (const r of metrics.value?.disk ?? []) {
+    const hist = diskHist.get(r.mount)
+    out.set(r.mount, hist ? forecastDays(hist, r.use_percent) : null)
+  }
+  return out
+})
+
+function forecastText(days: number | null | undefined): string {
+  if (days == null) return '-'
+  if (days > 30) return t('server.forecastOver30')
+  return t('server.forecastDays', { n: Math.max(1, Math.ceil(days)) })
+}
+
 // Top 进程表（只展示前 10）：排序由 OpsDataTable（TanStack）承担，不改变 top10 的入选
 const topProcesses = computed(() => processes.value.slice(0, 10))
 
@@ -363,7 +427,10 @@ function sizeToBytes(s: string | null | undefined): number {
   return parseFloat(m[1]) * (units[m[2].toUpperCase()] ?? 1)
 }
 
-const diskColumns = computed<any[]>(() => [
+const diskColumns = computed<any[]>(() => {
+  // 显式依赖 diskForecast：样本更新时重建列，cell 里取到的是最新预测
+  const fc = diskForecast.value
+  return [
   {
     accessorKey: 'mount',
     header: t('server.mount'),
@@ -404,12 +471,19 @@ const diskColumns = computed<any[]>(() => [
     },
   },
   {
+    id: 'forecast',
+    header: t('server.forecast'),
+    enableSorting: false,
+    cell: (ctx: any) => forecastText(fc.get((ctx.row.original as DiskRow).mount)),
+  },
+  {
     accessorKey: 'inode_percent',
     header: t('server.inode'),
     sortDescFirst: false,
     cell: (ctx: any) => `${(ctx.row.original as DiskRow).inode_percent ?? '-'}%`,
   },
-])
+  ]
+})
 
 const issueColumns = computed<any[]>(() => [
   {
@@ -663,6 +737,29 @@ const zombieColumns = computed<any[]>(() => [
         </CardContent>
       </Card>
 
+      <!-- 系统压力（PSI）：不可用整卡隐藏（psi 为 null 时 psiRows 为空） -->
+      <Card v-if="psiRows.length">
+        <CardHeader><CardTitle>{{ $t('server.pressure') }}</CardTitle></CardHeader>
+        <CardContent>
+          <div class="psi-grid">
+            <div v-for="r in psiRows" :key="r.key" class="psi-item">
+              <div class="psi-head">
+                <span>{{ r.label }}</span>
+                <span class="mono psi-value" :style="r.color ? { color: r.color } : undefined">
+                  {{ r.some.toFixed(2) }}%
+                </span>
+              </div>
+              <div class="psi-bar">
+                <i :style="{ width: Math.min(100, r.some) + '%', background: r.barColor }" />
+              </div>
+              <div v-if="r.full != null" class="psi-full">
+                {{ $t('server.pressureFull') }} {{ r.full.toFixed(2) }}%
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
       <Card>
         <CardHeader><CardTitle>{{ $t('server.trend') }}</CardTitle></CardHeader>
         <CardContent>
@@ -684,6 +781,8 @@ const zombieColumns = computed<any[]>(() => [
         <CardHeader><CardTitle>{{ $t('server.diskTable') }}</CardTitle></CardHeader>
         <CardContent>
           <OpsDataTable :columns="diskColumns" :data="metrics.disk" size="compact" />
+          <!-- 预测靠本页采样外推：不说明来源，用户会以为「-」是故障 -->
+          <div class="metric-note">{{ $t('server.forecastHint') }}</div>
         </CardContent>
       </Card>
     </template>
@@ -768,6 +867,42 @@ const zombieColumns = computed<any[]>(() => [
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
   gap: 12px;
+}
+/* 系统压力三格：同上网格；进度条自绘（Progress 只支持 primary/critical 两色，需三态） */
+.psi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 12px;
+}
+.psi-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--ops-text-2);
+}
+.psi-value {
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--ops-text-1);
+}
+.psi-bar {
+  margin-top: 6px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--ops-surface-2);
+  overflow: hidden;
+}
+.psi-bar i {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  transition: width 300ms ease;
+}
+.psi-full {
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--ops-text-3);
 }
 .health-label {
   color: var(--ops-text-3);

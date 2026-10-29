@@ -15,7 +15,7 @@ import { DEVICE_FIELDS } from './fields'
 import TabHelp from '../../components/TabHelp.vue'
 import CodeJsonEditor from '../../components/CodeJsonEditor.vue'
 import TipCopy from '../../components/TipCopy.vue'
-import { deviceApi, type DeviceCustomField, type DeviceRow } from './api'
+import { deviceApi, type DeviceCustomField, type DeviceHealth, type DeviceRow } from './api'
 
 const { t } = useI18n()
 const siteStore = useSiteStore()
@@ -34,6 +34,8 @@ function statusVariant(r: DeviceRow): 'success' | 'warning' | 'critical' | 'seco
 const instances = ref<Array<{ label: string; value: string; custom_fields: DeviceCustomField[] }>>([])
 const instanceId = ref<string | null>(null)
 const devices = ref<DeviceRow[]>([])
+const health = ref<DeviceHealth | null>(null)
+const missingFields = computed(() => health.value?.missing_fields ?? [])
 const loading = ref(false)
 const detail = ref<DeviceRow | null>(null)
 const detailShow = ref(false)
@@ -79,7 +81,10 @@ async function load(silent = false) {
   const siteId = siteStore.currentSiteId
   if (!siteId || !instanceId.value) return
   loading.value = true
+  health.value = null
   try {
+    // 先取健康（耗时/映射失效），列表随后命中同一份缓存；上游失败时健康也带回耗时
+    health.value = await deviceApi.health(siteId, instanceId.value).catch(() => null)
     devices.value = await deviceApi.list(siteId, instanceId.value)
     listWasOk = true
   } catch (e) {
@@ -230,6 +235,24 @@ function blockDismiss(e: Event) {
         </Button>
         <tab-help topic="device" />
         <span class="text-xs text-muted-foreground">{{ $t('device.mappingHint') }}</span>
+        <span
+          v-if="health && health.latency_ms != null"
+          class="mono-num text-xs"
+          :class="health.latency_ms > 2000 ? 'text-[var(--ops-warning)]' : 'text-muted-foreground'"
+        >
+          {{ $t('device.latency', { ms: health.latency_ms }) }}
+        </span>
+        <!-- 字段映射失效：点开列出「业务字段 ← 上游路径」；无失效不渲染 -->
+        <details v-if="missingFields.length" class="basis-full text-xs text-[var(--ops-warning)]">
+          <summary class="cursor-pointer select-none">
+            {{ $t('device.mappingBroken', { n: missingFields.length }) }}
+          </summary>
+          <ul class="mt-1 space-y-0.5 pl-4">
+            <li v-for="m in missingFields" :key="m.field">
+              <span class="font-mono">{{ m.field }}</span> ← <span class="font-mono">{{ m.source }}</span>
+            </li>
+          </ul>
+        </details>
       </CardContent>
     </Card>
 

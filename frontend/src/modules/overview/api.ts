@@ -21,9 +21,27 @@ export interface OverviewData {
   checked_at: string | null
 }
 
+export interface HygieneIssue {
+  type: string
+  severity: 'info' | 'warning'
+  resource_type: string
+  resource_name: string
+  detail: string
+}
+
+export interface SiteEvent {
+  time: string
+  kind: 'diag' | 'restart' | 'config' | 'net'
+  title: string
+  detail: string
+}
+
 export const overviewApi = {
   get: (siteId: string) => api.get<OverviewData>(`/sites/${siteId}/overview`),
   refresh: (siteId: string) => api.post<{ checked: number }>(`/sites/${siteId}/overview/refresh`),
+  hygiene: (siteId: string) => api.get<HygieneIssue[]>(`/overview/${siteId}/hygiene`),
+  events: (siteId: string, limit = 50) =>
+    api.get<SiteEvent[]>(`/overview/${siteId}/events?limit=${limit}`),
 }
 
 export interface SamplePoint {

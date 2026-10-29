@@ -51,6 +51,10 @@ COMMANDS: dict[str, str] = {
     "boot_time": "LC_ALL=C who -b 2>/dev/null",
     # 文件句柄：世界可读，无权限要求
     "file_nr": "cat /proc/sys/fs/file-nr",
+    # PSI 压力：仅在 capabilities.psi 为真时执行；io/memory 在个别内核上缺失 -> 空输出
+    "psi_cpu": "cat /proc/pressure/cpu 2>/dev/null",
+    "psi_io": "cat /proc/pressure/io 2>/dev/null",
+    "psi_memory": "cat /proc/pressure/memory 2>/dev/null",
     # 失败单元：&& echo __OK__ 标记成败——systemctl 存在但 systemd 未运行（容器）时无标记，
     # 前端显示「不可用」而不是误报 0 个失败单元
     "failed_units": "LC_ALL=C systemctl --failed --no-legend --plain 2>/dev/null && echo __OK__",
@@ -68,6 +72,9 @@ BASE_COMMANDS = [
 
 # OOM 日志源优先级：(能力名, 命令名)。取第一个可读来源，命中即止
 OOM_SOURCES = [("dmesg", "oom_dmesg"), ("kernlog", "oom_kernlog"), ("syslog", "oom_syslog")]
+
+# PSI 三类资源；cpu 通常只有 some 行，io/memory 可能同时有 some/full
+PSI_RESOURCES = ("cpu", "io", "memory")
 
 
 # ---------- 解析器（纯函数；字段缺失返回 None，不让单条解析拖垮整体） ----------
@@ -147,6 +154,29 @@ def parse_capabilities(texts: dict[str, str]) -> dict[str, bool]:
 
 # systemd 单元名形如 nginx.service / dev-sda1.device；用它挡掉 stderr 混进来的杂行
 _UNIT_RE = re.compile(r"^\S+\.\w+$")
+
+# /proc/pressure/* 每行：`some avg10=0.25 avg60=0.10 avg300=0.05 total=12345`
+_PSI_LINE = re.compile(r"^(some|full)\s+avg10=([\d.]+)")
+
+
+def parse_pressure(text: str) -> dict[str, float | None] | None:
+    """单份 /proc/pressure/<res> -> {some, full}（avg10，单位 %）。空/脏数据 -> None。"""
+    found: dict[str, float] = {}
+    for line in text.splitlines():
+        m = _PSI_LINE.match(line.strip())
+        if not m:
+            continue
+        try:
+            found[m.group(1)] = float(m.group(2))
+        except ValueError:  # avg10=abc 这类脏行：跳过该行，不让整份失败
+            continue
+    return {"some": found.get("some"), "full": found.get("full")} if found else None
+
+
+def parse_psi(texts: dict[str, str | None]) -> dict[str, dict[str, float | None] | None] | None:
+    """三份压力文件 -> {cpu, io, memory}；全部不可读 -> None（前端整卡隐藏，不报「不可用」）。"""
+    rows = {name: parse_pressure(texts.get(name) or "") for name in PSI_RESOURCES}
+    return rows if any(rows.values()) else None
 
 
 def parse_failed_units(text: str) -> list[dict[str, str]]:
@@ -495,8 +525,8 @@ class SSHServerMetricsProvider(ServerMetricsProvider):
         return dict(zip(names, outs, strict=True))
 
     async def get_metrics(self) -> dict[str, Any]:
-        # 预算按最坏条数估：基础 9 + 能力探测 6 + who -b / file-nr / 失败单元 / OOM 各 1
-        async with self._session(len(BASE_COMMANDS) + len(CAP_COMMANDS) + 4) as run:
+        # 预算按最坏条数估：基础 9 + 能力探测 6 + PSI 3 + who -b / file-nr / 失败单元 / OOM 各 1
+        async with self._session(len(BASE_COMMANDS) + len(CAP_COMMANDS) + 7) as run:
             out: dict[str, str] = {}
             for name in BASE_COMMANDS:
                 out[name] = await run(COMMANDS[name])  # 主指标：失败即整次失败
@@ -505,6 +535,12 @@ class SSHServerMetricsProvider(ServerMetricsProvider):
             )
             boot_raw = await _safe(run, COMMANDS["boot_time"])
             fd_raw = await _safe(run, COMMANDS["file_nr"])
+            # PSI：不支持（内核无 CONFIG_PSI）时连命令都不发
+            psi_raw = (
+                {name: await _safe(run, COMMANDS[f"psi_{name}"]) for name in PSI_RESOURCES}
+                if caps["psi"]
+                else None
+            )
             # 失败单元：systemctl 不可用时连命令都不发（不误报 0 个失败单元）
             failed_raw = await _safe(run, COMMANDS["failed_units"]) if caps["systemctl"] else None
             # OOM：按 dmesg -> kern.log -> syslog 取第一个可读来源（命中即止）
@@ -536,6 +572,8 @@ class SSHServerMetricsProvider(ServerMetricsProvider):
             "failed_units_unavailable": None if failed_units is not None else "no_systemd",
             "oom_events": parse_oom_events(oom_raw) if oom_raw is not None else None,
             "oom_unavailable": None if oom_raw is not None else "need_root_or_adm",
+            # 不可用 -> None：前端整卡隐藏（PSI 缺失是环境差异，不是故障）
+            "psi": parse_psi(psi_raw) if psi_raw is not None else None,
             "capabilities": caps,
         }
 

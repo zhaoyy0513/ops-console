@@ -15,6 +15,8 @@ from backend.app.modules.server.provider import (
     parse_failed_units,
     parse_file_nr,
     parse_oom_events,
+    parse_pressure,
+    parse_psi,
     parse_uptime_text,
 )
 
@@ -238,6 +240,48 @@ def test_parse_uptime_text():
 def test_parse_boot_time():
     assert parse_boot_time("         system boot  2026-10-20 10:12\n") == "2026-10-20T10:12:00"
     assert parse_boot_time("") is None  # 容器内 who -b 常为空
+
+
+def test_parse_pressure_some_and_full():
+    """io/memory 通常同时有 some 与 full 两行，各取 avg10。"""
+    sample = (
+        "some avg10=1.25 avg60=0.50 avg300=0.10 total=123456\n"
+        "full avg10=0.75 avg60=0.20 avg300=0.05 total=54321\n"
+    )
+    assert parse_pressure(sample) == {"some": 1.25, "full": 0.75}
+
+
+def test_parse_pressure_only_some():
+    """cpu 通常只有 some 行 -> full 为 None。"""
+    assert parse_pressure("some avg10=0.25 avg60=0.10 avg300=0.05 total=12345\n") == {
+        "some": 0.25,
+        "full": None,
+    }
+
+
+def test_parse_pressure_empty_and_garbage():
+    assert parse_pressure("") is None
+    assert parse_pressure("\n\n") is None
+    assert parse_pressure("some avg10=abc avg60=0.10\n") is None  # 数值非法
+    assert parse_pressure("Permission denied\n") is None
+    # 脏行 + 正常行：脏行跳过，正常行仍解析
+    assert parse_pressure("garbage\nsome avg10=2.5\n") == {"some": 2.5, "full": None}
+
+
+def test_parse_psi_all_missing_returns_none():
+    """内核无 PSI（或全部不可读）-> None，前端整卡隐藏。"""
+    assert parse_psi({"cpu": None, "io": "", "memory": None}) is None
+    assert parse_psi({}) is None
+
+
+def test_parse_psi_partial_keeps_readable_resources():
+    """个别文件缺失只让该项为 None，其余照常返回。"""
+    psi = parse_psi({"cpu": "some avg10=3.5\n", "io": None, "memory": "some avg10=1.0\nfull avg10=0.5\n"})
+    assert psi == {
+        "cpu": {"some": 3.5, "full": None},
+        "io": None,
+        "memory": {"some": 1.0, "full": 0.5},
+    }
 
 
 def test_parse_capabilities():
