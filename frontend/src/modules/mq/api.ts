@@ -31,6 +31,8 @@ export interface QueueRow {
   delivering_count: number | null
   messages_added: number | null
   messages_acknowledged: number | null
+  /** 最老一条消息已滞留的毫秒数（FirstMessageAge；读取失败/属性不存在 → null） */
+  first_message_age_ms: number | null
   backlog_5m_ago: number | null
   growth_5m: number | null
   /** 5 分钟新增消息数（吞吐，messages_added 增量；broker 重启截断为 0） */

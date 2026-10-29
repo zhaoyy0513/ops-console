@@ -15,6 +15,8 @@ export interface OverviewData {
     operation: string
     target: string | null
     result: string
+    /** 操作人别名（无 HTTP 上下文时为 "-"） */
+    caller?: string
   }>
   checked_at: string | null
 }

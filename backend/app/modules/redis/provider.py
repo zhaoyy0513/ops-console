@@ -13,30 +13,74 @@ from backend.app.shared.errors import OpsError
 from backend.app.shared.timeout import with_timeout
 
 
+def _int(info: dict[str, Any], key: str) -> int | None:
+    """INFO 字段取整数；缺失/解析失败 -> None（不造默认 0）。"""
+    v = info.get(key)
+    if v is None:
+        return None
+    try:
+        return int(v)
+    except (TypeError, ValueError):
+        return None
+
+
+def _float(info: dict[str, Any], key: str) -> float | None:
+    v = info.get(key)
+    if v is None:
+        return None
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return None
+
+
+def _str(info: dict[str, Any], key: str) -> str | None:
+    v = info.get(key)
+    return v if isinstance(v, str) else None
+
+
 def normalize_info(info: dict[str, Any]) -> dict[str, Any]:
-    """INFO 原始字典 -> PRD §11.1 字段（纯函数，独立可测）。"""
-    hits = int(info.get("keyspace_hits", 0) or 0)
-    misses = int(info.get("keyspace_misses", 0) or 0)
-    hit_rate = round(hits / (hits + misses) * 100, 1) if (hits + misses) else None
+    """INFO 原始字典 -> PRD §11.1 字段（纯函数，独立可测）。
+
+    每个字段独立容错：缺失或解析异常只让该字段为 None，不影响其它字段。
+    """
+    hits = _int(info, "keyspace_hits")
+    misses = _int(info, "keyspace_misses")
+    # 命中率需要两个计数都拿到才可信；分母为 0 时无意义 -> None
+    total_lookups = hits + misses if hits is not None and misses is not None else 0
+    hit_rate = round(hits / total_lookups * 100, 1) if total_lookups else None
     # 各 DB 的 key 数：redis-py 把 keyspace 段以顶层 dbN 键返回（dbN={keys:105,...}）
     db_sizes = {}
     for k, v in info.items():
         if k.startswith("db") and k[2:].isdigit() and isinstance(v, dict):
-            db_sizes[int(k[2:])] = int(v.get("keys", 0) or 0)
+            db_sizes[int(k[2:])] = _int(v, "keys")
+    db_size = _int(info, "dbsize")
+    if db_size is None:
+        db_size = _int(info, "db_size")
     return {
         "status": "ok",  # 能拿到 INFO 即在线；失败走 OpsError
-        "version": info.get("redis_version"),
-        "uptime_seconds": int(info.get("uptime_in_seconds", 0) or 0),
-        "memory_used": int(info.get("used_memory", 0) or 0),
-        "memory_peak": int(info.get("used_memory_peak", 0) or 0),
-        "memory_fragmentation": info.get("mem_fragmentation_ratio"),
-        "connected_clients": int(info.get("connected_clients", 0) or 0),
+        "version": _str(info, "redis_version"),
+        "role": _str(info, "role"),
+        "uptime_seconds": _int(info, "uptime_in_seconds"),
+        "memory_used": _int(info, "used_memory"),
+        "memory_peak": _int(info, "used_memory_peak"),
+        "memory_max": _int(info, "maxmemory"),  # 0 = 未设上限
+        "memory_fragmentation": _float(info, "mem_fragmentation_ratio"),
+        "connected_clients": _int(info, "connected_clients"),
+        "blocked_clients": _int(info, "blocked_clients"),
+        "rejected_connections": _int(info, "rejected_connections"),
         "commands_per_sec": None,  # 采样任务填充（T22 同思路），V1 先给 None
-        "total_commands_processed": int(info.get("total_commands_processed", 0) or 0),
+        "ops_per_sec": _int(info, "instantaneous_ops_per_sec"),
+        "total_commands_processed": _int(info, "total_commands_processed"),
+        "keyspace_hits": hits,
+        "keyspace_misses": misses,
         "hit_rate": hit_rate,
-        "evicted_keys": int(info.get("evicted_keys", 0) or 0),
-        "expired_keys": int(info.get("expired_keys", 0) or 0),
-        "db_size": int(info.get("dbsize", info.get("db_size", 0)) or 0),
+        "evicted_keys": _int(info, "evicted_keys"),
+        "expired_keys": _int(info, "expired_keys"),
+        "rdb_last_bgsave_status": _str(info, "rdb_last_bgsave_status"),
+        "aof_last_bgrewrite_status": _str(info, "aof_last_bgrewrite_status"),
+        "latest_fork_usec": _int(info, "latest_fork_usec"),
+        "db_size": db_size,
         "db_sizes": db_sizes,
     }
 

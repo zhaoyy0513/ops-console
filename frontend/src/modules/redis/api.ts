@@ -3,19 +3,34 @@ import api from '../../api'
 export interface RedisInfo {
   status: string
   version: string | null
-  uptime_seconds: number
-  memory_used: number
-  memory_peak: number
+  /** master / slave */
+  role: string | null
+  uptime_seconds: number | null
+  memory_used: number | null
+  memory_peak: number | null
+  /** maxmemory；0 = 未设上限 */
+  memory_max: number | null
   memory_fragmentation: number | null
-  connected_clients: number
+  connected_clients: number | null
+  blocked_clients: number | null
+  rejected_connections: number | null
   commands_per_sec: number | null
-  total_commands_processed: number
+  /** INFO instantaneous_ops_per_sec */
+  ops_per_sec: number | null
+  total_commands_processed: number | null
+  keyspace_hits: number | null
+  keyspace_misses: number | null
   hit_rate: number | null
-  evicted_keys: number
-  expired_keys: number
-  db_size: number
+  evicted_keys: number | null
+  expired_keys: number | null
+  /** "ok" / "err"；缺失（如未开 AOF）为 null */
+  rdb_last_bgsave_status: string | null
+  aof_last_bgrewrite_status: string | null
+  /** 最近一次 fork 耗时（µs） */
+  latest_fork_usec: number | null
+  db_size: number | null
   /** 各 DB 的 key 数（INFO keyspace），供 DB 下拉展示 */
-  db_sizes: Record<number, number>
+  db_sizes: Record<number, number | null>
 }
 
 export interface KeyItem {

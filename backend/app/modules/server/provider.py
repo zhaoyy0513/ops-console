@@ -6,6 +6,8 @@
 
 import re
 import time
+from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import asynccontextmanager
 from typing import Any
 
 import asyncssh
@@ -13,6 +15,18 @@ import asyncssh
 from backend.app.core.config import settings
 from backend.app.shared.errors import OpsError
 from backend.app.shared.timeout import with_timeout
+
+# 能力探测：全部极轻（test/command -v），与其它命令在同一 SSH 会话内顺序执行，不额外建连。
+# 被纳管机器不保证 root，缺权限/缺命令的项只置空自身，不影响其它指标。
+# 这些同样是只读命令，故一并登记进 COMMANDS（白名单是「可执行命令」的唯一真相）。
+CAP_COMMANDS: dict[str, str] = {
+    "uid": "id -u",
+    "psi": "test -r /proc/pressure/cpu && echo ok || echo no",
+    "dmesg": "dmesg -T >/dev/null 2>&1 && echo ok || echo no",
+    "systemctl": "command -v systemctl >/dev/null 2>&1 && echo ok || echo no",
+    "kernlog": "test -r /var/log/kern.log && echo ok || echo no",
+    "syslog": "test -r /var/log/syslog && echo ok || echo no",
+}
 
 # 只读诊断命令白名单：模块常量，非用户输入。LC_ALL=C 保证输出格式可解析。
 COMMANDS: dict[str, str] = {
@@ -33,19 +47,46 @@ COMMANDS: dict[str, str] = {
     # 僵尸采集：全量 ps，Python 解析过滤（awk 已弃）。僵尸自身 cmdline 为空，
     # 完整命令行取自未收尸的父进程（同份输出内解析）
     "zombies": "LC_ALL=C ps -eo pid,ppid,stat,args",
+    # 启动时间：容器内 /var/run/utmp 常为空 -> 输出空，parse_boot_time 返回 None
+    "boot_time": "LC_ALL=C who -b 2>/dev/null",
+    # 文件句柄：世界可读，无权限要求
+    "file_nr": "cat /proc/sys/fs/file-nr",
+    # 失败单元：&& echo __OK__ 标记成败——systemctl 存在但 systemd 未运行（容器）时无标记，
+    # 前端显示「不可用」而不是误报 0 个失败单元
+    "failed_units": "LC_ALL=C systemctl --failed --no-legend --plain 2>/dev/null && echo __OK__",
+    # OOM：三路日志源按能力择一（见 OOM_SOURCES），全部限定尾部 256KB 窗口避免读整份大日志
+    "oom_dmesg": "dmesg -T 2>/dev/null | grep -iE 'out of memory|killed process' | tail -5",
+    "oom_kernlog": "tail -c 262144 /var/log/kern.log 2>/dev/null | grep -iE 'out of memory|killed process' | tail -5",
+    "oom_syslog": "tail -c 262144 /var/log/syslog 2>/dev/null | grep -iE 'out of memory|killed process' | tail -5",
+    **CAP_COMMANDS,
 }
+
+# metrics 基础命令（任一失败即整次失败：这些是页面主指标，缺了没法看）
+BASE_COMMANDS = [
+    "cpu", "load", "cores", "memory", "network", "disk_usage", "disk_inode", "disk_io", "zombies",
+]
+
+# OOM 日志源优先级：(能力名, 命令名)。取第一个可读来源，命中即止
+OOM_SOURCES = [("dmesg", "oom_dmesg"), ("kernlog", "oom_kernlog"), ("syslog", "oom_syslog")]
 
 
 # ---------- 解析器（纯函数；字段缺失返回 None，不让单条解析拖垮整体） ----------
 
 
 def parse_cpu(text: str) -> dict[str, float | None]:
-    """top 输出 -> {usage, iowait}，usage = 100 - idle。多帧输出取最后一帧（首帧是亚秒噪声）。"""
+    """top 输出 -> {usage, iowait, steal}，usage = 100 - idle。多帧输出取最后一帧（首帧是亚秒噪声）。
+
+    steal 是虚拟化环境里被宿主机/其它租户抢走的 CPU 时间：本机负载低但 steal 高，
+    说明慢不是自己的问题。
+    """
     idle = re.findall(r"(\d+\.?\d*)\s*id[, ]", text)
     wa = re.findall(r"(\d+\.?\d*)\s*wa[, ]", text)
+    # st 是 Cpu 行最后一列（行尾无逗号），不能用 [, ] 收尾，用 \b
+    st = re.findall(r"(\d+\.?\d*)\s*st\b", text)
     return {
         "usage": round(100 - float(idle[-1]), 1) if idle else None,
         "iowait": float(wa[-1]) if wa else None,
+        "steal": float(st[-1]) if st else None,
     }
 
 
@@ -55,6 +96,96 @@ def parse_load(text: str) -> dict[str, float | None]:
     if not m:
         return {"load1": None, "load5": None, "load15": None}
     return {"load1": float(m.group(1)), "load5": float(m.group(2)), "load15": float(m.group(3))}
+
+
+def parse_uptime_text(text: str) -> str | None:
+    """uptime 输出里提取 `up ...` 片段（原样文本，如 "37 days, 4:21"）。"""
+    m = re.search(r"\bup\s+(.+?),\s+\d+\s+users?,\s+load average", text) or re.search(
+        r"\bup\s+(.+?),\s+load average", text
+    )
+    # 原始输出里日期与时间之间是两个空格，压成单空格便于展示
+    return " ".join(m.group(1).split()) if m else None
+
+
+def parse_boot_time(text: str) -> str | None:
+    """who -b -> "system boot  2026-10-20 10:12" -> ISO 8601（无时区）；容器内常为空 -> None。"""
+    m = re.search(r"(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2})(?::(\d{2}))?", text)
+    if not m:
+        return None
+    return f"{m.group(1)}T{m.group(2)}:{m.group(3) or '00'}"
+
+
+def parse_file_nr(text: str) -> dict[str, Any] | None:
+    """/proc/sys/fs/file-nr -> {allocated, max, percent}。三列：已分配 / 已分配未用 / 上限。"""
+    parts = text.split()
+    if len(parts) < 3:
+        return None
+    try:
+        allocated, maximum = int(parts[0]), int(parts[2])
+    except ValueError:
+        return None
+    if maximum <= 0:
+        return None
+    return {"allocated": allocated, "max": maximum, "percent": round(allocated / maximum * 100, 1)}
+
+
+def parse_capabilities(texts: dict[str, str]) -> dict[str, bool]:
+    """能力探测输出 -> {root, psi, dmesg, systemctl, kernlog, syslog}；探测失败一律 False。"""
+
+    def ok(name: str) -> bool:
+        return texts.get(name, "").strip().endswith("ok")
+
+    return {
+        "root": texts.get("uid", "").strip() == "0",
+        "psi": ok("psi"),
+        "dmesg": ok("dmesg"),
+        "systemctl": ok("systemctl"),
+        "kernlog": ok("kernlog"),
+        "syslog": ok("syslog"),
+    }
+
+
+# systemd 单元名形如 nginx.service / dev-sda1.device；用它挡掉 stderr 混进来的杂行
+_UNIT_RE = re.compile(r"^\S+\.\w+$")
+
+
+def parse_failed_units(text: str) -> list[dict[str, str]]:
+    """systemctl --failed --no-legend --plain -> [{unit, description}]。空输出 -> []。"""
+    rows: list[dict[str, str]] = []
+    for line in text.splitlines():
+        # 列：UNIT LOAD ACTIVE SUB DESCRIPTION（description 可含空格，只切 4 刀）
+        parts = line.split(None, 4)
+        if len(parts) < 4 or not _UNIT_RE.match(parts[0]):
+            continue
+        rows.append({"unit": parts[0], "description": parts[4].strip() if len(parts) > 4 else ""})
+    return rows
+
+
+_DMESG_TS = re.compile(r"^\[([^\]]+)\]\s*")
+_SYSLOG_TS = re.compile(r"^(\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2})\s")
+_KILLED_PROC = re.compile(r"kill(?:ed)? process (\d+) \(([^)]+)\)", re.I)
+
+
+def parse_oom_events(text: str) -> list[dict[str, Any]]:
+    """grep 后的内核日志行 -> [{time, process, detail}]。
+
+    time 尽力而为（dmesg -T 的 [Mon Oct 27 ...] 或 syslog 的 Oct 27 10:12:33 前缀），
+    解析不到就 None；process 取被击杀进程名，只有 "out of memory" 无进程名的行给 None。
+    """
+    rows: list[dict[str, Any]] = []
+    for line in text.splitlines():
+        if "out of memory" not in line.lower() and "killed process" not in line.lower():
+            continue
+        ts = _DMESG_TS.match(line) or _SYSLOG_TS.match(line)
+        killed = _KILLED_PROC.search(line)
+        rows.append(
+            {
+                "time": ts.group(1).strip() if ts else None,
+                "process": killed.group(2) if killed else None,
+                "detail": line.strip()[:300],
+            }
+        )
+    return rows
 
 
 def parse_memory(text: str) -> dict[str, int | None]:
@@ -265,6 +396,14 @@ def parse_processes(text: str) -> list[dict[str, Any]]:
     return rows
 
 
+async def _safe(run: Callable[[str], Awaitable[str]], cmd: str) -> str | None:
+    """可选诊断项单条容错：权限不足 / 命令不存在 / 超时只让该项为 None，不让整次采集失败。"""
+    try:
+        return await run(cmd)
+    except OpsError:
+        return None
+
+
 # ---------- Provider（PRD §8.5 抽象 + SSH 实现） ----------
 
 
@@ -315,7 +454,10 @@ class SSHServerMetricsProvider(ServerMetricsProvider):
                 "REMOTE_CONNECTION_FAILED", f"SSH connect failed: {e}", self._host
             ) from None
 
-    async def _run(self, commands: list[str]) -> list[str]:
+    @asynccontextmanager
+    async def _session(
+        self, command_count: int
+    ) -> AsyncIterator[Callable[[str], Awaitable[str]]]:
         """一次连接内顺序执行命令，查完即关（PRD §8.4）。
 
         整体预算 = 单命令超时 × 命令数：一条挂死命令（如 NFS 上的 df）
@@ -324,17 +466,18 @@ class SSHServerMetricsProvider(ServerMetricsProvider):
         """
         conn = await self._connect()
         try:
-            out: list[str] = []
-            deadline = time.monotonic() + settings.ssh_command_timeout * max(1, len(commands))
-            for cmd in commands:
+            deadline = time.monotonic() + settings.ssh_command_timeout * max(1, command_count)
+
+            async def run(cmd: str) -> str:
                 remaining = max(deadline - time.monotonic(), 0)
                 result = await with_timeout(
                     conn.run(cmd, check=False),
                     remaining,
                     resource=self._host,
                 )
-                out.append(result.stdout or "")
-            return out
+                return result.stdout or ""
+
+            yield run
         finally:
             conn.close()  # asyncssh: 幂等；配合 wait_closed 释放干净
             try:
@@ -342,17 +485,42 @@ class SSHServerMetricsProvider(ServerMetricsProvider):
             except Exception:  # noqa: BLE001 - 关闭阶段的异常不影响主流程
                 pass
 
+    async def _run(self, commands: list[str]) -> list[str]:
+        async with self._session(len(commands)) as run:
+            return [await run(cmd) for cmd in commands]
+
     async def _collect(self, names: list[str]) -> dict[str, str]:
         """白名单子集执行：命令取自模块常量表，非用户输入。"""
         outs = await self._run([COMMANDS[name] for name in names])
         return dict(zip(names, outs, strict=True))
 
     async def get_metrics(self) -> dict[str, Any]:
-        out = await self._collect(
-            ["cpu", "load", "cores", "memory", "network", "disk_usage", "disk_inode", "disk_io", "zombies"]
-        )
+        # 预算按最坏条数估：基础 9 + 能力探测 6 + who -b / file-nr / 失败单元 / OOM 各 1
+        async with self._session(len(BASE_COMMANDS) + len(CAP_COMMANDS) + 4) as run:
+            out: dict[str, str] = {}
+            for name in BASE_COMMANDS:
+                out[name] = await run(COMMANDS[name])  # 主指标：失败即整次失败
+            caps = parse_capabilities(
+                {name: await _safe(run, cmd) or "" for name, cmd in CAP_COMMANDS.items()}
+            )
+            boot_raw = await _safe(run, COMMANDS["boot_time"])
+            fd_raw = await _safe(run, COMMANDS["file_nr"])
+            # 失败单元：systemctl 不可用时连命令都不发（不误报 0 个失败单元）
+            failed_raw = await _safe(run, COMMANDS["failed_units"]) if caps["systemctl"] else None
+            # OOM：按 dmesg -> kern.log -> syslog 取第一个可读来源（命中即止）
+            oom_raw: str | None = None
+            for cap, name in OOM_SOURCES:
+                if caps[cap]:
+                    oom_raw = await _safe(run, COMMANDS[name])
+                    if oom_raw is not None:
+                        break
+
         cores_raw = out.get("cores", "")
         zombie_rows = parse_zombies(out["zombies"])
+        # 无 __OK__ 标记 = systemctl 存在但不可用（容器内 systemd 未运行），按不可用处理
+        failed_units = (
+            parse_failed_units(failed_raw) if failed_raw and "__OK__" in failed_raw else None
+        )
         return {
             "cpu": {**parse_cpu(out["cpu"]), "cores": int(cores_raw) if cores_raw.strip().isdigit() else None},
             "load": parse_load(out["load"]),
@@ -361,6 +529,14 @@ class SSHServerMetricsProvider(ServerMetricsProvider):
             "disk": merge_disk(parse_df(out["disk_usage"]), parse_df(out["disk_inode"])),
             "disk_io": parse_diskstats(out.get("disk_io", "")),
             "zombie_count": sum(1 for r in zombie_rows if r["stat"].startswith("Z")),
+            "uptime_text": parse_uptime_text(out["load"]),
+            "boot_time": parse_boot_time(boot_raw or ""),
+            "fd_usage": parse_file_nr(fd_raw or ""),
+            "failed_units": failed_units,
+            "failed_units_unavailable": None if failed_units is not None else "no_systemd",
+            "oom_events": parse_oom_events(oom_raw) if oom_raw is not None else None,
+            "oom_unavailable": None if oom_raw is not None else "need_root_or_adm",
+            "capabilities": caps,
         }
 
     async def run_test(self) -> str:

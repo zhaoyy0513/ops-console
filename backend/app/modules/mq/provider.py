@@ -154,7 +154,13 @@ class ArtemisProvider:
     async def get_queues(self) -> list[dict[str, Any]]:
         async with self._client() as c:
             value = await self._read_wildcard(c, f"{QUEUES_MBEAN}/{QUEUE_ATTRS}")
-        return normalize_queues(value)
+            try:
+                # 单独读 FirstMessageAge：老版本没有该属性时 Jolokia 会整批报错，
+                # 隔离成独立请求，失败只让这一列显示 '-'，不影响其它字段
+                ages = await self._read(c, f"{QUEUES_MBEAN}/FirstMessageAge")
+            except OpsError:
+                ages = {}
+        return normalize_queues(value, ages if isinstance(ages, dict) else {})
 
     async def get_addresses(self) -> list[dict[str, Any]]:
         async with self._client() as c:
@@ -232,11 +238,20 @@ def normalize_jvm(memory: dict, threading: dict, gc: dict) -> dict[str, Any]:
     }
 
 
-def normalize_queues(value: dict[str, dict]) -> list[dict[str, Any]]:
+def parse_first_message_age(value: Any) -> int | None:
+    """FirstMessageAge（毫秒）：缺失/负数/非数字 → None（空队列 Artemis 可能给 -1）。"""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return int(value) if value >= 0 else None
+
+
+def normalize_queues(value: dict[str, dict], ages: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+    ages = ages or {}
     queues = []
     for objname, attrs in value.items():
         if "subcomponent=queues" not in objname:
             continue  # 通配可能带出 address 本体
+        age_attrs = ages.get(objname)
         queues.append({
             "name": attrs.get("Name"),
             "address": attrs.get("Address"),
@@ -246,6 +261,9 @@ def normalize_queues(value: dict[str, dict]) -> list[dict[str, Any]]:
             "delivering_count": attrs.get("DeliveringCount"),
             "messages_added": attrs.get("MessagesAdded"),
             "messages_acknowledged": attrs.get("MessagesAcknowledged"),
+            # 最老一条消息已滞留时长；读取失败/属性不存在 → None（不影响其它字段）
+            "first_message_age_ms": parse_first_message_age(
+                age_attrs.get("FirstMessageAge") if isinstance(age_attrs, dict) else None),
             # 完整 ObjectName：清空积压等管理操作需要精确定位（不经前端回传）
             "_mbean": objname,
         })

@@ -201,6 +201,11 @@ def _res_label(data: dict, resource_id: str) -> str:
     return str(data.get("name") or resource_id)
 
 
+def _snap(cfg: dict) -> dict:
+    """oplog 配置快照：id 已在 params，不进 diff。"""
+    return {k: v for k, v in cfg.items() if k != "id"}
+
+
 def _with_kind(res_type: str, item: dict) -> dict:
     """pages 资源的派生字段 kind：url > html 两档。
 
@@ -237,7 +242,8 @@ async def create_resource(site_id: str, res_type: str, data: dict) -> dict:
     await r.hset(key, resource_id, json.dumps(stored, ensure_ascii=False))
     label = _res_label(stored, resource_id)
     await oplog.record(site_id, f"{res_type}/{label}", "RESOURCE_CONFIG_CREATED",
-                       target=label, params={"resource_id": resource_id})
+                       target=label, params={"resource_id": resource_id},
+                       after=_snap(stored))
     return _with_kind(res_type, _mask_password(dict(stored)))
 
 
@@ -253,13 +259,14 @@ async def update_resource(site_id: str, res_type: str, resource_id: str, data: d
     if "name" in data:
         await _check_name_unique(r, key, str(data.get("name") or "").strip(), exclude_id=resource_id)
     # 提交什么存什么（exclude_unset 只带显式提交的字段）；明文策略下编辑即覆盖
-    old.update({k: v for k, v in data.items() if k != "kind"})
-    old["id"] = resource_id
-    await r.hset(key, resource_id, json.dumps(old, ensure_ascii=False))
-    name = _res_label(old, resource_id)
+    new = {**old, **{k: v for k, v in data.items() if k != "kind"}, "id": resource_id}
+    before, after = oplog.diff(old, new)  # 只记变化键，避免 oplog 膨胀
+    await r.hset(key, resource_id, json.dumps(new, ensure_ascii=False))
+    name = _res_label(new, resource_id)
     await oplog.record(site_id, f"{res_type}/{name}", "RESOURCE_CONFIG_UPDATED",
-                       target=name, params={"resource_id": resource_id})
-    return _with_kind(res_type, _mask_password(dict(old)))
+                       target=name, params={"resource_id": resource_id},
+                       before=before, after=after)
+    return _with_kind(res_type, _mask_password(dict(new)))
 
 
 async def delete_resource(site_id: str, res_type: str, resource_id: str) -> bool:
@@ -269,10 +276,12 @@ async def delete_resource(site_id: str, res_type: str, resource_id: str) -> bool
     raw = await r.hget(key, resource_id)
     if not raw:
         return False
-    name = _res_label(json.loads(raw), resource_id)
+    cfg = json.loads(raw)
+    name = _res_label(cfg, resource_id)
     await r.hdel(key, resource_id)
     await oplog.record(site_id, f"{res_type}/{name}", "RESOURCE_CONFIG_DELETED",
-                       target=name, params={"resource_id": resource_id})
+                       target=name, params={"resource_id": resource_id},
+                       before=_snap(cfg))
     return True
 
 

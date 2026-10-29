@@ -66,6 +66,31 @@ def test_normalize_queues_filters_and_sorts():
     assert queues[0]["message_count"] == 12381
 
 
+def test_parse_first_message_age():
+    assert provider.parse_first_message_age(45000) == 45000
+    assert provider.parse_first_message_age(0) == 0  # 0 是合法值（刚入队）
+    assert provider.parse_first_message_age(1500.9) == 1500
+    assert provider.parse_first_message_age(-1) is None  # 空队列 Artemis 给 -1
+    assert provider.parse_first_message_age(None) is None  # 属性不存在
+    assert provider.parse_first_message_age("123") is None  # 非数字
+    assert provider.parse_first_message_age(True) is None
+
+
+def test_normalize_queues_first_message_age():
+    q1_key = next(k for k in QUEUE_VALUE if 'queue="q1"' in k)
+    q2_key = next(k for k in QUEUE_VALUE if 'queue="q2"' in k)
+    queues = provider.normalize_queues(QUEUE_VALUE, {
+        q1_key: {"FirstMessageAge": 600000},
+        q2_key: {"FirstMessageAge": -1},
+    })
+    assert queues[0]["first_message_age_ms"] == 600000
+    assert queues[1]["first_message_age_ms"] is None
+    # ages 缺失 / 属性读失败：整列为 None，其它字段完好
+    no_age = provider.normalize_queues(QUEUE_VALUE)
+    assert all(q["first_message_age_ms"] is None for q in no_age)
+    assert no_age[0]["message_count"] == 12381
+
+
 def test_diagnose_queue_rules():
     # backlog 超阈值
     d = service.diagnose_queue({"message_count": 12381, "consumer_count": 0, "growth_5m": None})

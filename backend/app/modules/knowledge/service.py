@@ -28,6 +28,11 @@ async def _require_site(site_id: str) -> None:
         raise NotFound(f"site not found: {site_id}")
 
 
+def _snap(doc: dict) -> dict:
+    """oplog 快照：只记元数据（id/created_at 不进 diff，文件内容从不记录）。"""
+    return {k: v for k, v in doc.items() if k not in ("id", "created_at")}
+
+
 async def list_docs(site_id: str) -> list[dict]:
     await _require_site(site_id)
     items = [json.loads(x) for x in await get_platform_redis().hvals(knowledge_key(site_id))]
@@ -67,7 +72,8 @@ async def create_doc(site_id: str, data: dict, content: bytes) -> dict:
     await r.set(blob_key(site_id, doc_id), base64.b64encode(content).decode("ascii"))
     await r.hset(key, doc_id, json.dumps(stored, ensure_ascii=False))
     await oplog.record(site_id, f"knowledge/{name}", "KNOWLEDGE_CREATED",
-                       target=name, params={"doc_id": doc_id, "size": len(content)})
+                       target=name, params={"doc_id": doc_id, "size": len(content)},
+                       after=_snap(stored))
     return stored
 
 
@@ -82,12 +88,14 @@ async def update_doc(site_id: str, doc_id: str, data: dict) -> dict | None:
     old = json.loads(raw)
     if "name" in data:
         await _check_name_unique(r, key, str(data.get("name") or "").strip(), exclude_id=doc_id)
-    old.update({k: v for k, v in data.items() if k not in ("id", "size", "created_at", "filename", "mime")})
-    old["id"] = doc_id
-    await r.hset(key, doc_id, json.dumps(old, ensure_ascii=False))
-    await oplog.record(site_id, f"knowledge/{old['name']}", "KNOWLEDGE_UPDATED",
-                       target=old["name"], params={"doc_id": doc_id})
-    return old
+    new = {**old, **{k: v for k, v in data.items() if k not in ("id", "size", "created_at", "filename", "mime")},
+           "id": doc_id}
+    before, after = oplog.diff(old, new)  # 只记变化键（仅元数据，内容不可变）
+    await r.hset(key, doc_id, json.dumps(new, ensure_ascii=False))
+    await oplog.record(site_id, f"knowledge/{new['name']}", "KNOWLEDGE_UPDATED",
+                       target=new["name"], params={"doc_id": doc_id},
+                       before=before, after=after)
+    return new
 
 
 async def delete_doc(site_id: str, doc_id: str) -> bool:
@@ -97,11 +105,13 @@ async def delete_doc(site_id: str, doc_id: str) -> bool:
     raw = await r.hget(key, doc_id)
     if not raw:
         return False
-    name = str(json.loads(raw).get("name") or doc_id)
+    doc = json.loads(raw)
+    name = str(doc.get("name") or doc_id)
     await r.hdel(key, doc_id)
     await r.delete(blob_key(site_id, doc_id))  # 内容随元数据一并清除，不留孤儿
     await oplog.record(site_id, f"knowledge/{name}", "KNOWLEDGE_DELETED",
-                       target=name, params={"doc_id": doc_id})
+                       target=name, params={"doc_id": doc_id},
+                       before=_snap(doc))
     return True
 
 

@@ -354,6 +354,22 @@ const queueColumns = computed<any[]>(() => [
     },
   },
   {
+    id: 'first_message_age_ms',
+    accessorFn: (q: QueueRow) => q.first_message_age_ms ?? undefined,
+    header: t('mq.firstMsgAgeCol'),
+    // null → undefined：sortUndefined 'last' 让缺失值在正/反排序时都沉底
+    sortUndefined: 'last',
+    sortFn: (a: any, b: any) =>
+      (a.getValue('first_message_age_ms') ?? 0) - (b.getValue('first_message_age_ms') ?? 0),
+    cell: (ctx: any) => {
+      const v = (ctx.row.original as QueueRow).first_message_age_ms
+      return h('span', {
+        class: 'font-mono tabular-nums text-xs',
+        style: { color: ageColor(v) },
+      }, fmtAge(v))
+    },
+  },
+  {
     accessorKey: 'added_1m',
     header: t('mq.added1mCol'),
     cell: (ctx: any) => {
@@ -431,6 +447,25 @@ function scrollToQueues() {
 /** 新增（吞吐）着色：有流量蓝、无流量灰 */
 function addedColor(added: number | null): string {
   return added != null && added > 0 ? '#2080f0' : 'var(--ops-text-3)'
+}
+
+/** 最老消息滞留时长：45s / 12m / 3h / 2d */
+function fmtAge(ms: number | null): string {
+  if (ms == null) return '-'
+  const s = Math.floor(ms / 1000)
+  if (s < 60) return `${s}s`
+  const m = Math.floor(s / 60)
+  if (m < 60) return `${m}m`
+  const h = Math.floor(m / 60)
+  return h < 24 ? `${h}h` : `${Math.floor(h / 24)}d`
+}
+
+/** 滞留着色：>30 分钟红、>5 分钟黄（与 pctColor 同一色板） */
+function ageColor(ms: number | null): string | undefined {
+  if (ms == null) return undefined
+  if (ms > 30 * 60_000) return '#d03050'
+  if (ms > 5 * 60_000) return '#f0a020'
+  return undefined
 }
 </script>
 

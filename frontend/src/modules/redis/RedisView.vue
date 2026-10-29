@@ -566,22 +566,67 @@ function fmtTtl(ttl: number): string {
 }
 
 // ---------- info 指标（带解释 tooltip，文案随语言切换） ----------
+/** 不可用字段显示 '-'（缺失 ≠ 0）；tone 决定标黄/标红 */
+function fmtNum(n: number | null | undefined): string {
+  return n == null ? '-' : String(n)
+}
+
 const INFO_METRICS = computed(() => {
   const i = info.value
   if (!i) return []
   const infoT = (k: string) => t(`redis.info.${k}.label`)
   const infoTip = (k: string) => t(`redis.info.${k}.tip`)
+  // maxmemory=0 表示未设上限；缺失显示 '-'
+  const memMax = i.memory_max == null
+    ? '-'
+    : i.memory_max === 0
+      ? t('redis.info.unlimited')
+      : fmtBytes(i.memory_max)
+  const persist = [i.rdb_last_bgsave_status, i.aof_last_bgrewrite_status]
+    .map((s) => s ?? '-')
+    .join(' / ')
+  const persistBad = [i.rdb_last_bgsave_status, i.aof_last_bgrewrite_status]
+    .some((s) => s != null && s !== 'ok')
   return [
-    { label: infoT('version'), value: i.version ?? '?', tip: infoTip('version') },
-    { label: infoT('memory'), value: fmtBytes(i.memory_used), tip: infoTip('memory') },
-    { label: infoT('memoryPeak'), value: fmtBytes(i.memory_peak), tip: infoTip('memoryPeak') },
-    { label: infoT('frag'), value: String(i.memory_fragmentation ?? '?'), tip: infoTip('frag') },
-    { label: infoT('clients'), value: String(i.connected_clients), tip: infoTip('clients') },
-    { label: infoT('hitRate'), value: i.hit_rate != null ? `${i.hit_rate}%` : '?', tip: infoTip('hitRate') },
-    { label: t('redis.info.keys.label', { db: db.value }), value: String(i.db_size), tip: infoTip('keys') },
-    { label: infoT('expired'), value: String(i.expired_keys), tip: infoTip('expired') },
-    { label: infoT('evicted'), value: String(i.evicted_keys), tip: infoTip('evicted') },
-    { label: infoT('commands'), value: String(i.total_commands_processed), tip: infoTip('commands') },
+    {
+      label: infoT('hitRate'),
+      value: i.hit_rate != null ? `${i.hit_rate}%` : '-',
+      tip: infoTip('hitRate'),
+      tone: i.hit_rate != null && i.hit_rate < 80 ? 'warn' : '',
+    },
+    { label: infoT('memory'), value: `${fmtBytes(i.memory_used)} / ${memMax}`, tip: infoTip('memory'), tone: '' },
+    {
+      label: infoT('frag'),
+      value: i.memory_fragmentation != null ? String(i.memory_fragmentation) : '-',
+      tip: infoTip('frag'),
+      tone: i.memory_fragmentation != null && i.memory_fragmentation > 1.5 ? 'warn' : '',
+    },
+    { label: infoT('clients'), value: fmtNum(i.connected_clients), tip: infoTip('clients'), tone: '' },
+    {
+      label: infoT('blocked'),
+      value: fmtNum(i.blocked_clients),
+      tip: infoTip('blocked'),
+      tone: i.blocked_clients ? 'warn' : '',
+    },
+    {
+      label: infoT('rejected'),
+      value: fmtNum(i.rejected_connections),
+      tip: infoTip('rejected'),
+      tone: i.rejected_connections ? 'crit' : '',
+    },
+    {
+      label: infoT('evicted'),
+      value: fmtNum(i.evicted_keys),
+      tip: infoTip('evicted'),
+      tone: i.evicted_keys ? 'crit' : '',
+    },
+    { label: infoT('ops'), value: fmtNum(i.ops_per_sec), tip: infoTip('ops'), tone: '' },
+    { label: infoT('persistence'), value: persist, tip: infoTip('persistence'), tone: persistBad ? 'crit' : '' },
+    { label: t('redis.info.keys.label', { db: db.value }), value: fmtNum(i.db_size), tip: infoTip('keys'), tone: '' },
+    { label: infoT('expired'), value: fmtNum(i.expired_keys), tip: infoTip('expired'), tone: '' },
+    { label: infoT('commands'), value: fmtNum(i.total_commands_processed), tip: infoTip('commands'), tone: '' },
+    { label: infoT('memoryPeak'), value: fmtBytes(i.memory_peak), tip: infoTip('memoryPeak'), tone: '' },
+    { label: infoT('version'), value: i.version ?? '-', tip: infoTip('version'), tone: '' },
   ]
 })
 </script>
@@ -642,13 +687,15 @@ const INFO_METRICS = computed(() => {
     </Card>
 
     <Card v-if="info" class="p-3">
-      <div class="flex flex-wrap gap-5">
+      <div class="flex flex-wrap items-center gap-5">
+        <!-- 从节点徽标：slave 才显示（主从只读副本，写入会失败） -->
+        <Badge v-if="info.role === 'slave'" variant="warning" size="sm">{{ $t('redis.info.roleSlave') }}</Badge>
         <TooltipProvider>
           <TooltipRoot v-for="m in INFO_METRICS" :key="m.label" :delay-duration="100">
           <TooltipTrigger as-child>
             <span class="metric">
               <span class="metric-label">{{ m.label }}</span>
-              <b class="metric-value font-mono">{{ m.value }}</b>
+              <b class="metric-value font-mono" :class="m.tone ? `tone-${m.tone}` : ''">{{ m.value }}</b>
             </span>
           </TooltipTrigger>
           <TooltipContent class="max-w-80 whitespace-pre-line">
@@ -1060,6 +1107,12 @@ const INFO_METRICS = computed(() => {
 .metric-value {
   color: var(--ops-text-1);
   font-variant-numeric: tabular-nums;
+}
+.metric-value.tone-warn {
+  color: var(--ops-warning);
+}
+.metric-value.tone-crit {
+  color: var(--ops-critical);
 }
 .db-count {
   color: var(--ops-text-3);

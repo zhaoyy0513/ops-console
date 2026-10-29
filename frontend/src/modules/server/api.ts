@@ -19,8 +19,31 @@ export interface Issue {
   mount?: string
 }
 
+/** 失败 systemd 单元（systemctl --failed） */
+export interface FailedUnit {
+  unit: string
+  description: string
+}
+
+/** OOM 击杀记录（内核日志；time 尽力而为，解析不到为 null） */
+export interface OomEvent {
+  time: string | null
+  process: string | null
+  detail: string
+}
+
+/** 同一次采集内的能力探测：false = 该项不可用，前端显示「不可用」而不是 0 */
+export interface ServerCapabilities {
+  root: boolean
+  psi: boolean
+  dmesg: boolean
+  systemctl: boolean
+  kernlog: boolean
+  syslog: boolean
+}
+
 export interface ServerMetrics {
-  cpu: { usage: number | null; iowait: number | null; cores: number | null }
+  cpu: { usage: number | null; iowait: number | null; steal?: number | null; cores: number | null }
   load: { load1: number | null; load5: number | null; load15: number | null }
   memory: {
     total: number | null
@@ -42,6 +65,19 @@ export interface ServerMetrics {
   diagnosis: { status: string; issues: Issue[] }
   /** 僵尸进程数（metrics 同一 SSH 会话采集；后端未提供时为 undefined） */
   zombie_count?: number | null
+  /** uptime 的 `up ...` 片段（如 "37 days, 4:21"） */
+  uptime_text?: string | null
+  /** 启动时间（ISO，无时区）；容器内 who -b 为空时为 null */
+  boot_time?: string | null
+  /** 文件句柄使用率（/proc/sys/fs/file-nr）；解析失败为 null */
+  fd_usage?: { allocated: number; max: number; percent: number } | null
+  /** 失败的 systemd 单元；不可用为 null（原因见 failed_units_unavailable） */
+  failed_units?: FailedUnit[] | null
+  failed_units_unavailable?: string | null
+  /** 最近 OOM 击杀记录；三路日志源都不可读为 null */
+  oom_events?: OomEvent[] | null
+  oom_unavailable?: string | null
+  capabilities?: ServerCapabilities | null
 }
 
 export interface ProcessRow {

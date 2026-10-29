@@ -5,6 +5,7 @@ import { AlertTriangle, Info, Loader2 } from 'lucide-vue-next'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/ui/select'
+import { TooltipContent, TooltipRoot, TooltipTrigger } from '@/components/ui/tooltip'
 import { Progress } from '@/components/ui/progress'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { message } from '@/lib/message'
@@ -209,6 +210,72 @@ const memPct = computed(() => {
   const m = metrics.value?.memory
   // 保留 1 位小数：整数百分比在 16GB 机器上约 157MB 才动一格，看起来"永远不变"
   return m?.total && m?.used != null ? Math.round((m.used / m.total) * 1000) / 10 : null
+})
+
+// steal ≥5% 说明宿主机 CPU 被别的租户抢走了：pctColor 的阈值是 80/90 不适用，单独标黄
+const WARN_COLOR = '#f0a020'
+const CRIT_COLOR = '#d03050'
+const stealColor = computed(() => {
+  const v = metrics.value?.cpu.steal
+  return v != null && v >= 5 ? WARN_COLOR : undefined
+})
+
+// ---- 系统健康卡：失败单元 / 句柄使用率 / 最近 OOM ----
+// 不可用项显示「不可用」+ 原因 tooltip，绝不显示成 0（被纳管机器不保证 root）
+interface HealthRow {
+  label: string
+  text: string
+  color?: string
+  /** 不可用态：灰字 + help 光标 */
+  dim?: boolean
+  tip?: string
+}
+
+const healthRows = computed<HealthRow[]>(() => {
+  const m = metrics.value
+  if (!m) return []
+  const rows: HealthRow[] = []
+
+  const failed = m.failed_units
+  if (failed == null) {
+    rows.push({ label: t('server.failedUnits'), text: t('server.unavailable'), dim: true, tip: t('server.noSystemd') })
+  } else {
+    rows.push({
+      label: t('server.failedUnits'),
+      text: failed.length ? String(failed.length) : t('server.none'),
+      color: failed.length ? CRIT_COLOR : undefined,
+      tip: failed.length ? failed.map((u) => u.unit).join('\n') : undefined,
+    })
+  }
+
+  const fd = m.fd_usage
+  if (!fd) {
+    rows.push({ label: t('server.fdUsage'), text: t('server.unavailable'), dim: true, tip: t('server.fdUnavailable') })
+  } else {
+    // pctColor：≥80 黄 ≥90 红
+    rows.push({
+      label: t('server.fdUsage'),
+      text: `${fd.percent}%`,
+      color: pctColor(fd.percent),
+      tip: `${fd.allocated} / ${fd.max}`,
+    })
+  }
+
+  const oom = m.oom_events
+  if (oom == null) {
+    rows.push({ label: t('server.oomRecent'), text: t('server.unavailable'), dim: true, tip: t('server.oomUnavailable') })
+  } else if (!oom.length) {
+    rows.push({ label: t('server.oomRecent'), text: t('server.none') })
+  } else {
+    const last = oom[oom.length - 1]
+    rows.push({
+      label: t('server.oomRecent'),
+      text: [last.process ?? '?', last.time].filter(Boolean).join(' · '),
+      color: CRIT_COLOR,
+      tip: oom.map((e) => e.detail).join('\n'),
+    })
+  }
+  return rows
 })
 
 // 刻度统一 HH:mm:ss（手动补零，不受浏览器 locale 影响，en-US 会带 AM/PM）。
@@ -456,6 +523,14 @@ const zombieColumns = computed<any[]>(() => [
         <span class="poll-note">{{ $t('server.autoRefresh') }}</span>
         <!-- 已存资源的行级测试需 per-resource test 端点（PRD §18 POST .../test），落地后补 -->
         <status-badge v-if="metrics" :status="metrics.diagnosis?.status" />
+        <!-- 已运行时长：悬停可看启动时间（容器内 who -b 为空则不显示 title） -->
+        <span
+          v-if="metrics?.uptime_text"
+          class="poll-note"
+          :title="metrics.boot_time ? $t('server.bootTime', { time: metrics.boot_time }) : undefined"
+        >
+          {{ $t('server.uptime', { text: metrics.uptime_text }) }}
+        </span>
       </CardContent>
     </Card>
 
@@ -494,7 +569,10 @@ const zombieColumns = computed<any[]>(() => [
           <div class="metric-note">{{ $t('server.thresholdNote') }}</div>
           <div class="metric-sub">
             {{ $t('server.cores') }} {{ metrics.cpu.cores ?? '?' }} · {{ $t('server.iowait') }} {{ metrics.cpu.iowait ?? '?' }}% ·
-            {{ $t('server.load') }} {{ metrics.load.load1 ?? '?' }} / {{ metrics.load.load5 ?? '?' }} / {{ metrics.load.load15 ?? '?' }}
+            <span :style="stealColor ? { color: stealColor } : undefined">
+              {{ $t('server.steal') }} {{ metrics.cpu.steal ?? '?' }}%
+            </span>
+            · {{ $t('server.load') }} {{ metrics.load.load1 ?? '?' }} / {{ metrics.load.load5 ?? '?' }} / {{ metrics.load.load15 ?? '?' }}
           </div>
         </metric-card>
         <metric-card :title="$t('server.memory')">
@@ -557,6 +635,33 @@ const zombieColumns = computed<any[]>(() => [
           {{ zombieCount ? $t('server.zombieList') : $t('server.zombieEmpty') }}
         </metric-card>
       </div>
+
+      <!-- 系统健康：失败单元 / 句柄使用率 / 最近 OOM（不可用项灰字 + 原因 tooltip，不显示成 0） -->
+      <Card>
+        <CardHeader><CardTitle>{{ $t('server.health') }}</CardTitle></CardHeader>
+        <CardContent>
+          <div class="sv-health">
+            <div v-for="r in healthRows" :key="r.label" class="health-item">
+              <div class="health-label">{{ r.label }}</div>
+              <tooltip-root v-if="r.tip" :delay-duration="100">
+                <tooltip-trigger as-child>
+                  <div
+                    class="health-value"
+                    :class="{ 'sv-unavail': r.dim }"
+                    :style="r.color ? { color: r.color } : undefined"
+                  >
+                    {{ r.text }}
+                  </div>
+                </tooltip-trigger>
+                <tooltip-content class="whitespace-pre-line">{{ r.tip }}</tooltip-content>
+              </tooltip-root>
+              <div v-else class="health-value" :style="r.color ? { color: r.color } : undefined">
+                {{ r.text }}
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader><CardTitle>{{ $t('server.trend') }}</CardTitle></CardHeader>
@@ -623,7 +728,6 @@ const zombieColumns = computed<any[]>(() => [
 </template>
 
 <style scoped>
-<style scoped>
 .zombie-hint {
   display: flex;
   align-items: flex-start;
@@ -658,6 +762,33 @@ const zombieColumns = computed<any[]>(() => [
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+/* 系统健康三格：与指标卡同款网格，窄屏自动换行 */
+.sv-health {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 12px;
+}
+.health-label {
+  color: var(--ops-text-3);
+  font-size: 12px;
+}
+.health-value {
+  margin-top: 4px;
+  font-family: var(--ops-font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--ops-text-1);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+/* 不可用态：灰字 + help 光标（悬浮给原因），视觉上绝不与「0」混淆 */
+.sv-unavail {
+  color: var(--ops-text-3);
+  font-weight: 400;
+  cursor: help;
 }
 /* 指标卡统一网格：等宽等高（grid 默认 stretch），卡片即网格项；窄屏自动减列换行 */
 .sv-cards {

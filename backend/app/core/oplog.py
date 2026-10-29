@@ -7,6 +7,28 @@ from .request_info import get_caller
 OPLOG_KEY = "ops:oplog"
 OPLOG_MAX = 320  # 只保留最近 320 条（原 1000 → 200 → 320，操作日志页 16 页 × 16 行）
 
+_MISSING = object()
+
+
+def diff(before: dict, after: dict) -> tuple[dict, dict]:
+    """配置变更差异：只返回发生变化的键（oplog 上限 320 条，不存全量配置）。"""
+    keys = sorted({**before, **after})
+    changed = [k for k in keys if before.get(k, _MISSING) != after.get(k, _MISSING)]
+    return (
+        {k: before[k] for k in changed if k in before},
+        {k: after[k] for k in changed if k in after},
+    )
+
+
+def _mask(snapshot: dict | None) -> dict | None:
+    """敏感字段脱敏：键名含 password 的值一律 "***"（has_password 这类布尔保持原样）。"""
+    if not snapshot:
+        return None
+    return {
+        k: "***" if "password" in k.lower() and not isinstance(v, bool) else v
+        for k, v in snapshot.items()
+    }
+
 
 async def record(
     site: str,
@@ -17,6 +39,8 @@ async def record(
     params: dict | None = None,
     result: str = "SUCCESS",
     error: str | None = None,
+    before: dict | None = None,
+    after: dict | None = None,
 ) -> None:
     """记录一条操作日志（无用户维度，PRD §17）。
 
@@ -24,6 +48,10 @@ async def record(
     - target   = 操作对象的人类可读标识（redis key、脚本名、站点/资源名、pid+command）；
     - resource = 模块/实例名（如 redis/{实例name}、ssh/{server名}）——不放内部 id；
     - params   = 上下文（instance_id / host / db / …），不含大值或敏感值（如 redis value）。
+
+    before/after（P0-7）：配置变更前后的**差异键**（配合 diff()），敏感值已脱敏；
+    新建只有 after、删除只有 before。两者都空时不写这两个字段——老记录同样没有，
+    读取端按"无差异信息"处理（向后兼容）。
 
     LPUSH + LTRIM 在同一事务管道内执行，超出 OPLOG_MAX 即淘汰旧日志。
     """
@@ -42,6 +70,9 @@ async def record(
         "caller": caller,
         "caller_ip": caller_ip,
     }
+    if before or after:
+        entry["before"] = _mask(before)
+        entry["after"] = _mask(after)
     async with get_platform_redis().pipeline(transaction=True) as pipe:
         pipe.lpush(OPLOG_KEY, json.dumps(entry, ensure_ascii=False))
         pipe.ltrim(OPLOG_KEY, 0, OPLOG_MAX - 1)

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, h, onMounted, ref } from 'vue'
+import { computed, defineComponent, h, onMounted, ref, type PropType } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ChevronLeft, ChevronRight, Search } from 'lucide-vue-next'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -71,6 +71,89 @@ const pageItems = computed<Array<number | '…'>>(() => {
 })
 
 type Row = NonNullable<AuditPage['items'][number]>
+/** P0-7 配置变更差异（api.ts 未列入本次改动，这里就地扩展） */
+type DiffRow = Row & { before?: Record<string, unknown> | null; after?: Record<string, unknown> | null }
+
+const DIFF_TRUNC = 200
+// 配置类操作：老记录没有 before/after 时提示「旧记录无差异信息」，其余操作本就没有差异
+const DIFF_OPS = /^(RESOURCE_CONFIG_|KNOWLEDGE_)/
+
+function fmtVal(v: unknown): string {
+  if (typeof v === 'string') return v
+  if (v === null || v === undefined) return String(v)
+  try { return JSON.stringify(v) } catch { return String(v) }
+}
+
+const DiffCell = defineComponent({
+  props: { row: { type: Object as PropType<DiffRow>, required: true } },
+  setup(props) {
+    const open = ref(false)
+    const expanded = ref<Set<string>>(new Set())
+    function toggle(id: string) {
+      const next = new Set(expanded.value)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      expanded.value = next
+    }
+    const lines = computed(() => {
+      const b = props.row.before ?? {}
+      const a = props.row.after ?? {}
+      const keys = [...new Set([...Object.keys(b), ...Object.keys(a)])].sort()
+      return keys.map((k) => {
+        const inB = k in b
+        const inA = k in a
+        return {
+          key: k,
+          kind: !inA ? 'del' : !inB ? 'add' : 'change',
+          old: inB ? fmtVal(b[k]) : '',
+          new: inA ? fmtVal(a[k]) : '',
+        }
+      })
+    })
+    // 长值截断 + 单独展开（旧值/新值各自独立）
+    function val(text: string, id: string, cls: string) {
+      const long = text.length > DIFF_TRUNC
+      const cut = long && !expanded.value.has(id)
+      return h('span', { class: cls }, [
+        cut ? `${text.slice(0, DIFF_TRUNC)}…` : text,
+        long
+          ? h('button', {
+              class: 'ml-1 font-sans text-[11px] text-primary no-underline hover:underline',
+              onClick: () => toggle(id),
+            }, cut ? t('audit.expand') : t('audit.collapse'))
+          : null,
+      ])
+    }
+    return () => {
+      if (!lines.value.length) {
+        const legacy = DIFF_OPS.test(props.row.operation ?? '')
+        return h('span', { class: 'text-xs text-muted-foreground' }, legacy ? t('audit.noDiff') : '—')
+      }
+      return h('details', {
+        class: 'text-xs',
+        onToggle: (e: Event) => { open.value = (e.target as HTMLDetailsElement).open },
+      }, [
+        h('summary', { class: 'cursor-pointer select-none text-primary hover:underline' },
+          `${open.value ? t('audit.diffHide') : t('audit.diffShow')} (${lines.value.length})`),
+        h('div', { class: 'mt-1 max-w-[460px] space-y-0.5 whitespace-normal break-all font-mono text-[12px] leading-5' },
+          lines.value.map((l) =>
+            h('div', { key: l.key, class: 'flex items-baseline gap-1' }, [
+              h('span', { class: 'shrink-0 text-muted-foreground' },
+                l.kind === 'add' ? `+ ${l.key}: ` : l.kind === 'del' ? `- ${l.key}: ` : `${l.key}: `),
+              l.kind === 'change'
+                ? h('span', { class: 'flex flex-wrap items-baseline gap-1' }, [
+                    val(l.old, `${l.key}:old`, 'text-[var(--ops-critical)] line-through'),
+                    h('span', { class: 'text-muted-foreground' }, '→'),
+                    val(l.new, `${l.key}:new`, 'text-[var(--ops-healthy)]'),
+                  ])
+                : val(l.kind === 'add' ? l.new : l.old, `${l.key}:${l.kind}`,
+                    l.kind === 'add' ? 'text-[var(--ops-healthy)]' : 'text-[var(--ops-critical)]'),
+            ]),
+          )),
+      ])
+    }
+  },
+})
 
 const columns = computed<any[]>(() => [
   // 时间列等宽字体 + tabular-nums：19 字符固定宽不折行（ISO 串字典序 = 时间序；服务端分页下仅当前页内排序）
@@ -134,6 +217,12 @@ ${cmd}` : v }, v)
     },
   },
   {
+    id: 'diff',
+    header: t('audit.colDiff'),
+    enableSorting: false,
+    cell: (ctx: any) => h(DiffCell, { row: ctx.row.original as DiffRow }),
+  },
+  {
     id: 'caller',
     header: t('audit.colCaller'),
     enableSorting: false,
@@ -180,7 +269,7 @@ ${cmd}` : v }, v)
     <CardContent>
       <!-- 列宽合计约 900：窄屏时表格内部横向滚动（OpsDataTable 自带 overflow-auto），而不是把页面撑宽 -->
       <OpsDataTable
-        class="min-w-[1080px]"
+        class="min-w-[1200px]"
         :columns="columns"
         :data="data?.items ?? []"
         :empty-text="$t('overview.noOps')"

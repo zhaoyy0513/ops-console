@@ -1,20 +1,24 @@
 <script setup lang="ts">
 import { onMounted, ref, watch, type Component } from 'vue'
 import { useRouter } from 'vue-router'
-import { Server, Layers, Activity, HardDriveDownload } from 'lucide-vue-next'
+import { useI18n } from 'vue-i18n'
+import { Server, Layers, Activity, HardDriveDownload, ClipboardCopy } from 'lucide-vue-next'
 import LoadingDots from '../../components/LoadingDots.vue'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { message } from '@/lib/message'
 import StatusBadge from '../../components/StatusBadge.vue'
 import TabHelp from '../../components/TabHelp.vue'
 import MetricCard from '../../components/MetricCard.vue'
 import { useSiteStore } from '../../stores/site'
 import { overviewApi, type OverviewData } from './api'
+import { buildInspectionReport } from './inspection-report'
 
 const siteStore = useSiteStore()
 const router = useRouter()
+const { t } = useI18n()
 
 const data = ref<OverviewData | null>(null)
 const loading = ref(false)
@@ -72,6 +76,33 @@ function goIssueModule(kind: string) {
 function fmtTime(iso: string): string {
   return iso ? iso.replace('T', ' ').slice(5, 19) : '-'
 }
+
+/* 一键巡检报告：剪贴板不可用（http / 旧浏览器）时降级为弹窗手动复制 */
+const reportOpen = ref(false)
+const reportText = ref('')
+
+async function copyReport() {
+  if (!data.value) return
+  const text = buildInspectionReport({
+    siteName: data.value.site.name,
+    overall: data.value.overall,
+    summary: data.value.summary,
+    issues: data.value.issues,
+    recentOps: data.value.recent_ops,
+  })
+  try {
+    if (!navigator.clipboard?.writeText) throw new Error('clipboard unavailable')
+    await navigator.clipboard.writeText(text)
+    message.success(t('common.copied'))
+  } catch {
+    reportText.value = text
+    reportOpen.value = true
+  }
+}
+
+function selectReport(e: FocusEvent) {
+  ;(e.target as HTMLTextAreaElement).select()
+}
 </script>
 
 <template>
@@ -81,6 +112,10 @@ function fmtTime(iso: string): string {
         <span class="text-base font-semibold">{{ data?.site.name ?? siteStore.currentSiteId }}</span>
         <status-badge v-if="data" :status="data.overall" />
         <Button variant="outline" size="sm" :disabled="loading" @click="refresh">{{ $t('overview.checkNow') }}</Button>
+        <Button variant="outline" size="sm" :disabled="!data" @click="copyReport">
+          <ClipboardCopy class="size-3.5" />
+          {{ $t('overview.report') }}
+        </Button>
         <tab-help topic="overview" />
         <span v-if="data?.checked_at" class="text-xs text-muted-foreground">
           {{ $t('overview.lastCheck', { time: fmtTime(data.checked_at) }) }}
@@ -177,6 +212,25 @@ function fmtTime(iso: string): string {
         </div>
       </CardContent>
     </Card>
+
+    <Dialog v-model:open="reportOpen">
+      <DialogContent class="w-[640px] max-w-[92vw]">
+        <DialogHeader>
+          <DialogTitle>{{ $t('overview.reportTitle') }}</DialogTitle>
+        </DialogHeader>
+        <p class="text-xs text-muted-foreground">{{ $t('overview.reportManual') }}</p>
+        <textarea
+          class="h-72 w-full resize-none rounded-md border border-input bg-card p-3 font-mono text-xs leading-relaxed outline-none"
+          readonly
+          spellcheck="false"
+          :value="reportText"
+          @focus="selectReport"
+        />
+        <div class="flex justify-end">
+          <Button variant="outline" size="sm" @click="reportOpen = false">{{ $t('common.close') }}</Button>
+        </div>
+      </DialogContent>
+    </Dialog>
   </div>
 </template>
 

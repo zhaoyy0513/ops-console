@@ -4,7 +4,7 @@ from httpx import ASGITransport, AsyncClient
 
 from backend.app.core import oplog
 from backend.app.main import app
-from backend.app.modules.redis.provider import TargetRedisProvider
+from backend.app.modules.redis.provider import TargetRedisProvider, normalize_info
 
 
 @pytest.fixture
@@ -102,12 +102,91 @@ async def test_normalize_info_pure():
     assert empty["hit_rate"] is None and empty["version"] is None
 
 
+def test_normalize_info_deep_metrics():
+    """完整 INFO 样本：深度指标全部解析（含字符串形式数值的容错）。"""
+    body = normalize_info({
+        "redis_version": "7.2.4",
+        "role": "master",
+        "used_memory": 1048576,
+        "maxmemory": 4194304,
+        "mem_fragmentation_ratio": "1.8",  # 字符串形式也应能转 float
+        "connected_clients": 9,
+        "blocked_clients": 2,
+        "rejected_connections": 1,
+        "keyspace_hits": 800,
+        "keyspace_misses": 200,
+        "evicted_keys": 3,
+        "expired_keys": 4,
+        "instantaneous_ops_per_sec": 77,
+        "total_commands_processed": 1234,
+        "rdb_last_bgsave_status": "ok",
+        "aof_last_bgrewrite_status": "err",
+        "latest_fork_usec": 555,
+    })
+    assert body["role"] == "master"
+    assert body["memory_used"] == 1048576
+    assert body["memory_max"] == 4194304
+    assert body["memory_fragmentation"] == 1.8
+    assert body["connected_clients"] == 9
+    assert body["blocked_clients"] == 2
+    assert body["rejected_connections"] == 1
+    assert body["keyspace_hits"] == 800 and body["keyspace_misses"] == 200
+    assert body["hit_rate"] == 80.0
+    assert body["evicted_keys"] == 3 and body["expired_keys"] == 4
+    assert body["ops_per_sec"] == 77
+    assert body["total_commands_processed"] == 1234
+    assert body["rdb_last_bgsave_status"] == "ok"
+    assert body["aof_last_bgrewrite_status"] == "err"
+    assert body["latest_fork_usec"] == 555
+
+
+def test_normalize_info_missing_fields_are_none():
+    """INFO 缺字段 -> None（不造默认 0），且不影响其它字段。"""
+    body = normalize_info({"redis_version": "7.0.0", "evicted_keys": 5})
+    for field in (
+        "role", "memory_used", "memory_max", "memory_fragmentation", "connected_clients",
+        "blocked_clients", "rejected_connections", "keyspace_hits", "keyspace_misses",
+        "hit_rate", "expired_keys", "ops_per_sec", "total_commands_processed",
+        "rdb_last_bgsave_status", "aof_last_bgrewrite_status", "latest_fork_usec", "db_size",
+    ):
+        assert body[field] is None, field
+    assert body["evicted_keys"] == 5
+    assert body["version"] == "7.0.0"
+
+
+def test_normalize_info_maxmemory_zero_and_empty_keyspace():
+    """maxmemory=0 = 未设上限（原样保留 0）；命中计数为 0 -> hit_rate None（分母为 0）。"""
+    body = normalize_info({"maxmemory": 0, "keyspace_hits": 0, "keyspace_misses": 0})
+    assert body["memory_max"] == 0
+    assert body["hit_rate"] is None
+
+
+def test_normalize_info_malformed_field_is_isolated():
+    """单个字段解析异常只让该字段 None，其它字段照常。"""
+    body = normalize_info({
+        "keyspace_hits": "not-a-number",
+        "keyspace_misses": 10,
+        "mem_fragmentation_ratio": "n/a",
+        "evicted_keys": 7,
+        "rdb_last_bgsave_status": 123,  # 非字符串 -> None
+    })
+    assert body["keyspace_hits"] is None
+    assert body["hit_rate"] is None  # 缺一半计数无法算命中率
+    assert body["memory_fragmentation"] is None
+    assert body["rdb_last_bgsave_status"] is None
+    assert body["evicted_keys"] == 7
+    assert body["keyspace_misses"] == 10
+
+
 async def test_info_endpoint(client, patch_info_client):
     r = await client.get("/api/sites/sz/redis/r1/info")
     assert r.status_code == 200
     body = r.json()
     for field in ("status", "version", "memory_used", "memory_peak", "memory_fragmentation",
-                  "connected_clients", "hit_rate", "evicted_keys", "expired_keys", "db_size"):
+                  "connected_clients", "hit_rate", "evicted_keys", "expired_keys", "db_size",
+                  "role", "memory_max", "blocked_clients", "rejected_connections", "ops_per_sec",
+                  "rdb_last_bgsave_status", "aof_last_bgrewrite_status", "latest_fork_usec",
+                  "keyspace_hits", "keyspace_misses"):
         assert field in body, f"missing {field}"
     assert body["version"] == "7.2.4"
 

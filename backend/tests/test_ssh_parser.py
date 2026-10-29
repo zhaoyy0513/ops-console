@@ -75,17 +75,17 @@ SAMPLES = {
 
 
 def test_parse_cpu():
-    assert parse_cpu(SAMPLE_TOP) == {"usage": 5.0, "iowait": 0.5}
+    assert parse_cpu(SAMPLE_TOP) == {"usage": 5.0, "iowait": 0.5, "steal": 0.0}
 
 
 def test_parse_cpu_missing_fields():
-    assert parse_cpu("no cpu line here") == {"usage": None, "iowait": None}
+    assert parse_cpu("no cpu line here") == {"usage": None, "iowait": None, "steal": None}
 
 
 def test_parse_cpu_second_frame_wins():
     """top -bn2 两帧输出：第二帧才是真实平均，解析必须取最后一帧。"""
     two_frames = SAMPLE_TOP + "\n" + SAMPLE_TOP.replace("95.0 id", "60.0 id")
-    assert parse_cpu(two_frames) == {"usage": 40.0, "iowait": 0.5}
+    assert parse_cpu(two_frames) == {"usage": 40.0, "iowait": 0.5, "steal": 0.0}
 
 
 def test_parse_load():
