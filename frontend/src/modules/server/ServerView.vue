@@ -15,6 +15,7 @@ import BaseChart from '../../components/BaseChart.vue'
 import TabHelp from '../../components/TabHelp.vue'
 import StatusBadge from '../../components/StatusBadge.vue'
 import MetricCard from '../../components/MetricCard.vue'
+import TipIcon from '../../components/TipIcon.vue'
 import LoadingDots from '../../components/LoadingDots.vue'
 import EmptyState from '../../components/EmptyState.vue'
 import TipCopy from '../../components/TipCopy.vue'
@@ -632,7 +633,7 @@ const zombieColumns = computed<any[]>(() => [
 
       <!-- 指标卡统一 MetricCard：5 列网格等宽等高；仅僵尸卡可点击（弹窗明细），也只有它开 hover 边框 -->
       <div class="sv-cards">
-        <metric-card :title="$t('server.cpu')">
+        <metric-card :title="$t('server.cpu')" :tip="$t('server.cpuTip')">
           <div class="donut-wrap">
             <base-chart :option="cpuDonutOption" height="120px" />
             <div class="donut-center" :style="{ color: pctColor(metrics.cpu.usage) }">
@@ -649,7 +650,7 @@ const zombieColumns = computed<any[]>(() => [
             · {{ $t('server.load') }} {{ metrics.load.load1 ?? '?' }} / {{ metrics.load.load5 ?? '?' }} / {{ metrics.load.load15 ?? '?' }}
           </div>
         </metric-card>
-        <metric-card :title="$t('server.memory')">
+        <metric-card :title="$t('server.memory')" :tip="$t('server.memTip')">
           <div class="donut-wrap">
             <base-chart :option="memDonutOption" height="120px" />
             <div class="donut-center" :style="{ color: pctColor(memPct) }">
@@ -666,7 +667,7 @@ const zombieColumns = computed<any[]>(() => [
             {{ $t('server.avail') }} {{ metrics.memory.available }}MB · {{ $t('server.swap') }} {{ metrics.memory.swap_used ?? 0 }}MB
           </div>
         </metric-card>
-        <metric-card :title="$t('server.network')">
+        <metric-card :title="$t('server.network')" :tip="$t('server.netTip')">
           <!-- 5 列布局下收窄：RX/TX 两行竖排省宽度 -->
           <div class="net-lines mono">
             <div>{{ fmtBytes(metrics.network.rx) }}<span class="unit">↓</span></div>
@@ -676,7 +677,7 @@ const zombieColumns = computed<any[]>(() => [
             {{ $t('server.netErrors') }} {{ metrics.network.errors }} · {{ $t('server.netDropped') }} {{ metrics.network.dropped }}
           </div>
         </metric-card>
-        <metric-card :title="$t('server.diskIo')">
+        <metric-card :title="$t('server.diskIo')" :tip="$t('server.diskIoTip')">
           <div class="net-lines mono">
             <div>{{ diskIo.read != null ? fmtBytes(diskIo.read) : '?' }}<span class="unit">{{ $t('server.ioRead') }}/s</span></div>
             <div>{{ diskIo.write != null ? fmtBytes(diskIo.write) : '?' }}<span class="unit">{{ $t('server.ioWrite') }}/s</span></div>
@@ -688,6 +689,7 @@ const zombieColumns = computed<any[]>(() => [
         </metric-card>
         <metric-card
           :title="$t('server.disk')"
+          :tip="$t('server.diskTip')"
           :value="topDisk?.use_percent ?? null"
           suffix="%"
           :color="pctColor(topDisk?.use_percent)"
@@ -701,6 +703,7 @@ const zombieColumns = computed<any[]>(() => [
           class="tile-click"
           hoverable
           :title="$t('server.zombies')"
+          :tip="$t('server.zombieTip')"
           :value="zombieCount"
           :color="zombieCount ? ZOMBIE_RED : undefined"
           :bar-color="zombieCount ? ZOMBIE_RED : '#9ca0a8'"
@@ -712,7 +715,12 @@ const zombieColumns = computed<any[]>(() => [
 
       <!-- 系统健康：失败单元 / 句柄使用率 / 最近 OOM（不可用项灰字 + 原因 tooltip，不显示成 0） -->
       <Card>
-        <CardHeader><CardTitle>{{ $t('server.health') }}</CardTitle></CardHeader>
+        <CardHeader>
+        <span class="inline-flex items-center gap-1.5">
+          <CardTitle>{{ $t('server.health') }}</CardTitle>
+          <TipIcon :text="$t('server.healthTip')" />
+        </span>
+      </CardHeader>
         <CardContent>
           <div class="sv-health">
             <div v-for="r in healthRows" :key="r.label" class="health-item">
@@ -739,7 +747,12 @@ const zombieColumns = computed<any[]>(() => [
 
       <!-- 系统压力（PSI）：不可用整卡隐藏（psi 为 null 时 psiRows 为空） -->
       <Card v-if="psiRows.length">
-        <CardHeader><CardTitle>{{ $t('server.pressure') }}</CardTitle></CardHeader>
+        <CardHeader>
+        <span class="inline-flex items-center gap-1.5">
+          <CardTitle>{{ $t('server.pressure') }}</CardTitle>
+          <TipIcon :text="$t('server.pressureTip')" />
+        </span>
+      </CardHeader>
         <CardContent>
           <div class="psi-grid">
             <div v-for="r in psiRows" :key="r.key" class="psi-item">

@@ -5,6 +5,9 @@
  *  聚光效果（Phase D §5.2④）同为 opt-in：仅 hoverable（可点击）卡片跟随
  *  鼠标更新 --sx/--sy，极淡一层光斑；非交互卡完全素面。 */
 import type { Component } from 'vue'
+import { TooltipProvider, TooltipRoot, TooltipTrigger } from 'reka-ui'
+import { HelpCircle } from 'lucide-vue-next'
+import TooltipContent from '@/components/ui/tooltip/TooltipContent.vue'
 import CountUp from './bits/CountUp.vue'
 
 const props = withDefaults(
@@ -22,6 +25,8 @@ const props = withDefaults(
     barColor?: string
     /** hover 边框高亮改为 opt-in：仅可点击卡片传 true，非交互卡不暗示可点 */
     hoverable?: boolean
+    /** 指标说明：标题右侧出现问号，悬停解释「这个数字是什么、怎么看」 */
+    tip?: string
   }>(),
   { value: null, decimals: 0, prefix: '', suffix: '', hoverable: false },
 )
@@ -45,6 +50,18 @@ function onSpotMove(e: MouseEvent) {
         <component :is="icon" />
       </span>
       <span class="mc-title">{{ title }}</span>
+      <TooltipProvider v-if="tip" :delay-duration="100">
+        <TooltipRoot>
+          <TooltipTrigger as-child>
+            <button type="button" class="mc-tip-btn" :aria-label="title">
+              <HelpCircle />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent class="max-w-80 whitespace-pre-line">
+            <span class="text-xs">{{ tip }}</span>
+          </TooltipContent>
+        </TooltipRoot>
+      </TooltipProvider>
     </div>
     <!-- 无 value 且 slot 承载内容（如 donut/网络双行）时不渲染数值行，避免出现孤立的 "?" -->
     <div v-if="value != null || !$slots.default" class="mc-value" :style="color ? { color } : undefined">
@@ -89,6 +106,22 @@ function onSpotMove(e: MouseEvent) {
     display: none; /* 光斑淡入属动效，reduced-motion 下整体关闭 */
   }
 }
+.mc-tip-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  flex: none;
+  border: none;
+  background: transparent;
+  color: var(--ops-text-3);
+  cursor: help;
+  padding: 0;
+  transition: color 120ms ease;
+}
+.mc-tip-btn:hover { color: var(--ops-primary); }
+.mc-tip-btn :deep(svg) { width: 14px; height: 14px; }
 .mc-bar {
   position: absolute;
   top: 0;

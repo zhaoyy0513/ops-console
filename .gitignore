@@ -11,5 +11,5 @@ frontend/dist/
 # Env & IDE
 .env
 .idea/
-logs/
+/logs/
 layout/

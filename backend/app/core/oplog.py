@@ -5,13 +5,13 @@ from .redis import get_platform_redis
 from .request_info import get_caller
 
 OPLOG_KEY = "ops:oplog"
-OPLOG_MAX = 320  # 只保留最近 320 条（原 1000 → 200 → 320，操作日志页 16 页 × 16 行）
+OPLOG_MAX = 160  # 只保留最近 160 条（原 1000 → 200 → 320 → 160，操作日志页 10 页 × 16 行）
 
 _MISSING = object()
 
 
 def diff(before: dict, after: dict) -> tuple[dict, dict]:
-    """配置变更差异：只返回发生变化的键（oplog 上限 320 条，不存全量配置）。"""
+    """配置变更差异：只返回发生变化的键（oplog 上限 160 条，不存全量配置）。"""
     keys = sorted({**before, **after})
     changed = [k for k in keys if before.get(k, _MISSING) != after.get(k, _MISSING)]
     return (
