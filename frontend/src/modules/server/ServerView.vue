@@ -260,11 +260,14 @@ const healthRows = computed<HealthRow[]>(() => {
   if (failed == null) {
     rows.push({ label: t('server.failedUnits'), text: t('server.unavailable'), dim: true, tip: t('server.noSystemd') })
   } else {
+    // 解释永远在（先说这是什么指标），有失败单元时再附具体清单
+    const tip = t('server.failedUnitsTip') +
+      (failed.length ? '\n' + failed.map((u) => `· ${u.unit}`).join('\n') : '')
     rows.push({
       label: t('server.failedUnits'),
       text: failed.length ? String(failed.length) : t('server.none'),
       color: failed.length ? CRIT_COLOR : undefined,
-      tip: failed.length ? failed.map((u) => u.unit).join('\n') : undefined,
+      tip,
     })
   }
 
@@ -272,12 +275,12 @@ const healthRows = computed<HealthRow[]>(() => {
   if (!fd) {
     rows.push({ label: t('server.fdUsage'), text: t('server.unavailable'), dim: true, tip: t('server.fdUnavailable') })
   } else {
-    // pctColor：≥80 黄 ≥90 红
+    // pctColor：≥80 黄 ≥90 红；提示 = 指标解释 + 当前已分配/上限
     rows.push({
       label: t('server.fdUsage'),
       text: `${fd.percent}%`,
       color: pctColor(fd.percent),
-      tip: `${fd.allocated} / ${fd.max}`,
+      tip: `${t('server.fdUsageTip')}\n${fd.allocated} / ${fd.max}`,
     })
   }
 
@@ -285,14 +288,15 @@ const healthRows = computed<HealthRow[]>(() => {
   if (oom == null) {
     rows.push({ label: t('server.oomRecent'), text: t('server.unavailable'), dim: true, tip: t('server.oomUnavailable') })
   } else if (!oom.length) {
-    rows.push({ label: t('server.oomRecent'), text: t('server.none') })
+    rows.push({ label: t('server.oomRecent'), text: t('server.none'), tip: t('server.oomTip') })
   } else {
     const last = oom[oom.length - 1]
+    // 提示 = 指标解释 + 历史明细
     rows.push({
       label: t('server.oomRecent'),
       text: [last.process ?? '?', last.time].filter(Boolean).join(' · '),
       color: CRIT_COLOR,
-      tip: oom.map((e) => e.detail).join('\n'),
+      tip: `${t('server.oomTip')}\n${oom.map((e) => e.detail).join('\n')}`,
     })
   }
   return rows

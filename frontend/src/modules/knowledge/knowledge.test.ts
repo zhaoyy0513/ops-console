@@ -36,9 +36,10 @@ describe('humanSize', () => {
 })
 
 describe('validateUpload', () => {
-  it('空文件与超限分别给出对应 key，边界 1MB 放行', () => {
+  it('空文件与超限分别给出对应 key，边界 200MB 放行', () => {
     expect(validateUpload(new File([], 'e.txt'))).toBe('knowledge.fileEmpty')
-    expect(validateUpload(new File([new Uint8Array(1_000_001)], 'b.bin'))).toBe('knowledge.fileTooLarge')
-    expect(validateUpload(new File([new Uint8Array(1_000_000)], 'ok.bin'))).toBeNull()
+    const MB = 1024 * 1024
+    expect(validateUpload(new File([new Uint8Array(200 * MB + 1)], 'b.bin'))).toBe('knowledge.fileTooLarge')
+    expect(validateUpload(new File([new Uint8Array(200 * MB)], 'ok.bin'))).toBeNull()
   })
 })

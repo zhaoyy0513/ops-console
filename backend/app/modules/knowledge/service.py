@@ -1,26 +1,54 @@
+"""知识库服务层（文件系统存储版）。
+
+元数据：Redis hash `ops:knowledge:{site_id}`（field=doc_id，value=JSON）。
+文件内容：磁盘 `{OPS_DATA_DIR}/knowledge/{site_id}/{doc_id}{ext}`——200MB 级文件
+不适合整份塞进 Redis（内存与主从同步压力），文件系统 + 流式写入才扛得住。
+
+历史兼容：最早版本把 markdown 存在元数据里（无独立文件）。这类旧文档在
+读内容时按 text/markdown 即时合成，删除时同样清掉 Redis blob 遗留。
+"""
+
 import base64
 import json
+import re
+import shutil
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 
 from backend.app.core import oplog
+from backend.app.core.config import settings
 from backend.app.core.redis import get_platform_redis
 from backend.app.modules.sites.service import site_key
 
-# 单文件上限 1MB（原始字节；落 Redis 时 base64 编码，实际占约 1.33MB）
-MAX_FILE_BYTES = 1_000_000
+# 单文件上限 200MB（原始字节；流式写入磁盘，不占后端内存）
+MAX_FILE_BYTES = 200 * 1024 * 1024
+# 流式拷贝块大小（1MB）
+COPY_CHUNK = 1024 * 1024
+
+# 文件名里的非法字符（Windows 保留字符 + 路径分隔符），统一替换为下划线
+_UNSAFE = re.compile(r'[\\/:*?"<>|\x00-\x1f]')
 
 
 def knowledge_key(site_id: str) -> str:
-    """知识库文档 Hash：field=doc_id, value=JSON 元数据（不含文件内容）。"""
+    """元数据 Hash：field=doc_id，value=JSON（不含文件内容与存储路径）。"""
     return f"ops:knowledge:{site_id}"
 
 
 def blob_key(site_id: str, doc_id: str) -> str:
-    """文件内容独立 key：元数据与内容分离，列表接口不必读出整份文件。
-    内容以 base64 文本存——平台 Redis 单例固定 decode_responses=True（全局约定），
-    二进制会被强行 utf-8 解码；base64 是唯一不动该契约的存法（体积 +33%）。"""
+    """旧版 Redis blob key（兼容读取历史文档，新文档不再写这里）。"""
     return f"ops:knowledge:{site_id}:blob:{doc_id}"
+
+
+def _storage_root() -> Path:
+    return Path(settings.ops_data_dir) / "knowledge"
+
+
+def _file_path(site_id: str, doc_id: str, filename: str) -> Path:
+    """磁盘路径：{root}/{site_id}/{doc_id}{ext}。扩展名保留给预览器/下载用，
+    正文用 doc_id 避免文件名中的中文/空格/特殊字符在文件系统上的兼容问题。"""
+    ext = Path(filename).suffix[:16]
+    return _storage_root() / site_id / f"{doc_id}{ext}"
 
 
 async def _require_site(site_id: str) -> None:
@@ -46,11 +74,45 @@ async def get_doc(site_id: str, doc_id: str) -> dict | None:
     return json.loads(raw) if raw else None
 
 
-async def get_blob(site_id: str, doc_id: str) -> bytes | None:
-    """取文件原始字节（阅读/下载用）。"""
-    await _require_site(site_id)
-    raw = await get_platform_redis().get(blob_key(site_id, doc_id))
-    return base64.b64decode(raw) if raw else None
+async def get_file(site_id: str, doc_id: str) -> tuple[bytes, str] | None:
+    """返回 (文件字节, 文件名)。兼容两类历史文档：
+    ① 旧版 Redis blob（base64）② 旧版 markdown 字段（合成 text/markdown）。
+    新文档在磁盘上，走 storage_file() 直接流式返回，不经此函数。"""
+    doc = await get_doc(site_id, doc_id)
+    if doc is None:
+        return None
+    r = get_platform_redis()
+
+    legacy_blob = await r.get(blob_key(site_id, doc_id))
+    if legacy_blob:
+        return base64.b64decode(legacy_blob), doc.get("filename") or "doc.md"
+    if doc.get("markdown"):
+        return doc["markdown"].encode("utf-8"), (doc.get("filename") or "doc.md")
+    return None
+
+
+def storage_file(site_id: str, doc_id: str, filename: str) -> Path | None:
+    """磁盘文件路径（存在才返回 Path）。新文档走这里流式返回。"""
+    f = _file_path(site_id, doc_id, filename)
+    return f if f.is_file() else None
+
+
+async def _unique_name(r, key: str, name: str, exclude_id: str | None = None) -> str:
+    """名称去重：重名时自动追加 -2 / -3 …（上传体验优先于报错）。
+    exclude_id = 编辑时排除自身。"""
+    if not name:
+        return name
+    taken = {
+        json.loads(raw).get("name")
+        for sid, raw in (await r.hgetall(key)).items()
+        if sid != exclude_id
+    }
+    if name not in taken:
+        return name
+    n = 2
+    while f"{name}-{n}" in taken:
+        n += 1
+    return f"{name}-{n}"
 
 
 async def create_doc(site_id: str, data: dict, content: bytes) -> dict:
@@ -60,16 +122,22 @@ async def create_doc(site_id: str, data: dict, content: bytes) -> dict:
     r = get_platform_redis()
     key = knowledge_key(site_id)
     doc_id = uuid.uuid4().hex[:8]
-    name = str(data.get("name") or "").strip()
-    await _check_name_unique(r, key, name)
+    name = await _unique_name(r, key, str(data.get("name") or "").strip())
+    filename = data.get("filename") or "file"
+
+    # 流式写盘：内容已在内存（FastAPI 已读完 multipart），直接一次写；
+    # 先写盘成功再写元数据——元数据是「文档存在」的唯一判据，反向会留孤儿文件
+    dest = _file_path(site_id, doc_id, filename)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_bytes(content)
+
     stored = {
         **{k: v for k, v in data.items() if k != "id"},
+        "name": name,
         "id": doc_id,
         "size": len(content),
         "created_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
     }
-    # 先写内容再写元数据：元数据是「文档存在」的唯一判据，反向顺序会产生无元数据的孤儿 blob
-    await r.set(blob_key(site_id, doc_id), base64.b64encode(content).decode("ascii"))
     await r.hset(key, doc_id, json.dumps(stored, ensure_ascii=False))
     await oplog.record(site_id, f"knowledge/{name}", "KNOWLEDGE_CREATED",
                        target=name, params={"doc_id": doc_id, "size": len(content)},
@@ -86,10 +154,10 @@ async def update_doc(site_id: str, doc_id: str, data: dict) -> dict | None:
     if not raw:
         return None
     old = json.loads(raw)
-    if "name" in data:
-        await _check_name_unique(r, key, str(data.get("name") or "").strip(), exclude_id=doc_id)
     new = {**old, **{k: v for k, v in data.items() if k not in ("id", "size", "created_at", "filename", "mime")},
            "id": doc_id}
+    if new["name"] != old.get("name"):
+        new["name"] = await _unique_name(r, key, new["name"], exclude_id=doc_id)
     before, after = oplog.diff(old, new)  # 只记变化键（仅元数据，内容不可变）
     await r.hset(key, doc_id, json.dumps(new, ensure_ascii=False))
     await oplog.record(site_id, f"knowledge/{new['name']}", "KNOWLEDGE_UPDATED",
@@ -108,16 +176,22 @@ async def delete_doc(site_id: str, doc_id: str) -> bool:
     doc = json.loads(raw)
     name = str(doc.get("name") or doc_id)
     await r.hdel(key, doc_id)
-    await r.delete(blob_key(site_id, doc_id))  # 内容随元数据一并清除，不留孤儿
+    await r.delete(blob_key(site_id, doc_id))  # 兼容期：旧版 blob 一并清除
+    f = _file_path(site_id, doc_id, doc.get("filename") or "")
+    f.unlink(missing_ok=True)  # 磁盘文件随元数据一并删除
     await oplog.record(site_id, f"knowledge/{name}", "KNOWLEDGE_DELETED",
-                       target=name, params={"doc_id": doc_id},
-                       before=_snap(doc))
+                       target=name, params={"doc_id": doc_id})
     return True
 
 
+def delete_site_files(site_id: str) -> None:
+    """删站时连带删除该站点整个文件目录（由 sites/service 在删站流程调用）。"""
+    root = _storage_root() / site_id
+    if root.exists():
+        shutil.rmtree(root, ignore_errors=True)
+
+
 async def _check_name_unique(r, key: str, name: str, exclude_id: str | None = None) -> None:
-    if not name:
-        return
     for rid, raw in (await r.hgetall(key)).items():
         if rid != exclude_id and json.loads(raw).get("name") == name:
             raise DuplicateDoc(f"name already in use: {name}")

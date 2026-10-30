@@ -118,6 +118,9 @@ async def delete_site(site_id: str) -> bool:
     keys.append(LOGS_KEY.format(site_id=site_id))  # 日志源配置
     keys.append(EVENTS_KEY.format(site_id=site_id))  # 事件时间轴
     await r.delete(*keys)
+    # 知识库文件在磁盘上（ops_data_dir/knowledge/{site_id}/），一并删除
+    from backend.app.modules.knowledge.service import delete_site_files
+    delete_site_files(site_id)
     # 采样序列随站点删除：该站点的趋势样本再无读者，留着只会成为孤儿 key
     # （写时 TTL 只救活被继续推送的序列，删站后无人推送）。站点段位置随
     # 资源类型不同有三种形态，逐一扫描：

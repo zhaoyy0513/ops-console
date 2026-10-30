@@ -202,13 +202,6 @@ def hygiene_issues(site: dict, resources: dict[str, list[dict]]) -> list[dict[st
     def enabled(cfgs: list[dict]) -> list[dict]:
         return [c for c in cfgs if c.get("enabled", True)]
 
-    # 站点无阈值时，未覆盖阈值的 Server 全部吃全局默认——提示但不告警
-    if not site.get("thresholds"):
-        for cfg in enabled(resources.get("servers", [])):
-            if not cfg.get("thresholds"):
-                add("server_no_thresholds", "info", "server", cfg,
-                    "no thresholds on resource or site; global defaults apply")
-
     for cfg in enabled(resources.get("devices", [])):
         if not cfg.get("field_map") and not cfg.get("custom_fields"):
             add("device_no_field_map", "info", "device", cfg,

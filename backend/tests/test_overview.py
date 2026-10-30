@@ -96,8 +96,8 @@ def test_hygiene_flags_each_check():
         "pages": [{"id": "p1", "name": "p1", "url": "", "html": ""}],
     }
     got = {(i["type"], i["severity"], i["resource_name"]) for i in hygiene_issues(site, resources)}
+    # server_no_thresholds 已按用户要求移除（提示读不懂、价值低）
     assert got == {
-        ("server_no_thresholds", "info", "s1"),
         ("device_no_field_map", "info", "d1"),
         ("redis_no_password", "warning", "r1"),
         ("mq_no_password", "warning", "m1"),

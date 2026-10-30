@@ -5,7 +5,6 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/ui/select'
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { TooltipContent, TooltipRoot, TooltipTrigger } from '@/components/ui/tooltip'
 import { message } from '@/lib/message'
 import OpsDataTable from '../../components/OpsDataTable.vue'
@@ -292,22 +291,6 @@ const worstQueueStatus = computed(() => {
   return worst || 'HEALTHY'
 })
 
-/** 地址分布（与队列表同源）：客户端按 address 聚合，而非 broker 的 AddressCount
- *  （后者含无队列地址，导致与表格条数对不上的观感） */
-const addrCount = computed(() => new Set(queues.value.map((q) => q.address).filter(Boolean)).size)
-const addrBreakdown = computed(() => {
-  const map = new Map<string, { address: string; count: number; msgs: number }>()
-  for (const q of queues.value) {
-    if (!q.address) continue
-    const row = map.get(q.address) ?? { address: q.address, count: 0, msgs: 0 }
-    row.count += 1
-    row.msgs += q.message_count ?? 0
-    map.set(q.address, row)
-  }
-  return [...map.values()].sort((a, b) => b.msgs - a.msgs)
-})
-const showAddrModal = ref(false)
-
 // ---------- 队列表（TanStack duck-type 列；排序/空态由 OpsDataTable 承担） ----------
 const queueColumns = computed<any[]>(() => [
   {
@@ -414,24 +397,7 @@ const queueColumns = computed<any[]>(() => [
   },
 ])
 
-/** 地址分布弹窗表（客户端按队列 address 聚合，按消息合计降序） */
-const addrColumns = computed<any[]>(() => [
-  {
-    accessorKey: 'address',
-    header: t('mq.addrCol'),
-    cell: (ctx: any) => {
-      const a = ctx.row.original.address as string
-      return h('span', { class: 'block max-w-[320px] truncate font-mono', title: a }, a)
-    },
-  },
-  { accessorKey: 'count', header: t('mq.addrQueueCount'), cell: (ctx: any) => ctx.row.original.count },
-  { accessorKey: 'msgs', header: t('mq.addrMsgSum'), cell: (ctx: any) => ctx.row.original.msgs },
-])
-
 // Esc / 遮罩点击不得关窗（对齐原 n-modal mask-closable=false / close-on-esc=false）
-function blockDismiss(e: Event) {
-  e.preventDefault()
-}
 
 /** 队列数卡片点击 → 平滑滚动到队列表并闪一圈主色边框（1s 后移除） */
 const queueCardRef = ref<ComponentPublicInstance | null>(null)
@@ -538,9 +504,6 @@ function ageColor(ms: number | null): string | undefined {
               <metric-card class="tile-click" hoverable :title="$t('mq.queuesCount')" :value="queues.length"
                 @click="scrollToQueues" />
               <metric-card :title="$t('mq.consumersCol')" :value="overview.consumers" />
-              <!-- 地址数：按队列表去重地址统计（非 broker AddressCount）；点击查看地址分布 -->
-              <metric-card class="tile-click" hoverable :title="$t('mq.addressesCol')" :value="addrCount"
-                @click="showAddrModal = true" />
             </div>
             <div class="kv">
               <span>{{ $t('mq.versionCol') }} <b>{{ overview.version ?? '-' }}</b></span>
@@ -586,18 +549,6 @@ function ageColor(ms: number | null): string | undefined {
         </CardContent>
       </Card>
 
-      <!-- 地址分布弹窗：客户端按队列 address 聚合，按消息合计降序 -->
-      <Dialog :open="showAddrModal" @update:open="showAddrModal = $event">
-        <DialogContent class="w-[640px] max-w-[94vw]" @escape-key-down="blockDismiss" @interact-outside="blockDismiss">
-          <DialogHeader><DialogTitle>{{ $t('mq.addrBreakdown') }}</DialogTitle></DialogHeader>
-          <OpsDataTable :columns="addrColumns" :data="addrBreakdown" row-key="address">
-            <template #empty><EmptyState :title="$t('mq.noMatch')" /></template>
-          </OpsDataTable>
-          <DialogFooter>
-            <Button variant="outline" size="sm" @click="showAddrModal = false">{{ $t('common.close') }}</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </template>
 
     <Card v-else-if="!loading">

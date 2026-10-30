@@ -70,11 +70,11 @@ export const helpContent: Record<HelpLang, Record<string, HelpSection>> = {
     knowledge: {
       title: '说明 · 知识库',
       lines: [
-        '站点专属文件库：任意格式文件（单文件 ≤ 1 MB），增删改查全在本页完成（不进站点资源抽屉）。',
+        '站点专属文件库：任意格式文件（单文件 ≤ 200 MB），增删改查全在本页完成（不进站点资源抽屉）。',
         '右上「上传文件」或直接把文件拖到页面任意位置；名称自动取文件名（去掉扩展名），可改。',
         '文件内容创建后不可修改，仅支持重命名 / 删除 / 查看（删除有倒计时确认）。',
         '查看走内置预览（PDF、Word、Excel、PPT、图片、音视频、文本等）；不支持的格式可下载或在新标签打开。',
-        '文件以 base64 存于平台 Redis（元数据与内容分开存），随站点删除一并清理。',
+        '文件存于后端磁盘（OPS_DATA_DIR 目录）（元数据与内容分开存），随站点删除一并清理。',
       ],
     },
 
@@ -162,11 +162,11 @@ export const helpContent: Record<HelpLang, Record<string, HelpSection>> = {
     knowledge: {
       title: 'Instructions · Knowledge',
       lines: [
-        'Site-specific file library: any format (≤ 1 MB per file), full CRUD on this page (not in the Sites resource drawer).',
+        'Site-specific file library: any format (≤ 200 MB per file), full CRUD on this page (not in the Sites resource drawer).',
         'Use "Upload file" or drop a file anywhere on the page; the name is auto-filled from the filename (extension stripped) and can be edited.',
         'File content is immutable after creation — only rename / delete / view (delete has a countdown confirm).',
         'Viewing uses the built-in previewer (PDF, Word, Excel, PowerPoint, images, audio/video, text); unsupported formats can be downloaded or opened in a new tab.',
-        'Files are stored as base64 in the platform Redis (metadata and content in separate keys) and removed with the site.',
+        'Files are stored on the backend disk (OPS_DATA_DIR) (metadata and content in separate keys) and removed with the site.',
       ],
     },
 

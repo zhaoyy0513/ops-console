@@ -16,7 +16,7 @@ import { useSiteStore } from '../../stores/site'
 import KnowledgeDialog from './KnowledgeDialog.vue'
 import KnowledgeViewer from './KnowledgeViewer.vue'
 import {
-  fileExt, humanSize, knowledgeApi, MAX_FILE_LABEL, previewKind, validateUpload, type KnowledgeDoc,
+  contentUrl, fileExt, humanSize, knowledgeApi, MAX_FILE_LABEL, previewKind, validateUpload, type KnowledgeDoc,
 } from './api'
 
 const { t } = useI18n()
@@ -197,9 +197,13 @@ const KIND_LABEL: Record<string, string> = {
                 <span class="pc-size">{{ humanSize(d.size) }}</span>
               </div>
 
-              <!-- hover 遮罩放在位移层内：与卡片一起抬起，不再露出缝隙 -->
+              <!-- hover 遮罩放在位移层内：与卡片一起抬起，不再露出缝隙。
+                   预览器不认识的格式（other）首按钮是「下载」而非「查看」 -->
               <div class="card-overlay" @click.stop>
-                <button type="button" class="ov-btn" @click="open(d)">{{ $t('knowledge.open') }}</button>
+                <a v-if="previewKind(d) === 'other'" :href="contentUrl(siteStore.currentSiteId ?? '', d.id)" :download="d.filename" class="ov-btn">
+                  {{ $t('knowledge.download') }}
+                </a>
+                <button v-else type="button" class="ov-btn" @click="open(d)">{{ $t('knowledge.open') }}</button>
                 <button type="button" class="ov-btn" @click="startRename(d)">{{ $t('knowledge.rename') }}</button>
                 <span class="ov-del">
                   <countdown-confirm :label="$t('knowledge.del')" :target="d.name" :on-confirm="() => remove(d)" />

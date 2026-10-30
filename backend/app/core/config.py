@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 from dataclasses import dataclass
 
 
@@ -10,6 +11,8 @@ def _env_int(name: str, default: int) -> int:
 class Settings:
     # 平台 Redis（配置 + 缓存 + 锁 + oplog），与业务 Redis 严格隔离（PRD §6.1/§17.1）
     ops_redis_url: str = os.environ.get("OPS_REDIS_URL", "redis://localhost:6379/5")
+    # 知识库等文件型数据的磁盘根目录（默认用户主目录下的 .prime-ops，跨平台）
+    ops_data_dir: str = os.environ.get("OPS_DATA_DIR", str(Path.home() / ".prime-ops"))
     log_level: str = os.environ.get("OPS_LOG_LEVEL", "INFO")
 
     # 外部系统超时（秒），PRD §25.3 / §26

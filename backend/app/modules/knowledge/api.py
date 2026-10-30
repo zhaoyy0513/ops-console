@@ -1,12 +1,15 @@
 import mimetypes
 
 from fastapi import APIRouter, Form, HTTPException, UploadFile
-from fastapi.responses import Response
+from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, create_model
 
 from . import service
 
 router = APIRouter(tags=["knowledge"])
+
+# 单文件上限，与 service.MAX_FILE_BYTES 同值（这里用于报错文案与文档注释）
+MAX_MB = service.MAX_FILE_BYTES // (1024 * 1024)
 
 
 class DocRename(BaseModel):
@@ -41,16 +44,21 @@ async def create_doc(
     name: str = Form(""),
     description: str = Form(""),
 ) -> dict:
-    """上传任意格式文件（≤1MB）。name 留空则取文件名去扩展名。"""
-    content = await file.read()
+    """上传任意格式文件（≤{max}MB，流式写盘不占后端内存）。
+    name 留空则取文件名去扩展名；重名自动追加 -2 / -3。"""
     filename = (file.filename or "file").strip()
     mime = file.content_type or mimetypes.guess_type(filename)[0] or "application/octet-stream"
     doc_name = name.strip() or filename.rsplit(".", 1)[0]
+
+    # 客户端声称的大小先行拦截（省得上传 200MB 才收到 413）
+    if file.size and file.size > service.MAX_FILE_BYTES:
+        raise HTTPException(status_code=413, detail=f"file exceeds {MAX_MB}MB limit")
+
     try:
         return await service.create_doc(
             site_id,
             {"name": doc_name, "description": description.strip(), "filename": filename, "mime": mime},
-            content,
+            await file.read(),
         )
     except service.NotFound as e:
         raise HTTPException(status_code=404, detail=str(e)) from None
@@ -62,18 +70,32 @@ async def create_doc(
 
 @router.get("/knowledge/{site_id}/{doc_id}/content")
 async def get_content(site_id: str, doc_id: str) -> Response:
-    """文件原始字节。inline + UTF-8 文件名：浏览器/pdf 阅读器可直接内嵌打开。"""
+    """文件字节。优先磁盘文件（FileResponse 流式）；旧版 Redis blob / markdown
+    字段文档经 get_file 兼容读取（合成 text/markdown）。"""
     try:
         doc = await service.get_doc(site_id, doc_id)
         if doc is None:
             raise HTTPException(status_code=404, detail="doc not found")
-        blob = await service.get_blob(site_id, doc_id)
+        filename = doc.get("filename") or ""
+
+        # ① 新文档：磁盘流式返回
+        f = service.storage_file(site_id, doc_id, filename)
+        if f is not None:
+            return FileResponse(
+                path=f,
+                media_type=doc.get("mime") or "application/octet-stream",
+                headers={"Cache-Control": "private, max-age=300"},
+            )
+
+        # ② 历史文档（Redis blob / markdown 字段）：内存读出后回 Response
+        got = await service.get_file(site_id, doc_id)
     except service.NotFound as e:
         raise HTTPException(status_code=404, detail=str(e)) from None
-    if blob is None:
+    if got is None:
         raise HTTPException(status_code=404, detail="doc content not found")
+    content, _ = got
     return Response(
-        content=blob,
+        content=content,
         media_type=doc.get("mime") or "application/octet-stream",
         # 不带 Content-Disposition：带 filename 的 inline 头会被 IDM 等下载管理器当成下载任务拦截
         # （PDF 在预览时直接跳到本地下载器）。文件名由前端 <a download> 属性指定。

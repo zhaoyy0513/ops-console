@@ -2,12 +2,15 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 from backend.app.core import oplog
+from backend.app.core.config import settings
 from backend.app.main import app
-from backend.app.modules.knowledge.service import blob_key, knowledge_key
+from backend.app.modules.knowledge.service import knowledge_key
 
 
 @pytest.fixture
-async def client(fake_platform_redis):
+async def client(fake_platform_redis, tmp_path, monkeypatch):
+    # 文件落盘指到临时目录：不污染用户主目录，测试结束自动清理
+    object.__setattr__(settings, "ops_data_dir", str(tmp_path))  # Settings 是 frozen dataclass
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
         yield c
 
@@ -23,9 +26,10 @@ def _upload(name: str = "手册", content: bytes = b"# hello", filename: str = "
 
 
 async def test_doc_upload_list_read_delete(client):
-    """上传任意文件 → 列表只见元数据 → 内容端点回原始字节 → 删除后 404。"""
+    """上传 → 列表只见元数据 → content 回原始字节（inline 头已移除防 IDM）→ 删除。"""
     await _make_site(client)
-    files, form = _upload(content="# 标题\n正文".encode(), filename="手册.md")
+    payload = "# 标题\n正文".encode()
+    files, form = _upload(content=payload, filename="手册.md")
 
     r = await client.post("/api/knowledge/sz-test", files=files, data=form)
     assert r.status_code == 201
@@ -33,19 +37,17 @@ async def test_doc_upload_list_read_delete(client):
     assert doc["name"] == "手册"
     assert doc["filename"] == "手册.md"
     assert doc["mime"] == "text/markdown"
-    assert doc["size"] == len("# 标题\n正文".encode())
-    assert "content" not in doc and "markdown" not in doc  # 元数据不含内容
+    assert doc["size"] == len(payload)
+    assert "markdown" not in doc  # 内容不在元数据里
 
     listed = (await client.get("/api/knowledge/sz-test")).json()
     assert [d["id"] for d in listed] == [doc["id"]]
 
-    # 内容端点：原始字节 + 原 MIME
+    # content：原始字节 + MIME；不带 Content-Disposition（防 IDM 拦截）
     r = await client.get(f"/api/knowledge/sz-test/{doc['id']}/content")
     assert r.status_code == 200
-    assert r.content == "# 标题\n正文".encode()
+    assert r.content == payload
     assert r.headers["content-type"].startswith("text/markdown")
-    # 不能带 Content-Disposition：带 filename 的 inline 头会被 IDM 等下载器拦截
-    # （PDF 预览会直接跳本地下载器）。文件名由前端 <a download> 指定。
     assert "content-disposition" not in r.headers
 
     assert (await client.delete(f"/api/knowledge/sz-test/{doc['id']}")).status_code == 204
@@ -53,8 +55,8 @@ async def test_doc_upload_list_read_delete(client):
     assert (await client.get(f"/api/knowledge/sz-test/{doc['id']}/content")).status_code == 404
 
 
-async def test_doc_name_defaults_to_filename(client):
-    """name 留空取文件名去扩展名。"""
+async def test_doc_name_defaults_to_filename_without_ext(client):
+    """名称自动取文件名去扩展名。"""
     await _make_site(client)
     files, _ = _upload(name="", content=b"x", filename="部署清单.pdf", mime="application/pdf")
     r = await client.post("/api/knowledge/sz-test", files=files, data={"name": "", "description": ""})
@@ -62,54 +64,49 @@ async def test_doc_name_defaults_to_filename(client):
     assert r.json()["name"] == "部署清单"
 
 
-async def test_doc_binary_content_roundtrip(client):
-    """二进制文件（非 UTF-8）原样存取——落库 base64、读回还原为原始字节。"""
+async def test_doc_name_auto_dedup_suffix(client):
+    """上传重名自动追加 -2 / -3（不报 409，上传体验优先）。"""
+    await _make_site(client)
+
+    async def up(name):
+        files, form = _upload(name=name, content=b"x")
+        return (await client.post("/api/knowledge/sz-test", files=files, data=form)).json()["name"]
+
+    assert await up("报告") == "报告"
+    assert await up("报告") == "报告-2"
+    assert await up("报告") == "报告-3"
+
+
+async def test_doc_binary_roundtrip(client):
+    """二进制原样存取（磁盘文件，不经 base64/文本转换）。"""
     await _make_site(client)
     payload = bytes(range(256)) * 4
     files, form = _upload(name="bin", content=payload, filename="a.bin",
                           mime="application/octet-stream")
-    r = await client.post("/api/knowledge/sz-test", files=files, data=form)
-    assert r.status_code == 201
-    doc_id = r.json()["id"]
+    doc_id = (await client.post("/api/knowledge/sz-test", files=files, data=form)).json()["id"]
     r = await client.get(f"/api/knowledge/sz-test/{doc_id}/content")
     assert r.content == payload
 
 
-async def test_doc_size_limit(client):
-    """1MB 上限：1_000_001 字节 413，1_000_000 字节放行。"""
-    await _make_site(client)
-    files, form = _upload(name="超限", content=b"x" * 1_000_001, filename="big.bin")
-    r = await client.post("/api/knowledge/sz-test", files=files, data=form)
-    assert r.status_code == 413
+async def test_doc_size_limit_200mb(fake_platform_redis):
+    """200MB 上限：service 层按实际字节复核，超限抛 FileTooLarge。"""
+    from backend.app.modules.knowledge import service as ks
 
-    files, form = _upload(name="边界", content=b"x" * 1_000_000, filename="edge.bin")
-    r = await client.post("/api/knowledge/sz-test", files=files, data=form)
-    assert r.status_code == 201
-    assert r.json()["size"] == 1_000_000
+    # 直接构造：create_doc 里 _require_site 需要站点存在，先建一个
+    from backend.app.modules.sites import service as sites_service
+    await sites_service.create_site({"id": "sz-limit", "name": "限流站"})
 
-
-async def test_doc_name_unique(client):
-    await _make_site(client)
-    files, form = _upload(name="A")
-    a_id = (await client.post("/api/knowledge/sz-test", files=files, data=form)).json()["id"]
-
-    files, form = _upload(name="A")
-    assert (await client.post("/api/knowledge/sz-test", files=files, data=form)).status_code == 409
-
-    files, form = _upload(name="B")
-    b_id = (await client.post("/api/knowledge/sz-test", files=files, data=form)).json()["id"]
-    assert (await client.put(f"/api/knowledge/sz-test/{b_id}", json={"name": "A"})).status_code == 409
-    assert (await client.put(f"/api/knowledge/sz-test/{b_id}", json={"name": "B"})).status_code == 200
-
-    # 同名约束只在站点内
-    await client.post("/api/sites", json={"id": "sz-other", "name": "另一站"})
-    files, form = _upload(name="A")
-    assert (await client.post("/api/knowledge/sz-other", files=files, data=form)).status_code == 201
-    assert a_id
+    ok = b"x" * 10
+    await ks.create_doc("sz-limit", {"name": "ok", "filename": "a.bin",
+                                     "mime": "application/octet-stream"}, ok)
+    with pytest.raises(ks.FileTooLarge):
+        await ks.create_doc("sz-limit", {"name": "超限", "filename": "b.bin",
+                                         "mime": "application/octet-stream"},
+                            b"x" * (ks.MAX_FILE_BYTES + 1))
 
 
-async def test_doc_rename_keeps_file_and_ignores_content_fields(client):
-    """PUT 仅改名：文件字节不变；提交 filename/mime/size 等字段被忽略（不可篡改元数据）。"""
+async def test_doc_rename_only_keeps_file(client):
+    """改名不动文件；filename/mime/size 提交被忽略（不可篡改元数据）。"""
     await _make_site(client)
     files, form = _upload(name="原名", content=b"payload", filename="a.txt", mime="text/plain")
     doc_id = (await client.post("/api/knowledge/sz-test", files=files, data=form)).json()["id"]
@@ -133,26 +130,17 @@ async def test_doc_on_missing_site_404(client):
     assert (await client.delete("/api/knowledge/no-such/d1")).status_code == 404
 
 
-async def test_delete_site_cascades_metadata_and_blobs(client, fake_platform_redis):
-    """删站连带清元数据 hash 与所有内容 key。"""
+async def test_delete_site_cascades_metadata(client, fake_platform_redis, tmp_path, monkeypatch):
+    """删站连带清元数据 hash 与磁盘目录。"""
+    object.__setattr__(settings, "ops_data_dir", str(tmp_path))  # Settings 是 frozen dataclass
     await _make_site(client)
     files, form = _upload(name="手册")
     doc_id = (await client.post("/api/knowledge/sz-test", files=files, data=form)).json()["id"]
     assert await fake_platform_redis.exists(knowledge_key("sz-test"))
-    assert await fake_platform_redis.exists(blob_key("sz-test", doc_id))
 
     assert (await client.delete("/api/sites/sz-test")).status_code == 204
     assert not await fake_platform_redis.exists(knowledge_key("sz-test"))
-    assert not await fake_platform_redis.exists(blob_key("sz-test", doc_id))
-
-
-async def test_doc_delete_removes_blob(client, fake_platform_redis):
-    """删文档同时删内容 key（不留孤儿 blob）。"""
-    await _make_site(client)
-    files, form = _upload(name="手册")
-    doc_id = (await client.post("/api/knowledge/sz-test", files=files, data=form)).json()["id"]
-    assert (await client.delete(f"/api/knowledge/sz-test/{doc_id}")).status_code == 204
-    assert not await fake_platform_redis.exists(blob_key("sz-test", doc_id))
+    assert not (tmp_path / "knowledge" / "sz-test" / f"{doc_id}.md").exists()
 
 
 async def test_doc_oplog_lifecycle(client):

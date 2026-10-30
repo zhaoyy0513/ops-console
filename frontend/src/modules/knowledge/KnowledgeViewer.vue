@@ -6,7 +6,7 @@ import '@file-viewer/vue3/dist/file-viewer3.css'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { useThemeStore } from '../../stores/theme'
-import { knowledgeApi, type KnowledgeDoc } from './api'
+import { contentUrl, type KnowledgeDoc } from './api'
 
 const props = defineProps<{ show: boolean; siteId: string; doc: KnowledgeDoc | null }>()
 const emit = defineEmits<{ (e: 'update:show', v: boolean): void }>()
@@ -20,7 +20,7 @@ const parsing = ref(false)
 const failed = ref(false)
 
 const url = computed(() =>
-  props.doc ? knowledgeApi.contentUrl(props.siteId, props.doc.id) : '',
+  props.doc ? contentUrl(props.siteId, props.doc.id) : '',
 )
 /** holo 是唯一浅色主题，其余深色——file-viewer 只认 light/dark */
 const viewerTheme = computed(() => (theme.theme === 'holo' ? 'light' : 'dark'))

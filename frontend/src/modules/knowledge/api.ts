@@ -11,6 +11,9 @@ export interface KnowledgeDoc {
   created_at: string
 }
 
+/** 文件原始字节地址（file-viewer 预览 / 浏览器直开 / <a download> 用） */
+export const contentUrl = (siteId: string, id: string) => `/api/knowledge/${siteId}/${id}/content`
+
 export const knowledgeApi = {
   list: (siteId: string) => api.get<KnowledgeDoc[]>(`/knowledge/${siteId}`),
   /** 上传：multipart（文件字节不进 JSON，省 base64 膨胀） */
@@ -25,14 +28,11 @@ export const knowledgeApi = {
   update: (siteId: string, id: string, data: Record<string, unknown>) =>
     api.put<KnowledgeDoc>(`/knowledge/${siteId}/${id}`, data),
   remove: (siteId: string, id: string) => api.delete<void>(`/knowledge/${siteId}/${id}`),
-  /** 文件原始字节地址（file-viewer 预览 / 浏览器直开用） */
-  contentUrl: (siteId: string, id: string) => `/api/knowledge/${siteId}/${id}/content`,
 }
 
-/** 单文件上限，与后端 MAX_FILE_BYTES 对齐（前端先行拦截，给出即时提示） */
-export const MAX_FILE_BYTES = 1_000_000
-/** 展示用上限文案：1_000_000 字节按 1024 进制是 976.6 KB，但产品口径就是 1 MB，直接写死 */
-export const MAX_FILE_LABEL = '1 MB'
+/** 单文件上限 200MB，与后端 MAX_FILE_BYTES 对齐（前端先行拦截，给出即时提示） */
+export const MAX_FILE_BYTES = 200 * 1024 * 1024
+export const MAX_FILE_LABEL = '200 MB'
 
 /** 扩展名（小写，无点）——用于图标与分类；MIME 不可靠时以扩展名为准 */
 export function fileExt(doc: Pick<KnowledgeDoc, 'filename' | 'mime'>): string {
