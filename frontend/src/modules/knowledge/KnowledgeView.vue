@@ -401,18 +401,18 @@ const KIND_LABEL: Record<string, string> = {
 .ov-btn {
   padding: 6px 14px;
   border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.55);
-  background: rgba(255, 255, 255, 0.12);
-  color: #fff;
+  border: 1px solid var(--ops-border);
+  background: var(--ops-surface-2);
+  color: var(--ops-text-1);
   font-size: 12px;
   cursor: pointer;
   transition: background 120ms ease;
 }
 .ov-btn:hover {
-  background: rgba(255, 255, 255, 0.28);
+  background: var(--ops-muted);
 }
 .ov-btn:focus-visible {
-  outline: 2px solid rgba(255, 255, 255, 0.8);
+  outline: 2px solid var(--ring);
   outline-offset: 2px;
 }
 .ov-del {

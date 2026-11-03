@@ -13,6 +13,7 @@ import json
 import re
 import shutil
 import uuid
+from collections.abc import AsyncIterator
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -115,32 +116,43 @@ async def _unique_name(r, key: str, name: str, exclude_id: str | None = None) ->
     return f"{name}-{n}"
 
 
-async def create_doc(site_id: str, data: dict, content: bytes) -> dict:
+async def create_doc(site_id: str, data: dict, chunks: AsyncIterator[bytes]) -> dict:
+    """流式写盘：chunks 是字节块异步迭代器（1MB/块，内存恒定）。
+
+    直接写正式路径，不落临时文件：元数据是「文档存在」的唯一判据，写坏的半份文件
+    没有元数据不会被读到（get_content 先查 Redis 再碰文件）；失败/超限时删掉残file。
+    先写盘成功再写元数据——反向会在元数据写失败时留孤儿文件。"""
     await _require_site(site_id)
-    if len(content) > MAX_FILE_BYTES:
-        raise FileTooLarge(len(content))
     r = get_platform_redis()
     key = knowledge_key(site_id)
     doc_id = uuid.uuid4().hex[:8]
     name = await _unique_name(r, key, str(data.get("name") or "").strip())
     filename = data.get("filename") or "file"
 
-    # 流式写盘：内容已在内存（FastAPI 已读完 multipart），直接一次写；
-    # 先写盘成功再写元数据——元数据是「文档存在」的唯一判据，反向会留孤儿文件
     dest = _file_path(site_id, doc_id, filename)
     dest.parent.mkdir(parents=True, exist_ok=True)
-    dest.write_bytes(content)
+    size = 0
+    try:
+        with dest.open("wb") as fh:
+            async for chunk in chunks:
+                size += len(chunk)
+                if size > MAX_FILE_BYTES:
+                    raise FileTooLarge(size)
+                fh.write(chunk)
+    except BaseException:
+        dest.unlink(missing_ok=True)  # 超限/磁盘满/中断，不留残file
+        raise
 
     stored = {
         **{k: v for k, v in data.items() if k != "id"},
         "name": name,
         "id": doc_id,
-        "size": len(content),
+        "size": size,
         "created_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
     }
     await r.hset(key, doc_id, json.dumps(stored, ensure_ascii=False))
     await oplog.record(site_id, f"knowledge/{name}", "KNOWLEDGE_CREATED",
-                       target=name, params={"doc_id": doc_id, "size": len(content)},
+                       target=name, params={"doc_id": doc_id, "size": size},
                        after=_snap(stored))
     return stored
 

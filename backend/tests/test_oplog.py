@@ -84,11 +84,18 @@ async def test_create_has_only_after_and_delete_only_before(fake_platform_redis)
     assert deleted["before"]["host"] == "h1" and deleted["before"]["password"] == "***"
 
 
+async def _chunks(data: bytes, size: int = 1024):
+    """create_doc 收字节块迭代器（流式写盘）。"""
+    for i in range(0, len(data), size):
+        yield data[i:i + size]
+
+
 async def test_knowledge_records_metadata_only(fake_platform_redis):
     await sites_service.create_site({"id": "s1", "name": "site"})
     content = b"%PDF-1.4 secret body"
     await knowledge_service.create_doc(
-        "s1", {"name": "手册", "description": "d", "filename": "a.pdf", "mime": "application/pdf"}, content
+        "s1", {"name": "手册", "description": "d", "filename": "a.pdf", "mime": "application/pdf"},
+        _chunks(content),
     )
     created = (await oplog.read_recent(1))[0]
     assert created["after"] == {

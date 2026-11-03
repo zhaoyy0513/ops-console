@@ -1,5 +1,9 @@
-import { describe, expect, it } from 'vitest'
-import { fileExt, humanSize, previewKind, validateUpload } from './api'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { fileExt, humanSize, knowledgeApi, previewKind, validateUpload } from './api'
+
+/** 共享 axios 实例：拦截 post 调用，断言上传配置透传（不真发请求） */
+const { postMock } = vi.hoisted(() => ({ postMock: vi.fn() }))
+vi.mock('../../api', () => ({ default: { post: postMock } }))
 
 const doc = (filename: string, mime = '') => ({ filename, mime })
 
@@ -41,5 +45,34 @@ describe('validateUpload', () => {
     const MB = 1024 * 1024
     expect(validateUpload(new File([new Uint8Array(200 * MB + 1)], 'b.bin'))).toBe('knowledge.fileTooLarge')
     expect(validateUpload(new File([new Uint8Array(200 * MB)], 'ok.bin'))).toBeNull()
+  })
+})
+
+describe('knowledgeApi.create 上传配置', () => {
+  beforeEach(() => postMock.mockReset())
+
+  it('timeout 覆盖为 0（不限总时长，200MB 慢网远超实例默认 15s）', () => {
+    postMock.mockResolvedValue({ id: 'x' })
+    void knowledgeApi.create('s1', new File([new Uint8Array(1)], 'a.txt'), 'n')
+    expect(postMock).toHaveBeenCalledWith('/knowledge/s1', expect.any(FormData), {
+      timeout: 0,
+      onUploadProgress: undefined,
+      signal: undefined,
+    })
+  })
+
+  it('进度回调与 AbortSignal 原样透传，供弹窗画进度条与取消', () => {
+    postMock.mockResolvedValue({ id: 'x' })
+    const onProgress = vi.fn()
+    const controller = new AbortController()
+    void knowledgeApi.create('s1', new File([new Uint8Array(1)], 'a.txt'), 'n', '', {
+      onProgress,
+      signal: controller.signal,
+    })
+    expect(postMock).toHaveBeenCalledWith('/knowledge/s1', expect.any(FormData), {
+      timeout: 0,
+      onUploadProgress: onProgress,
+      signal: controller.signal,
+    })
   })
 })

@@ -40,9 +40,9 @@ const MODULE_ICONS: Record<string, Component> = {
   netdiag: GitNetworkOutline,
 }
 
-// 主题三选一（neon/holo/synth，圆点切换在侧栏 footer）
+// 主题三选一（顺序 = 圆点顺序；见 stores/theme.ts）
 const THEMES: Array<{ key: OpsTheme; label: string }> = [
-  { key: 'neon', label: 'layout.themeNeon' },
+  { key: 'posthog', label: 'layout.themePosthog' },
   { key: 'holo', label: 'layout.themeHolo' },
   { key: 'synth', label: 'layout.themeSynth' },
 ]
@@ -199,7 +199,7 @@ function onSiteSelect(id: string | null) {
             <button class="collapse-btn" :title="collapsed ? $t('layout.expand') : $t('layout.collapse')" @click="collapsed = !collapsed">
               <component :is="collapsed ? ChevronRight : ChevronLeft" class="size-4" />
             </button>
-            <span v-if="!collapsed" class="build-stamp font-mono">b1030-1209</span>
+            <span v-if="!collapsed" class="build-stamp font-mono">b1103-1918</span>
           </div>
         </div>
       </aside>
@@ -231,10 +231,10 @@ function onSiteSelect(id: string | null) {
   width: 32px;
   height: 32px;
   border-radius: 50%;
-  /* spec Logo：径向渐变左上亮粉 → 紫 → 右下蓝，带轻微外发光 */
-  background: radial-gradient(circle at 30% 30%, #ec4899 0%, #a855f7 52%, #3b82f6 100%);
-  box-shadow: 0 0 12px rgba(168, 85, 247, 0.35);
-  color: #fff;
+  /* 品牌标记 = 主题主色实心圆 + 反色字母（三份 brief 的主色即品牌强调色，
+     不再写死粉紫渐变——那不属于任何一套设计语言） */
+  background: var(--primary);
+  color: var(--primary-foreground);
   font-size: 15px;
   font-weight: 700;
 }
@@ -270,14 +270,15 @@ function onSiteSelect(id: string | null) {
 .theme-dot.active {
   box-shadow: 0 0 0 2px var(--ops-bg), 0 0 0 4px var(--primary);
 }
-.dot-neon {
-  background: radial-gradient(circle at 30% 30%, #00f5ff, #7c3cff 55%, #ff2bd6);
+/* 圆点 = 各主题底色的微缩：对角切 = 底色 / 主色 */
+.dot-posthog {
+  background: linear-gradient(135deg, #eeefe9 55%, #f7a501 55%);
 }
 .dot-holo {
-  background: conic-gradient(#ff2bd6, #7c3cff, #00f5ff, #00f5aa, #ff2bd6);
+  background: linear-gradient(135deg, #fbfcff 55%, #7c3cff 55%);
 }
 .dot-synth {
-  background: linear-gradient(135deg, #ff3d81, #ffb703 55%, #00d1ff);
+  background: linear-gradient(135deg, #150a30 55%, #ff3d81 55%);
 }
 .sider-footer-row {
   display: flex;

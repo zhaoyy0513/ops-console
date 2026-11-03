@@ -53,8 +53,8 @@ const section = computed<HelpSection>(() => {
   width: 20px;
   height: 20px;
   border-radius: 50%;
-  border: 2px solid #0b63ce;
-  color: #0b63ce;
+  border: 2px solid var(--primary);
+  color: var(--primary);
   font-size: 12px;
   font-weight: 700;
   cursor: pointer;
@@ -64,7 +64,7 @@ const section = computed<HelpSection>(() => {
 }
 .help-btn:hover,
 .help-btn:focus-visible {
-  background: #0b63ce;
+  background: var(--primary);
   color: #fff;
   outline: none;
 }
@@ -81,7 +81,7 @@ const section = computed<HelpSection>(() => {
   width: 4px;
   height: 16px;
   border-radius: 2px;
-  background: #0b63ce;
+  background: var(--primary);
   flex: none;
 }
 

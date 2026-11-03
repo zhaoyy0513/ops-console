@@ -25,6 +25,12 @@ def _upload(name: str = "手册", content: bytes = b"# hello", filename: str = "
     return {"file": (filename, content, mime)}, {"name": name, "description": ""}
 
 
+async def _chunks(data: bytes, size: int = 1024):
+    """service.create_doc 收字节块迭代器（流式写盘），这里把 bytes 切块喂进去。"""
+    for i in range(0, len(data), size):
+        yield data[i:i + size]
+
+
 async def test_doc_upload_list_read_delete(client):
     """上传 → 列表只见元数据 → content 回原始字节（inline 头已移除防 IDM）→ 删除。"""
     await _make_site(client)
@@ -98,11 +104,48 @@ async def test_doc_size_limit_200mb(fake_platform_redis):
 
     ok = b"x" * 10
     await ks.create_doc("sz-limit", {"name": "ok", "filename": "a.bin",
-                                     "mime": "application/octet-stream"}, ok)
+                                     "mime": "application/octet-stream"}, _chunks(ok))
     with pytest.raises(ks.FileTooLarge):
         await ks.create_doc("sz-limit", {"name": "超限", "filename": "b.bin",
                                          "mime": "application/octet-stream"},
-                            b"x" * (ks.MAX_FILE_BYTES + 1))
+                            _chunks(b"x" * (ks.MAX_FILE_BYTES + 1)))
+
+
+async def test_doc_content_media_type_fixed_by_extension(client):
+    """存了 octet-stream mime 但文件名是 .pdf 的文档，content 必须按扩展名回 application/pdf，
+    否则浏览器把 PDF 当「下载」而非内嵌预览（tti/tps 这类历史/异常文档的根因）。"""
+    await _make_site(client)
+    # 上传端点 mime 取自 content_type：这里故意给 octet-stream，模拟历史脏数据
+    r = await client.post(
+        "/api/knowledge/sz-test",
+        files={"file": ("tps.pdf", b"%PDF-1.4", "application/octet-stream")},
+        data={"name": "tps", "description": ""},
+    )
+    assert r.status_code == 201
+    assert r.json()["mime"] == "application/octet-stream"
+
+    c = await client.get(f"/api/knowledge/sz-test/{r.json()['id']}/content")
+    assert c.status_code == 200
+    assert c.headers["content-type"].startswith("application/pdf")
+
+
+async def test_doc_oversize_stream_leaves_no_file(fake_platform_redis, tmp_path, monkeypatch):
+    """流式写盘中超限：抛 FileTooLarge，且正式路径不留残file（等它传完 200MB 才 413 是旧行为）。"""
+    from backend.app.modules.knowledge import service as ks
+    from backend.app.modules.sites import service as sites_service
+
+    monkeypatch.setattr(ks, "MAX_FILE_BYTES", 1024)
+    object.__setattr__(settings, "ops_data_dir", str(tmp_path))
+    await sites_service.create_site({"id": "sz-clean", "name": "清理站"})
+
+    async def overflow():
+        yield b"x" * 1024        # 第一块：正好 1024，不超
+        yield b"x" * 1024        # 第二块：累计 2048 > 1024 → 抛，第一块的残file 必须被删
+
+    with pytest.raises(ks.FileTooLarge):
+        await ks.create_doc("sz-clean", {"name": "超限", "filename": "a.bin",
+                                         "mime": "application/octet-stream"}, overflow())
+    assert not any((tmp_path / "knowledge" / "sz-clean").iterdir())
 
 
 async def test_doc_rename_only_keeps_file(client):

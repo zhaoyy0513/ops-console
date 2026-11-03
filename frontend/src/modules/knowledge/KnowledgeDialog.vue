@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import axios from 'axios'
 import { FileUp, X } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
+import { Progress } from '@/components/ui/progress'
 import { message } from '@/lib/message'
 import { humanSize, knowledgeApi, MAX_FILE_LABEL, validateUpload, type KnowledgeDoc } from './api'
 
@@ -25,6 +27,17 @@ const name = ref('')
 const description = ref('')
 const saving = ref(false)
 const dragOver = ref(false)
+/** 上传态：进度条 + 取消都吃这三个；total 为 0 时进度条退化为 0%（对端没给大小） */
+const uploading = ref(false)
+const uploaded = ref(0)
+const uploadTotal = ref(0)
+let uploadController: AbortController | null = null
+
+const uploadPct = computed(() =>
+  uploadTotal.value > 0 ? Math.min(100, Math.round((uploaded.value / uploadTotal.value) * 100)) : 0,
+)
+/** 上传中锁住表单：中途换文件/改名字会让进度与最终落盘的对象对不上 */
+const locked = computed(() => uploading.value)
 
 const isRename = computed(() => !!props.editing)
 
@@ -70,6 +83,20 @@ function onDrop(e: DragEvent) {
   if (f) acceptFile(f)
 }
 
+/** 中断上传（Cancel 按钮 / 关闭弹窗共用）。 */
+function abortUpload() {
+  uploadController?.abort()
+  uploadController = null
+}
+
+/** 统一关闭出口：右上角 X 与 footer 取消都走这里。
+    上传中关闭必须同时中断，否则请求在后台跑完——进度条已经消失，
+    用户看不到它其实成功了。 */
+function onOpenChange(v: boolean) {
+  if (!v && uploading.value) abortUpload()
+  emit('update:show', v)
+}
+
 async function save() {
   const trimmed = name.value.trim()
   if (!trimmed) {
@@ -85,26 +112,40 @@ async function save() {
         description: description.value.trim(),
       })
     } else {
-      if (!file.value) {
+      const f = file.value
+      if (!f) {
         message.error(t('knowledge.needFile'))
-        saving.value = false
         return
       }
-      await knowledgeApi.create(props.siteId, file.value, trimmed, description.value.trim())
+      uploading.value = true
+      uploaded.value = 0
+      uploadTotal.value = f.size
+      uploadController = new AbortController()
+      await knowledgeApi.create(props.siteId, f, trimmed, description.value.trim(), {
+        onProgress: (loaded, total) => {
+          uploaded.value = loaded
+          uploadTotal.value = total || f.size
+        },
+        signal: uploadController.signal,
+      })
     }
     message.success(t('knowledge.saved'))
     emit('update:show', false)
     emit('saved')
   } catch (e) {
-    message.error((e as Error).message)
+    // 取消是用户主动动作，不是错误：给提示不给红色报错
+    if (axios.isCancel(e)) message.info(t('knowledge.uploadCanceled'))
+    else message.error((e as Error).message)
   } finally {
+    uploading.value = false
+    uploadController = null
     saving.value = false
   }
 }
 </script>
 
 <template>
-  <Dialog :open="props.show" @update:open="(v: boolean) => emit('update:show', v)">
+  <Dialog :open="props.show" @update:open="onOpenChange">
     <DialogContent class="w-[560px] max-w-[92vw]" @escape-key-down.prevent @interact-outside.prevent>
       <DialogHeader>
         <DialogTitle>{{ isRename ? $t('knowledge.rename') : $t('knowledge.new') }}</DialogTitle>
@@ -118,11 +159,11 @@ async function save() {
         </div>
         <div class="grid grid-cols-[90px_1fr] items-center gap-3">
           <label class="text-xs text-muted-foreground">{{ $t('knowledge.nameLabel') }} <span class="text-destructive">*</span></label>
-          <Input v-model="name" />
+          <Input v-model="name" :disabled="locked" />
         </div>
         <div class="grid grid-cols-[90px_1fr] items-center gap-3">
           <label class="text-xs text-muted-foreground">{{ $t('knowledge.descLabel') }}</label>
-          <Input v-model="description" />
+          <Input v-model="description" :disabled="locked" />
         </div>
 
         <!-- 编辑态：内容不可变，只提示 -->
@@ -134,7 +175,7 @@ async function save() {
         <template v-else>
           <div
             class="file-drop"
-            :class="{ over: dragOver, picked: !!file }"
+            :class="{ over: dragOver, picked: !!file, locked }"
             @dragover.prevent="dragOver = true"
             @dragleave.prevent="dragOver = false"
             @drop.prevent="onDrop"
@@ -143,7 +184,10 @@ async function save() {
               <FileUp class="size-5 shrink-0" />
               <span class="min-w-0 flex-1 truncate text-sm">{{ file.name }}</span>
               <span class="shrink-0 text-xs text-muted-foreground">{{ humanSize(file.size) }}</span>
-              <button type="button" class="shrink-0 rounded p-1 hover:bg-accent" @click="file = null">
+              <button
+                type="button" class="shrink-0 rounded p-1 hover:bg-accent" :disabled="locked"
+                @click="file = null"
+              >
                 <X class="size-3.5" />
               </button>
             </template>
@@ -156,12 +200,29 @@ async function save() {
               <span class="text-xs text-muted-foreground">{{ $t('knowledge.dropHere') }}</span>
             </template>
           </div>
-          <p class="text-xs text-muted-foreground">{{ $t('knowledge.anyFormatHint', { max: MAX_FILE_LABEL }) }}</p>
+
+          <!-- 上传进度：确定性（有 File.size + 进度事件的 loaded），比转圈信息量大 -->
+          <div v-if="uploading" class="grid gap-1.5" role="status" aria-live="polite">
+            <Progress :value="uploadPct" class="h-2" />
+            <p class="text-xs text-muted-foreground">
+              {{ $t('knowledge.uploading', {
+                loaded: humanSize(uploaded), total: humanSize(uploadTotal), pct: uploadPct,
+              }) }}
+            </p>
+          </div>
+          <p v-else class="text-xs text-muted-foreground">
+            {{ $t('knowledge.anyFormatHint', { max: MAX_FILE_LABEL }) }}
+          </p>
         </template>
       </div>
 
       <div class="flex justify-end gap-2 pt-2">
-        <Button variant="outline" size="sm" @click="emit('update:show', false)">{{ $t('common.cancel') }}</Button>
+        <!-- 上传中点它 = 中断上传并关闭（走 onOpenChange，与右上角 X 同一出口） -->
+        <Button
+          variant="outline" size="sm" :disabled="saving && !uploading" @click="onOpenChange(false)"
+        >
+          {{ $t('common.cancel') }}
+        </Button>
         <Button size="sm" :disabled="saving" @click="save">{{ $t('common.save') }}</Button>
       </div>
     </DialogContent>
@@ -186,5 +247,10 @@ async function save() {
 }
 .file-drop.picked {
   border-style: solid;
+}
+/* 上传中锁住拖拽区：中途换文件会让进度与最终落盘的对象对不上 */
+.file-drop.locked {
+  pointer-events: none;
+  opacity: 0.75;
 }
 </style>

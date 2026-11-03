@@ -5,7 +5,7 @@ import { FileViewer } from '@file-viewer/vue3'
 import '@file-viewer/vue3/dist/file-viewer3.css'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { useThemeStore } from '../../stores/theme'
+import { isDarkTheme, useThemeStore } from '../../stores/theme'
 import { contentUrl, type KnowledgeDoc } from './api'
 
 const props = defineProps<{ show: boolean; siteId: string; doc: KnowledgeDoc | null }>()
@@ -22,8 +22,8 @@ const failed = ref(false)
 const url = computed(() =>
   props.doc ? contentUrl(props.siteId, props.doc.id) : '',
 )
-/** holo 是唯一浅色主题，其余深色——file-viewer 只认 light/dark */
-const viewerTheme = computed(() => (theme.theme === 'holo' ? 'light' : 'dark'))
+/** 只有 synth 深色，其余浅色——file-viewer 只认 light/dark */
+const viewerTheme = computed(() => (isDarkTheme(theme.theme) ? 'dark' : 'light'))
 
 // 每次打开重置状态；关闭后卸载组件（v-if），file-viewer 会自行销毁渲染会话
 let watchdog: ReturnType<typeof setTimeout> | null = null

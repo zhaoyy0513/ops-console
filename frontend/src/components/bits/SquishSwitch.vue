@@ -53,7 +53,8 @@ const emit = defineEmits<{ (e: 'update:value', v: boolean): void }>()
   width: 14px;
   height: 14px;
   border-radius: 50%;
-  background: #fff;
+  /* 滑块取「主色上的内容色」：与轨道反相，任何主题都看得见 */
+  background: var(--primary-foreground);
   transform: translateY(-50%);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
   /* 回弹曲线：over-shoot 产生弹性感 */

@@ -1,4 +1,5 @@
 import mimetypes
+from collections.abc import AsyncIterator
 
 from fastapi import APIRouter, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, Response
@@ -44,21 +45,26 @@ async def create_doc(
     name: str = Form(""),
     description: str = Form(""),
 ) -> dict:
-    """上传任意格式文件（≤{max}MB，流式写盘不占后端内存）。
+    """上传任意格式文件（≤{max}MB，1MB 分块流式写盘不占后端内存）。
     name 留空则取文件名去扩展名；重名自动追加 -2 / -3。"""
     filename = (file.filename or "file").strip()
     mime = file.content_type or mimetypes.guess_type(filename)[0] or "application/octet-stream"
     doc_name = name.strip() or filename.rsplit(".", 1)[0]
 
-    # 客户端声称的大小先行拦截（省得上传 200MB 才收到 413）
+    # 已收字节数（multipart 解析时累计）先行拦截，省得白传 200MB 才收到 413
     if file.size and file.size > service.MAX_FILE_BYTES:
         raise HTTPException(status_code=413, detail=f"file exceeds {MAX_MB}MB limit")
+
+    async def _chunks() -> AsyncIterator[bytes]:
+        # Starlette 1.6 的 UploadFile 没有 chunks()/stream()，只有 read(size)
+        while buf := await file.read(service.COPY_CHUNK):
+            yield buf
 
     try:
         return await service.create_doc(
             site_id,
             {"name": doc_name, "description": description.strip(), "filename": filename, "mime": mime},
-            await file.read(),
+            _chunks(),
         )
     except service.NotFound as e:
         raise HTTPException(status_code=404, detail=str(e)) from None
@@ -66,6 +72,16 @@ async def create_doc(
         raise HTTPException(status_code=409, detail=str(e)) from None
     except service.FileTooLarge as e:
         raise HTTPException(status_code=413, detail=str(e)) from None
+
+
+def _served_media_type(filename: str, mime: str | None) -> str:
+    """返回给浏览器的 MIME 以文件名扩展名为准修正：历史/异常上传的文档可能存成
+    octet-stream 或空 mime，会让 PDF 等内容被浏览器当「下载」而非内嵌预览。
+    存了有效 mime（非 octet-stream）则沿用；否则按扩展名猜，猜不到才落回 octet-stream。"""
+    mime = (mime or "").strip()
+    if mime and mime != "application/octet-stream":
+        return mime
+    return mimetypes.guess_type(filename)[0] or mime or "application/octet-stream"
 
 
 @router.get("/knowledge/{site_id}/{doc_id}/content")
@@ -77,13 +93,14 @@ async def get_content(site_id: str, doc_id: str) -> Response:
         if doc is None:
             raise HTTPException(status_code=404, detail="doc not found")
         filename = doc.get("filename") or ""
+        media_type = _served_media_type(filename, doc.get("mime"))
 
         # ① 新文档：磁盘流式返回
         f = service.storage_file(site_id, doc_id, filename)
         if f is not None:
             return FileResponse(
                 path=f,
-                media_type=doc.get("mime") or "application/octet-stream",
+                media_type=media_type,
                 headers={"Cache-Control": "private, max-age=300"},
             )
 
@@ -96,7 +113,7 @@ async def get_content(site_id: str, doc_id: str) -> Response:
     content, _ = got
     return Response(
         content=content,
-        media_type=doc.get("mime") or "application/octet-stream",
+        media_type=media_type,
         # 不带 Content-Disposition：带 filename 的 inline 头会被 IDM 等下载管理器当成下载任务拦截
         # （PDF 在预览时直接跳到本地下载器）。文件名由前端 <a download> 属性指定。
         headers={"Cache-Control": "private, max-age=300"},

@@ -11,21 +11,19 @@ body {
   font-family: var(--ops-font-sans);
   font-size: 14px;
   color: var(--ops-text-1);
-  /* 马卡龙极光：多层径向渐变（token 内含底色），fixed 保证滚动时色块不跟着跑 */
+  /* 页面底色来自 token（holo/synth 带极光，posthog 纯色），fixed 保证滚动时不动 */
   background: var(--ops-aurora) fixed;
 }
 
-/* 玻璃卡片渐变标题（CardTitle 用）：紫粉渐变填充文字 */
+/* 卡片标题：各主题用自己的 --ops-gradient-text 着色。
+   background-clip:text 把背景裁成字形，color:transparent 让字形显出背景色。 */
 .ops-gradient-text {
   background: var(--ops-gradient-text);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
 }
-/* 霓虹系主题标题微外发光（holo 浅色不带） */
-[data-theme='neon'] .ops-gradient-text {
-  text-shadow: 0 0 18px rgba(0, 245, 255, 0.35);
-}
+/* synth 深色玻璃主题标题微外发光（holo/posthog 浅色不带） */
 [data-theme='synth'] .ops-gradient-text {
   text-shadow: 0 0 16px rgba(255, 61, 129, 0.4);
 }
@@ -47,10 +45,8 @@ body {
   align-items: center;
   gap: 8px 16px;
   padding: 0 16px;
-  /* 毛玻璃 chrome：token 面色已是半透明，这里补 blur 与细描边 */
+  /* chrome 用不透明面色 + 细描边分层（三份 brief 均无玻璃拟态） */
   background: var(--ops-surface);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--ops-border);
 }
 
@@ -73,7 +69,7 @@ body {
 }
 
 .build-stamp {
-  color: #6b7280;
+  color: var(--ops-text-3);
 }
 .app-sider {
   position: sticky;
@@ -82,8 +78,6 @@ body {
   width: 220px;
   flex: none;
   background: var(--ops-surface);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
   border-right: 1px solid var(--ops-border);
   display: flex;
   flex-direction: column;

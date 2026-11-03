@@ -16,13 +16,28 @@ export const contentUrl = (siteId: string, id: string) => `/api/knowledge/${site
 
 export const knowledgeApi = {
   list: (siteId: string) => api.get<KnowledgeDoc[]>(`/knowledge/${siteId}`),
-  /** 上传：multipart（文件字节不进 JSON，省 base64 膨胀） */
-  create: (siteId: string, file: File, name: string, description = '') => {
+  /** 上传：multipart（文件字节不进 JSON，省 base64 膨胀）。
+   * timeout:0 = 不限总时长（200MB 慢网传输会远超实例默认的 15s；断连由 nginx
+   * 的 client_body_timeout 60s 兜底）；onProgress/signal 供调用方画进度条与取消。 */
+  create: (
+    siteId: string,
+    file: File,
+    name: string,
+    description = '',
+    opts: {
+      onProgress?: (loaded: number, total: number) => void
+      signal?: AbortSignal
+    } = {},
+  ) => {
     const fd = new FormData()
     fd.append('file', file)
     fd.append('name', name)
     fd.append('description', description)
-    return api.post<KnowledgeDoc>(`/knowledge/${siteId}`, fd)
+    return api.post<KnowledgeDoc>(`/knowledge/${siteId}`, fd, {
+      timeout: 0,
+      onUploadProgress: opts.onProgress,
+      signal: opts.signal,
+    })
   },
   /** 编辑仅改名（文件内容创建后不可变） */
   update: (siteId: string, id: string, data: Record<string, unknown>) =>
