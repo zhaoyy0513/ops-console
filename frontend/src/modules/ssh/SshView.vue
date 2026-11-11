@@ -236,6 +236,7 @@ async function remove(item: SshScript) {
   if (!siteStore.currentSiteId) return
   try {
     await sshApi.remove(siteStore.currentSiteId, item.id)
+    removeTarget.value = null // 成功才关窗；失败保留弹窗允许重试
     message.success(t('ssh.deleted'))
     await load()
   } catch (e) {

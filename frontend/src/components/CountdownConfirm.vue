@@ -11,6 +11,7 @@ import ClickSpark from './bits/ClickSpark.vue'
  * 危险操作倒计时确认框（PRD §11.5）。
  * 倒计时只是 UI 防误操作机制，不是安全机制——后端以操作白名单 + oplog 兜底。
  * onConfirm 返回 Promise：确认按钮 pending 置灰防连点（清空队列/kill 等 in-flight 保护）。
+ * 调用方负责业务 toast；失败时必须 throw——组件 catch 后解锁并保持弹窗，允许重试。
  */
 const { t } = useI18n()
 const props = defineProps<{
