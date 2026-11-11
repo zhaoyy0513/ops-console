@@ -21,7 +21,6 @@ const props = defineProps<{
   width?: string
   onConfirm?: () => Promise<unknown> | void
 }>()
-const emit = defineEmits<{ (e: 'confirm'): void }>()
 
 const show = ref(false)
 const remaining = ref(props.seconds ?? 3)

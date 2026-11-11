@@ -57,6 +57,20 @@ describe('CountdownConfirm', () => {
     expect(document.body.textContent).toContain('Please wait 5s...')
   })
 
+  it('onConfirm 失败：保持弹窗并允许重试', async () => {
+    const onConfirm = vi.fn().mockRejectedValueOnce(new Error('delete failed')).mockResolvedValue(undefined)
+    await open(5, onConfirm)
+    const modalConfirm = bodyButtons().find((b) => b.textContent?.trim() === 'Delete')!
+    await vi.advanceTimersByTimeAsync(5000)
+    modalConfirm.click()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(document.body.querySelector('[role="alertdialog"]')).not.toBeNull()
+    await vi.advanceTimersByTimeAsync(0)
+    modalConfirm.click()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(onConfirm).toHaveBeenCalledTimes(2)
+  })
+
   it('escape and overlay clicks do not dismiss while countdown runs', async () => {
     await open(5)
     // cancelable 必须显式开启，否则 preventDefault 无效（真实键盘事件可取消）
