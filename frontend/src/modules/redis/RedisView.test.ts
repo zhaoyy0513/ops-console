@@ -5,8 +5,8 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { computed } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { i18n } from '../../i18n'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { i18n, setLocale } from '../../i18n'
 import { useSiteStore } from '../../stores/site'
 
 vi.mock('@/lib/message', () => ({ message: { success: vi.fn(), error: vi.fn(), warning: vi.fn(), info: vi.fn() } }))
@@ -37,6 +37,7 @@ vi.mock('../sites/api', () => ({
 
 import RedisView from './RedisView.vue'
 import DiffJsonEditor from '../../components/DiffJsonEditor.vue'
+import { listKeys } from './api'
 
 async function boot() {
   const store = useSiteStore()
@@ -106,6 +107,58 @@ describe('RedisView save validation regression', () => {
     expect(w.findAll('.cm-editor').length).toBe(2) // 左=已存新值，右=同值
     expect(w.findAll('.cm-changedLine').length).toBe(0) // 无 diff 高亮
     expect(stored).toContain('"a": 2')
+    w.unmount()
+  })
+})
+
+describe('RedisView delete feedback', () => {
+  beforeEach(() => {
+    setLocale('en') // 断言基于英文 Delete 文案（组件文案已迁移 i18n）
+    setActivePinia(createPinia())
+    document.body.innerHTML = ''
+    stored = '{\n  "a": 1\n}'
+    operateMock.mockClear()
+    vi.mocked(message.error).mockClear()
+    vi.mocked(message.success).mockClear()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+    setLocale('zh')
+  })
+
+  async function openDeleteConfirm() {
+    btn('Delete')!.click()
+    await flushPromises()
+    await vi.advanceTimersByTimeAsync(3000)
+    const dialog = document.body.querySelector('[role="alertdialog"]')!
+    return [...dialog.querySelectorAll('button')].find((b) => b.textContent?.trim() === 'Delete')!
+  }
+
+  it('删除成功：调用 operate(delete) + message.success', async () => {
+    vi.useFakeTimers()
+    const w = await boot()
+    const confirmBtn = await openDeleteConfirm()
+    confirmBtn.click()
+    await flushPromises()
+    expect(operateMock).toHaveBeenCalledWith('sz', 'r1', expect.objectContaining({ op: 'delete', key: 'jk' }))
+    expect(message.success).toHaveBeenCalledWith('Deleted jk')
+    expect(document.body.querySelector('[role="alertdialog"]')).toBeNull()
+    expect(w.find('.detail-actions').exists()).toBe(false)
+    expect(listKeys).toHaveBeenCalled()
+    w.unmount()
+  })
+
+  it('删除失败：message.error 且确认框保留', async () => {
+    operateMock.mockRejectedValueOnce(new Error('delete failed'))
+    vi.useFakeTimers()
+    const w = await boot()
+    const confirmBtn = await openDeleteConfirm()
+    confirmBtn.click()
+    await flushPromises()
+    expect(operateMock).toHaveBeenCalled()
+    expect(message.error).toHaveBeenCalledWith('delete failed')
+    expect(document.body.querySelector('[role="alertdialog"]')).not.toBeNull()
     w.unmount()
   })
 })

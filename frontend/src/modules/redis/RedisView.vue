@@ -401,13 +401,18 @@ async function saveValue() {
 async function deleteKey() {
   const d = detail.value
   if (!d || !siteStore.currentSiteId || !instanceId.value) return
-  await operate(siteStore.currentSiteId, instanceId.value, {
-    op: 'delete', db: db.value, key: d.key,
-  })
-  message.success(t('redis.deleted', { key: d.key }))
-  clearDetail()
-  search(true)
-  loadInfo()
+  try {
+    await operate(siteStore.currentSiteId, instanceId.value, {
+      op: 'delete', db: db.value, key: d.key,
+    })
+    message.success(t('redis.deleted', { key: d.key }))
+    clearDetail()
+    search(true)
+    loadInfo()
+  } catch (e) {
+    message.error((e as Error).message)
+    throw e
+  }
 }
 
 async function applyTtl() {
@@ -825,7 +830,7 @@ const INFO_METRICS = computed(() => {
               />
               <Button variant="outline" size="sm" @click="applyTtl">{{ $t('redis.applyTtl') }}</Button>
               <div class="flex-1" />
-              <countdown-confirm :label="$t('common.delete')" :target="detail.key" :seconds="3" @confirm="deleteKey" />
+              <countdown-confirm :label="$t('common.delete')" :target="detail.key" :seconds="3" :on-confirm="deleteKey" />
               <!-- 不禁用按钮：点击时校验并弹明确错误（禁用会让用户不知道为何点不了）；
                    校验必须在开弹窗前做（见 openSaveConfirm 注释） -->
               <Button size="sm" :disabled="saving" @click="openSaveConfirm">
