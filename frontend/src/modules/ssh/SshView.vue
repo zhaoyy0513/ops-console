@@ -234,9 +234,13 @@ async function save() {
 
 async function remove(item: SshScript) {
   if (!siteStore.currentSiteId) return
-  await sshApi.remove(siteStore.currentSiteId, item.id)
-  message.success(t('ssh.deleted'))
-  await load()
+  try {
+    await sshApi.remove(siteStore.currentSiteId, item.id)
+    message.success(t('ssh.deleted'))
+    await load()
+  } catch (e) {
+    message.error((e as Error).message)
+  }
 }
 
 /** 删除确认弹窗（替代 NPopconfirm）：行内按钮只置目标，弹窗确认才执行 */

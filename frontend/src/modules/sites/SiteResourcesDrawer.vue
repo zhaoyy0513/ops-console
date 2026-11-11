@@ -166,6 +166,8 @@ async function remove(item: ResourceConfig) {
     await sitesApi.removeResource(siteId.value, activeType.value, item.id)
     message.success(t('sites.deleted'))
     await load()
+  } catch (e) {
+    message.error((e as Error).message)
   } finally {
     deleting.value = false
   }
