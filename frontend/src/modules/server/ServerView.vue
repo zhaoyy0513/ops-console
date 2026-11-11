@@ -218,6 +218,7 @@ async function killZombie(z: ZombieGroup) {
     load(true) // 静默刷新卡片上的计数
   } catch (e) {
     messageApi.error((e as Error).message)
+    throw e
   }
 }
 

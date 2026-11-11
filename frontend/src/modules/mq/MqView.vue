@@ -280,6 +280,7 @@ async function emptyQueue(q: QueueRow) {
     loadHeavy()
   } catch (e) {
     messageBus.error((e as Error).message)
+    throw e
   }
 }
 

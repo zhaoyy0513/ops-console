@@ -84,9 +84,14 @@ function open(d: KnowledgeDoc) {
 async function remove(d: KnowledgeDoc) {
   const siteId = siteStore.currentSiteId
   if (!siteId) return
-  await knowledgeApi.remove(siteId, d.id)
-  message.success(t('knowledge.deleted'))
-  await load()
+  try {
+    await knowledgeApi.remove(siteId, d.id)
+    message.success(t('knowledge.deleted'))
+    await load()
+  } catch (e) {
+    message.error((e as Error).message)
+    throw e
+  }
 }
 
 // ---- 整域拖放：任意格式文件直接进新建弹窗 ----

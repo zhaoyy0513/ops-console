@@ -57,9 +57,14 @@ function startEdit(p: PageResource) {
 async function remove(p: PageResource) {
   const siteId = siteStore.currentSiteId
   if (!siteId) return
-  await pageApi.remove(siteId, p.id)
-  message.success(t('page.deleted'))
-  await load()
+  try {
+    await pageApi.remove(siteId, p.id)
+    message.success(t('page.deleted'))
+    await load()
+  } catch (e) {
+    message.error((e as Error).message)
+    throw e
+  }
 }
 
 /** 打开一律新标签：链接直开；HTML 文件经 sandbox 壳隔离
