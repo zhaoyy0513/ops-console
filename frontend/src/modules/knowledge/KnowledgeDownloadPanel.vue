@@ -55,13 +55,13 @@ function statusText(task: KnowledgeDownloadTask): string {
 
 <style scoped>
 .download-panel {
-  position: absolute;
-  top: 12px;
-  right: 12px;
+  position: fixed;
+  top: 76px;
+  right: 16px;
   z-index: 20;
   width: 320px;
   max-width: calc(100vw - 32px);
-  max-height: 60vh;
+  max-height: calc(100vh - 92px);
   overflow-y: auto;
   display: flex;
   flex-direction: column;

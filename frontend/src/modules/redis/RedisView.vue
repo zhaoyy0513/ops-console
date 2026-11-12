@@ -628,10 +628,6 @@ const INFO_METRICS = computed(() => {
     { label: infoT('ops'), value: fmtNum(i.ops_per_sec), tip: infoTip('ops'), tone: '' },
     { label: infoT('persistence'), value: persist, tip: infoTip('persistence'), tone: persistBad ? 'crit' : '' },
     { label: t('redis.info.keys.label', { db: db.value }), value: fmtNum(i.db_size), tip: infoTip('keys'), tone: '' },
-    { label: infoT('expired'), value: fmtNum(i.expired_keys), tip: infoTip('expired'), tone: '' },
-    { label: infoT('commands'), value: fmtNum(i.total_commands_processed), tip: infoTip('commands'), tone: '' },
-    { label: infoT('memoryPeak'), value: fmtBytes(i.memory_peak), tip: infoTip('memoryPeak'), tone: '' },
-    { label: infoT('version'), value: i.version ?? '-', tip: infoTip('version'), tone: '' },
   ]
 })
 </script>
@@ -688,11 +684,12 @@ const INFO_METRICS = computed(() => {
         </Button>
         <tab-help topic="redis" />
         <span class="poll-note">{{ $t('redis.autoRefresh') }}</span>
+        <span v-if="info" class="version-info" :title="info.version ?? undefined">v{{ info.version ?? '-' }}</span>
       </div>
     </Card>
 
     <Card v-if="info" class="p-3">
-      <div class="flex flex-wrap items-center gap-5">
+      <div class="flex flex-nowrap items-center gap-4 overflow-x-auto pb-1">
         <!-- 从节点徽标：slave 才显示（主从只读副本，写入会失败） -->
         <Badge v-if="info.role === 'slave'" variant="warning" size="sm">{{ $t('redis.info.roleSlave') }}</Badge>
         <TooltipProvider>
@@ -978,6 +975,15 @@ const INFO_METRICS = computed(() => {
 .poll-note {
   color: var(--ops-text-3);
   font-size: 12px;
+}
+.version-info {
+  margin-left: auto;
+  flex: none;
+  color: var(--ops-text-3);
+  font-size: 12px;
+  font-family: var(--ops-font-mono);
+  border-left: 1px solid var(--ops-border);
+  padding-left: 8px;
 }
 .keys-count {
   color: var(--ops-text-3);

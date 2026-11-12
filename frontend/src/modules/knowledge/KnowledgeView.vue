@@ -435,9 +435,6 @@ const KIND_LABEL: Record<string, string> = {
 .ov-del {
   display: inline-flex;
 }
-.ov-del :deep(button) {
-  border-radius: 999px;
-}
 /* ---- 分页 ---- */
 .pager {
   display: flex;
