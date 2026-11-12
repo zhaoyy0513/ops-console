@@ -28,7 +28,7 @@ instance.interceptors.response.use(
 export interface RequestConfig {
   timeout?: number
   /** 上传进度回调（已传字节, 总字节）；总字节为 0 表示对端没给 Content-Length */
-  onUploadProgress?: (loaded: number, total: number) => void
+  onUploadProgress?: (e: ProgressEvent) => void
   /** 传入 AbortController.signal 即可中止请求 */
   signal?: AbortSignal
 }

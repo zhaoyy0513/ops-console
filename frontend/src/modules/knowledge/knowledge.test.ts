@@ -61,7 +61,7 @@ describe('knowledgeApi.create 上传配置', () => {
     })
   })
 
-  it('进度回调与 AbortSignal 原样透传，供弹窗画进度条与取消', () => {
+  it('进度回调把 axios ProgressEvent 转成 (loaded,total)，避免 NaN', () => {
     postMock.mockResolvedValue({ id: 'x' })
     const onProgress = vi.fn()
     const controller = new AbortController()
@@ -69,10 +69,9 @@ describe('knowledgeApi.create 上传配置', () => {
       onProgress,
       signal: controller.signal,
     })
-    expect(postMock).toHaveBeenCalledWith('/knowledge/s1', expect.any(FormData), {
-      timeout: 0,
-      onUploadProgress: onProgress,
-      signal: controller.signal,
-    })
+    const cfg = postMock.mock.calls[0][2] as { onUploadProgress: (e: ProgressEvent) => void; signal: AbortSignal }
+    expect(cfg.signal).toBe(controller.signal)
+    cfg.onUploadProgress({ loaded: 5, total: 10 } as ProgressEvent)
+    expect(onProgress).toHaveBeenCalledWith(5, 10)
   })
 })

@@ -223,7 +223,9 @@ async function save() {
         >
           {{ $t('common.cancel') }}
         </Button>
-        <Button size="sm" :disabled="saving" @click="save">{{ $t('common.save') }}</Button>
+        <Button size="sm" :disabled="saving" @click="save">
+          {{ isRename ? $t('common.save') : $t('knowledge.upload') }}
+        </Button>
       </div>
     </DialogContent>
   </Dialog>

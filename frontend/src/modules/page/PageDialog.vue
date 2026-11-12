@@ -1,11 +1,10 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Upload } from 'lucide-vue-next'
+import { Upload, X } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
-import { Textarea } from '@/components/ui/textarea'
 import { message } from '@/lib/message'
 import { pageApi, derivePageKind, type PageResource } from './api'
 
@@ -17,6 +16,9 @@ type Kind = 'url' | 'html'
 const kind = ref<Kind>('url')
 const form = ref({ name: '', description: '', url: '', html: '' })
 const saving = ref(false)
+const dragOver = ref(false)
+const file = ref<File | null>(null)
+const fileInput = ref<HTMLInputElement | null>(null)
 
 watch(
   () => [props.show, props.editing] as const,
@@ -27,33 +29,63 @@ watch(
       name: item?.name ?? '', description: item?.description ?? '',
       url: item?.url ?? '', html: item?.html ?? '',
     }
+    file.value = null
+    dragOver.value = false
+    if (fileInput.value) fileInput.value.value = ''
   },
   { immediate: true },
 )
+
+// 切走时清掉 HTML 内容与已选文件，避免下次切回/重开时残留
+watch(kind, (v) => {
+  if (v !== 'html') {
+    form.value.html = ''
+    file.value = null
+    if (fileInput.value) fileInput.value.value = ''
+  }
+})
 
 const KINDS: Array<{ key: Kind; label: string }> = [
   { key: 'url', label: 'page.typeUrl' },
   { key: 'html', label: 'page.typeHtml' },
 ]
 
-/** .html 单文件上传：读文本进 form.html；非 .html 一律拒（扩展名 + MIME 双判）。
- *  原生 file input：选中即读内容并清空选择，可重复选同一文件。 */
-async function onHtmlFile(e: Event) {
-  const input = e.target as HTMLInputElement
-  const raw = input.files?.[0]
-  input.value = '' // 先清空，同一文件可再次选择覆盖
-  if (!raw) return
+/** .htm / .html 单文件上传：读文本进 form.html；非 html 一律拒（扩展名 + MIME 双判）。 */
+async function acceptFile(raw: File) {
   const name = raw.name.toLowerCase()
-  if (!name.endsWith('.html') && raw.type !== 'text/html') {
+  if (!name.endsWith('.htm') && !name.endsWith('.html') && raw.type !== 'text/html') {
     message.error(t('page.htmlInvalid'))
     return
   }
   try {
     form.value.html = await raw.text()
+    file.value = raw
+    if (!props.editing || !form.value.name) {
+      form.value.name = raw.name.replace(/\.[^.]+$/, '')
+    }
     message.success(t('page.htmlLoaded'))
   } catch (err) {
     message.error((err as Error).message)
   }
+}
+
+function onPick(e: Event) {
+  const input = e.target as HTMLInputElement
+  const f = input.files?.[0]
+  input.value = '' // 同一文件可重复选择
+  if (f) void acceptFile(f)
+}
+
+function onDrop(e: DragEvent) {
+  dragOver.value = false
+  const f = e.dataTransfer?.files?.[0]
+  if (f) void acceptFile(f)
+}
+
+function clearFile() {
+  file.value = null
+  if (fileInput.value) fileInput.value.value = ''
+  if (!props.editing) form.value.html = ''
 }
 
 async function save() {
@@ -133,17 +165,34 @@ async function save() {
         <template v-else>
           <div class="flex items-center gap-2">
             <label class="text-xs text-muted-foreground">{{ $t('page.htmlLabel') }}</label>
-            <label class="inline-flex cursor-pointer items-center gap-1 text-xs text-primary hover:underline">
-              <Upload class="size-3.5" />
-              {{ $t('page.uploadHtml') }}
-              <input type="file" accept=".html" class="hidden" @change="onHtmlFile">
-            </label>
+            <span class="text-xs text-muted-foreground">{{ $t('page.htmlHint') }}</span>
           </div>
-          <Textarea
-            v-model="form.html"
-            class="min-h-[220px] font-mono text-[13px]"
-            :placeholder="$t('page.htmlPh')"
-          />
+          <div
+            class="file-drop"
+            :class="{ over: dragOver, picked: !!file }"
+            @dragover.prevent="dragOver = true"
+            @dragleave.prevent="dragOver = false"
+            @drop.prevent="onDrop"
+          >
+            <template v-if="file">
+              <Upload class="size-4 shrink-0" />
+              <span class="min-w-0 flex-1 truncate text-sm">{{ file.name }}</span>
+              <button type="button" class="shrink-0 rounded p-1 hover:bg-accent" @click="clearFile">
+                <X class="size-3.5" />
+              </button>
+            </template>
+            <template v-else>
+              <Upload class="size-4 shrink-0" />
+              <label class="cursor-pointer text-sm text-primary hover:underline">
+                {{ $t('page.pickFile') }}
+                <input ref="fileInput" type="file" accept=".htm,.html" class="hidden" @change="onPick">
+              </label>
+              <span class="text-xs text-muted-foreground">{{ $t('page.dropHere') }}</span>
+            </template>
+          </div>
+          <p v-if="!file && form.html" class="text-xs text-muted-foreground">
+            {{ $t('page.currentHtml', { size: form.html.length }) }}
+          </p>
         </template>
       </div>
 
@@ -154,3 +203,24 @@ async function save() {
     </DialogContent>
   </Dialog>
 </template>
+
+<style scoped>
+.file-drop {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px;
+  border: 1px dashed color-mix(in srgb, var(--primary) 45%, transparent);
+  border-radius: var(--ops-radius-m);
+  background: color-mix(in srgb, var(--primary) 5%, transparent);
+  color: var(--ops-text-2);
+  transition: border-color 120ms ease, background 120ms ease;
+}
+.file-drop.over {
+  border-color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 12%, transparent);
+}
+.file-drop.picked {
+  border-style: solid;
+}
+</style>

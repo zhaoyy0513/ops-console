@@ -35,7 +35,15 @@ export const knowledgeApi = {
     fd.append('description', description)
     return api.post<KnowledgeDoc>(`/knowledge/${siteId}`, fd, {
       timeout: 0,
-      onUploadProgress: opts.onProgress,
+      // axios 的 onUploadProgress 收到的是 ProgressEvent，不是 (loaded, total)；
+      // 直接透传会让调用方拿到 event 对象，humanSize/进度百分比全部变 NaN。
+      ...(opts.onProgress
+        ? {
+            onUploadProgress: (e: ProgressEvent) => {
+              opts.onProgress?.(e.loaded ?? 0, e.total ?? 0)
+            },
+          }
+        : {}),
       signal: opts.signal,
     })
   },
