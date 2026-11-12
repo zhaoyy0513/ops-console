@@ -55,6 +55,10 @@ watch(
     if (!show) return
     file.value = null
     dragOver.value = false
+    replaceId.value = null
+    pendingFile.value = null
+    duplicateDoc.value = null
+    duplicateShow.value = false
     if (item) {
       name.value = item.name
       description.value = item.description ?? ''
@@ -87,6 +91,7 @@ function acceptFile(f: File) {
 function applyFile(f: File) {
   file.value = f
   name.value = f.name.replace(/\.[^.]+$/, '')
+  replaceId.value = null
 }
 
 function closeDuplicate() {
