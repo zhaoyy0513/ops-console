@@ -6,7 +6,7 @@ import '@file-viewer/vue3/dist/file-viewer3.css'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { isDarkTheme, useThemeStore } from '../../stores/theme'
-import { contentUrl, type KnowledgeDoc } from './api'
+import { contentUrl, fileExt, type KnowledgeDoc } from './api'
 
 const props = defineProps<{
   show: boolean
@@ -30,6 +30,18 @@ const url = computed(() =>
 /** 只有 synth 深色，其余浅色——file-viewer 只认 light/dark */
 const viewerTheme = computed(() => (isDarkTheme(theme.theme) ? 'dark' : 'light'))
 
+/** HTML 静态页预览：file-viewer 的 text renderer 会禁用脚本（安全策略），
+ *  导致依赖 JS 渲染的报告空白；这里改用 sandbox="allow-scripts" 的 srcdoc iframe，
+ *  与 Page 的 sandbox 壳一致：脚本可跑，但 opaque origin 拿不到本域 cookie/storage。 */
+const isHtml = computed(() => {
+  if (!props.doc) return false
+  const ext = fileExt(props.doc)
+  return ext === 'html' || ext === 'htm' || (props.doc.mime ?? '').toLowerCase().includes('html')
+})
+const htmlSource = ref('')
+const htmlLoading = ref(false)
+const htmlError = ref('')
+
 // 每次打开重置状态；关闭后卸载组件（v-if），file-viewer 会自行销毁渲染会话
 let watchdog: ReturnType<typeof setTimeout> | null = null
 
@@ -40,11 +52,33 @@ function clearWatchdog() {
 
 watch(
   () => [props.show, props.doc?.id] as const,
-  ([show]) => {
+  async ([show]) => {
     clearWatchdog()
-    if (!show) return
+    if (!show) {
+      htmlSource.value = ''
+      htmlError.value = ''
+      htmlLoading.value = false
+      return
+    }
     parsing.value = true
     failed.value = false
+    htmlError.value = ''
+
+    if (isHtml.value && props.doc) {
+      htmlLoading.value = true
+      try {
+        const res = await fetch(contentUrl(props.siteId, props.doc.id), { credentials: 'same-origin' })
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+        htmlSource.value = await res.text()
+      } catch (e) {
+        htmlError.value = (e as Error).message
+      } finally {
+        htmlLoading.value = false
+      }
+      return
+    }
+
+    htmlSource.value = ''
     // 兜底：既没有 load-complete 也没有 error 时（worker 拉取失败等），20s 后收起转圈
     watchdog = setTimeout(() => {
       parsing.value = false
@@ -88,37 +122,63 @@ function download() {
       </DialogHeader>
 
       <div class="viewer-wrap min-h-0 flex-1">
-        <!-- v-if 而非 v-show：关闭即卸载，file-viewer 会销毁渲染会话（PPT 图表等不留 DOM） -->
-        <!-- 关键：content 端点 URL 不带扩展名，必须显式传 filename/type/size，
-             否则 file-viewer 无法识别格式，会一律提示「不支持在线预览」 -->
-        <file-viewer
-          v-if="props.show && props.doc && url"
-          :key="props.doc.id"
-          :url="url"
-          :filename="props.doc.filename"
-          :type="props.doc.mime"
-          :size="props.doc.size"
-          :options="{ theme: viewerTheme, toolbar: { position: 'bottom-right' } }"
-          style="height: 100%; width: 100%"
-          @load-start="onLoadStart"
-          @load-complete="onLoadComplete"
-          @error="onViewerError"
-        />
+        <!-- HTML：sandbox 允许脚本但隔离 origin，保证依赖 JS 的报告能渲染 -->
+        <template v-if="isHtml">
+          <iframe
+            v-if="props.show && props.doc"
+            :key="props.doc.id"
+            class="html-frame"
+            sandbox="allow-scripts"
+            referrerpolicy="no-referrer"
+            :srcdoc="htmlSource"
+          />
+          <div v-if="htmlLoading" class="viewer-mask">
+            <span class="viewer-spinner" />
+            <span class="text-sm text-muted-foreground">{{ $t('knowledge.parsing') }}</span>
+          </div>
+          <div v-else-if="htmlError" class="viewer-mask">
+            <p class="text-sm text-muted-foreground">{{ htmlError }}</p>
+            <Button variant="outline" size="sm" @click="openInNewTab">
+              <ExternalLink />
+              {{ $t('knowledge.openInNewTab') }}
+            </Button>
+          </div>
+        </template>
 
-        <!-- 解析中 -->
-        <div v-if="parsing && !failed" class="viewer-mask">
-          <span class="viewer-spinner" />
-          <span class="text-sm text-muted-foreground">{{ $t('knowledge.parsing') }}</span>
-        </div>
+        <!-- 非 HTML：file-viewer -->
+        <template v-else>
+          <!-- v-if 而非 v-show：关闭即卸载，file-viewer 会销毁渲染会话（PPT 图表等不留 DOM） -->
+          <!-- 关键：content 端点 URL 不带扩展名，必须显式传 filename/type/size，
+               否则 file-viewer 无法识别格式，会一律提示「不支持在线预览」 -->
+          <file-viewer
+            v-if="props.show && props.doc && url"
+            :key="props.doc.id"
+            :url="url"
+            :filename="props.doc.filename"
+            :type="props.doc.mime"
+            :size="props.doc.size"
+            :options="{ theme: viewerTheme, toolbar: { position: 'bottom-right' } }"
+            style="height: 100%; width: 100%"
+            @load-start="onLoadStart"
+            @load-complete="onLoadComplete"
+            @error="onViewerError"
+          />
 
-        <!-- 解析失败兜底 -->
-        <div v-else-if="failed" class="viewer-mask">
-          <p class="text-sm text-muted-foreground">{{ $t('knowledge.parseFailed') }}</p>
-          <Button variant="outline" size="sm" @click="openInNewTab">
-            <ExternalLink />
-            {{ $t('knowledge.openInNewTab') }}
-          </Button>
-        </div>
+          <!-- 解析中 -->
+          <div v-if="parsing && !failed" class="viewer-mask">
+            <span class="viewer-spinner" />
+            <span class="text-sm text-muted-foreground">{{ $t('knowledge.parsing') }}</span>
+          </div>
+
+          <!-- 解析失败兜底 -->
+          <div v-else-if="failed" class="viewer-mask">
+            <p class="text-sm text-muted-foreground">{{ $t('knowledge.parseFailed') }}</p>
+            <Button variant="outline" size="sm" @click="openInNewTab">
+              <ExternalLink />
+              {{ $t('knowledge.openInNewTab') }}
+            </Button>
+          </div>
+        </template>
       </div>
 
       <DialogFooter class="flex-row items-center justify-end gap-2 pt-2">
@@ -142,6 +202,12 @@ function download() {
   border-radius: var(--ops-radius-m);
   overflow: hidden;
   background: var(--ops-surface);
+}
+.html-frame {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: #fff;
 }
 .viewer-mask {
   position: absolute;
