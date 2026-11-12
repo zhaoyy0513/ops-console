@@ -18,6 +18,8 @@ const props = defineProps<{
   editing: KnowledgeDoc | null
   /** 拖拽预填：视图 dropzone 已接住的文件 */
   prefillFile?: File | null
+  /** 当前站点文档列表，用于同名文件校验 */
+  docs: KnowledgeDoc[]
 }>()
 const emit = defineEmits<{ (e: 'update:show', v: boolean): void; (e: 'saved'): void }>()
 
@@ -32,6 +34,12 @@ const uploading = ref(false)
 const uploaded = ref(0)
 const uploadTotal = ref(0)
 let uploadController: AbortController | null = null
+/** 同名文件待处理态 */
+const pendingFile = ref<File | null>(null)
+const duplicateDoc = ref<KnowledgeDoc | null>(null)
+const duplicateShow = ref(false)
+/** 选择“替换”后记录原 doc_id，save 走 replaceContent */
+const replaceId = ref<string | null>(null)
 
 const uploadPct = computed(() =>
   uploadTotal.value > 0 ? Math.min(100, Math.round((uploaded.value / uploadTotal.value) * 100)) : 0,
@@ -66,8 +74,51 @@ function acceptFile(f: File) {
     message.error(t(err, { max: MAX_FILE_LABEL }))
     return
   }
+  const dup = props.docs.find((d) => d.filename.toLowerCase() === f.name.toLowerCase())
+  if (dup) {
+    pendingFile.value = f
+    duplicateDoc.value = dup
+    duplicateShow.value = true
+    return
+  }
+  applyFile(f)
+}
+
+function applyFile(f: File) {
   file.value = f
   name.value = f.name.replace(/\.[^.]+$/, '')
+}
+
+function closeDuplicate() {
+  pendingFile.value = null
+  duplicateDoc.value = null
+  duplicateShow.value = false
+}
+
+/** 替换原文件：保留原 doc_id，内容走 replaceContent */
+function chooseReplace() {
+  if (!pendingFile.value || !duplicateDoc.value) return
+  replaceId.value = duplicateDoc.value.id
+  file.value = pendingFile.value
+  if (!name.value.trim()) name.value = duplicateDoc.value.name
+  closeDuplicate()
+}
+
+/** 上传为新文件：自动把文件名改成 name-2.ext，避开同名 */
+function chooseNew() {
+  if (!pendingFile.value) return
+  const base = pendingFile.value.name.replace(/\.[^.]+$/, '')
+  const ext = pendingFile.value.name.slice(pendingFile.value.name.lastIndexOf('.'))
+  let n = 2
+  let filename = `${base}-${n}${ext}`
+  while (props.docs.some((d) => d.filename.toLowerCase() === filename.toLowerCase())) {
+    n++
+    filename = `${base}-${n}${ext}`
+  }
+  const renamed = new File([pendingFile.value], filename, { type: pendingFile.value.type })
+  replaceId.value = null
+  applyFile(renamed)
+  closeDuplicate()
 }
 
 function onPick(e: Event) {
@@ -81,6 +132,11 @@ function onDrop(e: DragEvent) {
   dragOver.value = false
   const f = e.dataTransfer?.files?.[0]
   if (f) acceptFile(f)
+}
+
+function clearFile() {
+  file.value = null
+  replaceId.value = null
 }
 
 /** 中断上传（Cancel 按钮 / 关闭弹窗共用）。 */
@@ -121,15 +177,23 @@ async function save() {
       uploaded.value = 0
       uploadTotal.value = f.size
       uploadController = new AbortController()
-      await knowledgeApi.create(props.siteId, f, trimmed, description.value.trim(), {
-        onProgress: (loaded, total) => {
+      const opts = {
+        onProgress: (loaded: number, total: number) => {
           uploaded.value = loaded
           uploadTotal.value = total || f.size
         },
         signal: uploadController.signal,
-      })
+      }
+      if (replaceId.value) {
+        await knowledgeApi.replaceContent(props.siteId, replaceId.value, f, trimmed, description.value.trim(), opts)
+      } else {
+        await knowledgeApi.create(props.siteId, f, trimmed, description.value.trim(), opts)
+      }
     }
-    message.success(props.editing ? t('knowledge.saved') : t('knowledge.uploadSuccess'))
+    message.success(
+      props.editing ? t('knowledge.saved') : replaceId.value ? t('knowledge.replaced') : t('knowledge.uploadSuccess'),
+    )
+    replaceId.value = null
     emit('update:show', false)
     emit('saved')
   } catch (e) {
@@ -186,7 +250,7 @@ async function save() {
               <span class="shrink-0 text-xs text-muted-foreground">{{ humanSize(file.size) }}</span>
               <button
                 type="button" class="shrink-0 rounded p-1 hover:bg-accent" :disabled="locked"
-                @click="file = null"
+                @click="clearFile"
               >
                 <X class="size-3.5" />
               </button>
@@ -226,6 +290,23 @@ async function save() {
         <Button size="sm" :disabled="saving" @click="save">
           {{ isRename ? $t('common.save') : $t('knowledge.upload') }}
         </Button>
+      </div>
+    </DialogContent>
+  </Dialog>
+
+  <!-- 同名文件处理：替换原文件 / 上传为新文件（自动重命名） -->
+  <Dialog :open="duplicateShow" @update:open="(v) => { if (!v) closeDuplicate() }">
+    <DialogContent class="w-[480px] max-w-[92vw]" @escape-key-down.prevent @interact-outside.prevent>
+      <DialogHeader>
+        <DialogTitle>{{ $t('knowledge.duplicateTitle') }}</DialogTitle>
+      </DialogHeader>
+      <p class="text-sm text-muted-foreground">
+        {{ $t('knowledge.duplicateMessage', { filename: pendingFile?.name ?? '' }) }}
+      </p>
+      <div class="flex justify-end gap-2 pt-2">
+        <Button variant="outline" size="sm" @click="closeDuplicate">{{ $t('common.cancel') }}</Button>
+        <Button variant="outline" size="sm" @click="chooseNew">{{ $t('knowledge.uploadAsNew') }}</Button>
+        <Button size="sm" @click="chooseReplace">{{ $t('knowledge.replace') }}</Button>
       </div>
     </DialogContent>
   </Dialog>

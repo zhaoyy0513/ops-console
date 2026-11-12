@@ -74,6 +74,39 @@ async def create_doc(
         raise HTTPException(status_code=413, detail=str(e)) from None
 
 
+@router.put("/knowledge/{site_id}/{doc_id}/content")
+async def replace_content(
+    site_id: str,
+    doc_id: str,
+    file: UploadFile,
+    name: str = Form(""),
+    description: str = Form(""),
+) -> dict:
+    """替换已有文档的文件内容（保留 doc_id）。name/description 留空则保持原值。"""
+    filename = (file.filename or "file").strip()
+    mime = file.content_type or mimetypes.guess_type(filename)[0] or "application/octet-stream"
+    if file.size and file.size > service.MAX_FILE_BYTES:
+        raise HTTPException(status_code=413, detail=f"file exceeds {MAX_MB}MB limit")
+
+    async def _chunks() -> AsyncIterator[bytes]:
+        while buf := await file.read(service.COPY_CHUNK):
+            yield buf
+
+    try:
+        return await service.replace_doc(
+            site_id,
+            doc_id,
+            {"name": name.strip(), "description": description.strip(), "filename": filename, "mime": mime},
+            _chunks(),
+        )
+    except service.NotFound as e:
+        raise HTTPException(status_code=404, detail=str(e)) from None
+    except service.DuplicateDoc as e:
+        raise HTTPException(status_code=409, detail=str(e)) from None
+    except service.FileTooLarge as e:
+        raise HTTPException(status_code=413, detail=str(e)) from None
+
+
 def _served_media_type(filename: str, mime: str | None) -> str:
     """返回给浏览器的 MIME 以文件名扩展名为准修正：历史/异常上传的文档可能存成
     octet-stream 或空 mime，会让 PDF 等内容被浏览器当「下载」而非内嵌预览。

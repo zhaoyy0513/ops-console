@@ -173,6 +173,8 @@ const KIND_LABEL: Record<string, string> = {
       @dragleave="onDragLeave"
       @drop.prevent="onDrop"
     >
+      <KnowledgeDownloadPanel :tasks="tasks" @remove="removeTask" @clear="clearDone" />
+
       <div v-if="dragging" class="drop-hint">
         <span class="drop-chip">
           <FileText class="size-4" />
@@ -242,14 +244,13 @@ const KIND_LABEL: Record<string, string> = {
     </CardContent>
   </Card>
 
-  <KnowledgeDownloadPanel :tasks="tasks" @remove="removeTask" @clear="clearDone" />
-
   <KnowledgeDialog
     v-model:show="showEditor"
     :site-id="siteStore.currentSiteId ?? ''"
     :site-name="siteName"
     :editing="editing"
     :prefill-file="prefillFile"
+    :docs="docs"
     @saved="load"
   />
 

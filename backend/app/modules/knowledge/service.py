@@ -157,6 +157,56 @@ async def create_doc(site_id: str, data: dict, chunks: AsyncIterator[bytes]) -> 
     return stored
 
 
+async def replace_doc(site_id: str, doc_id: str, data: dict, chunks: AsyncIterator[bytes]) -> dict:
+    """替换已有文档的文件内容（保留 doc_id；可顺带改文件名/名称/描述）。
+
+    先写同目录临时文件，再原子替换正式文件；旧扩展名文件若改变则删除。
+    写盘失败时旧文件仍在，元数据不变。"""
+    await _require_site(site_id)
+    r = get_platform_redis()
+    key = knowledge_key(site_id)
+    raw = await r.hget(key, doc_id)
+    if not raw:
+        raise NotFound(f"doc not found: {doc_id}")
+    old = json.loads(raw)
+    filename = data.get("filename") or old.get("filename") or "file"
+    dest = _file_path(site_id, doc_id, filename)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    tmp = dest.with_name(f".{doc_id}.{uuid.uuid4().hex}{dest.suffix}")
+    size = 0
+    try:
+        with tmp.open("wb") as fh:
+            async for chunk in chunks:
+                size += len(chunk)
+                if size > MAX_FILE_BYTES:
+                    raise FileTooLarge(size)
+                fh.write(chunk)
+        old_path = _file_path(site_id, doc_id, old.get("filename") or "")
+        if old_path != dest:
+            old_path.unlink(missing_ok=True)
+        tmp.replace(dest)
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
+
+    new = {
+        **old,
+        **{k: v for k, v in data.items() if k not in ("id", "created_at")},
+        "id": doc_id,
+        "filename": filename,
+        "size": size,
+    }
+    if not new.get("name"):
+        new["name"] = old.get("name") or filename
+    if new["name"] != old.get("name"):
+        new["name"] = await _unique_name(r, key, new["name"], exclude_id=doc_id)
+    await r.hset(key, doc_id, json.dumps(new, ensure_ascii=False))
+    await oplog.record(site_id, f"knowledge/{new['name']}", "KNOWLEDGE_REPLACED",
+                       target=new["name"], params={"doc_id": doc_id, "size": size},
+                       after=_snap(new))
+    return new
+
+
 async def update_doc(site_id: str, doc_id: str, data: dict) -> dict | None:
     """仅更新元数据（当前仅名称/描述；文件内容创建后不可变）。"""
     await _require_site(site_id)

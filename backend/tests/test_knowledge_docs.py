@@ -165,6 +165,35 @@ async def test_doc_rename_only_keeps_file(client):
     assert r.content == b"payload"
 
 
+async def test_doc_replace_content_keeps_id_and_updates_size(client):
+    """替换文件内容：保留 doc_id，更新 filename/size，旧文件被替换，oplog 记 KNOWLEDGE_REPLACED。"""
+    await _make_site(client)
+    files, form = _upload(name="报告", content=b"old", filename="report.html", mime="text/html")
+    doc_id = (await client.post("/api/knowledge/sz-test", files=files, data=form)).json()["id"]
+
+    files, form = _upload(name="报告", content=b"new-content", filename="report.html", mime="text/html")
+    r = await client.put(f"/api/knowledge/sz-test/{doc_id}/content", files=files, data=form)
+    assert r.status_code == 200
+    body = r.json()
+    assert body["id"] == doc_id
+    assert body["size"] == len(b"new-content")
+
+    c = await client.get(f"/api/knowledge/sz-test/{doc_id}/content")
+    assert c.content == b"new-content"
+
+    entry = (await oplog.read_recent(1))[0]
+    assert entry["operation"] == "KNOWLEDGE_REPLACED"
+    assert entry["resource"] == "knowledge/报告"
+    assert entry["params"]["doc_id"] == doc_id
+
+
+async def test_doc_replace_missing_doc_404(client):
+    await _make_site(client)
+    files, form = _upload(name="x")
+    r = await client.put("/api/knowledge/sz-test/no-such/content", files=files, data=form)
+    assert r.status_code == 404
+
+
 async def test_doc_on_missing_site_404(client):
     files, form = _upload(name="x")
     assert (await client.get("/api/knowledge/no-such")).status_code == 404

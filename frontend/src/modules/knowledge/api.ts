@@ -47,6 +47,34 @@ export const knowledgeApi = {
       signal: opts.signal,
     })
   },
+  /** 替换已有文档的文件内容（保留 doc_id） */
+  replaceContent: (
+    siteId: string,
+    id: string,
+    file: File,
+    name: string,
+    description = '',
+    opts: {
+      onProgress?: (loaded: number, total: number) => void
+      signal?: AbortSignal
+    } = {},
+  ) => {
+    const fd = new FormData()
+    fd.append('file', file)
+    fd.append('name', name)
+    fd.append('description', description)
+    return api.put<KnowledgeDoc>(`/knowledge/${siteId}/${id}/content`, fd, {
+      timeout: 0,
+      ...(opts.onProgress
+        ? {
+            onUploadProgress: (e: ProgressEvent) => {
+              opts.onProgress?.(e.loaded ?? 0, e.total ?? 0)
+            },
+          }
+        : {}),
+      signal: opts.signal,
+    })
+  },
   /** 编辑仅改名（文件内容创建后不可变） */
   update: (siteId: string, id: string, data: Record<string, unknown>) =>
     api.put<KnowledgeDoc>(`/knowledge/${siteId}/${id}`, data),
