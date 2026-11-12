@@ -8,7 +8,12 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '
 import { isDarkTheme, useThemeStore } from '../../stores/theme'
 import { contentUrl, type KnowledgeDoc } from './api'
 
-const props = defineProps<{ show: boolean; siteId: string; doc: KnowledgeDoc | null }>()
+const props = defineProps<{
+  show: boolean
+  siteId: string
+  doc: KnowledgeDoc | null
+  onDownload: (doc: KnowledgeDoc) => void
+}>()
 const emit = defineEmits<{ (e: 'update:show', v: boolean): void }>()
 
 const theme = useThemeStore()
@@ -69,6 +74,10 @@ function onViewerError() {
 function openInNewTab() {
   if (url.value) window.open(url.value, '_blank', 'noopener')
 }
+
+function download() {
+  if (props.doc) props.onDownload(props.doc)
+}
 </script>
 
 <template>
@@ -113,12 +122,10 @@ function openInNewTab() {
       </div>
 
       <DialogFooter class="flex-row items-center justify-end gap-2 pt-2">
-        <a :href="url" :download="props.doc?.filename" class="inline-flex">
-          <Button variant="outline" size="sm">
-            <Download />
-            {{ $t('knowledge.download') }}
-          </Button>
-        </a>
+        <Button variant="outline" size="sm" @click="download">
+          <Download />
+          {{ $t('knowledge.download') }}
+        </Button>
         <Button variant="outline" size="sm" @click="openInNewTab">
           <ExternalLink />
           {{ $t('knowledge.openInNewTab') }}

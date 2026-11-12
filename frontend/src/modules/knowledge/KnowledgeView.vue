@@ -14,13 +14,16 @@ import FadeContent from '../../components/bits/FadeContent.vue'
 import CountdownConfirm from '../../components/CountdownConfirm.vue'
 import { useSiteStore } from '../../stores/site'
 import KnowledgeDialog from './KnowledgeDialog.vue'
+import KnowledgeDownloadPanel from './KnowledgeDownloadPanel.vue'
 import KnowledgeViewer from './KnowledgeViewer.vue'
+import { useKnowledgeDownload } from './useKnowledgeDownload'
 import {
-  contentUrl, fileExt, humanSize, knowledgeApi, MAX_FILE_LABEL, previewKind, validateUpload, type KnowledgeDoc,
+  fileExt, humanSize, knowledgeApi, MAX_FILE_LABEL, previewKind, validateUpload, type KnowledgeDoc,
 } from './api'
 
 const { t } = useI18n()
 const siteStore = useSiteStore()
+const { tasks, startDownload, removeTask, clearDone } = useKnowledgeDownload()
 
 const docs = ref<KnowledgeDoc[]>([])
 const loading = ref(false)
@@ -205,9 +208,14 @@ const KIND_LABEL: Record<string, string> = {
               <!-- hover 遮罩放在位移层内：与卡片一起抬起，不再露出缝隙。
                    预览器不认识的格式（other）首按钮是「下载」而非「查看」 -->
               <div class="card-overlay" @click.stop>
-                <a v-if="previewKind(d) === 'other'" :href="contentUrl(siteStore.currentSiteId ?? '', d.id)" :download="d.filename" class="ov-btn">
+                <button
+                  v-if="previewKind(d) === 'other'"
+                  type="button"
+                  class="ov-btn"
+                  @click="startDownload(d, siteStore.currentSiteId ?? '')"
+                >
                   {{ $t('knowledge.download') }}
-                </a>
+                </button>
                 <button v-else type="button" class="ov-btn" @click="open(d)">{{ $t('knowledge.open') }}</button>
                 <button type="button" class="ov-btn" @click="startRename(d)">{{ $t('knowledge.rename') }}</button>
                 <span class="ov-del">
@@ -234,6 +242,8 @@ const KIND_LABEL: Record<string, string> = {
     </CardContent>
   </Card>
 
+  <KnowledgeDownloadPanel :tasks="tasks" @remove="removeTask" @clear="clearDone" />
+
   <KnowledgeDialog
     v-model:show="showEditor"
     :site-id="siteStore.currentSiteId ?? ''"
@@ -247,6 +257,7 @@ const KIND_LABEL: Record<string, string> = {
     v-model:show="showViewer"
     :site-id="siteStore.currentSiteId ?? ''"
     :doc="active"
+    :on-download="(d) => startDownload(d, siteStore.currentSiteId ?? '')"
   />
 </template>
 
