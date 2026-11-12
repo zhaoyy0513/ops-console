@@ -23,6 +23,6 @@ provide('opsTheme', lightDark)
       （表现为 patch 阶段 emitsOptions/parentNode null 崩溃），在此统一提供 -->
   <TooltipProvider :delay-duration="100">
     <MainLayout />
-    <Toaster :theme="lightDark" position="bottom-right" rich-colors close-button />
+    <Toaster :theme="lightDark" position="top-right" rich-colors close-button />
   </TooltipProvider>
 </template>

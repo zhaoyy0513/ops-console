@@ -129,7 +129,7 @@ async function save() {
         signal: uploadController.signal,
       })
     }
-    message.success(t('knowledge.saved'))
+    message.success(props.editing ? t('knowledge.saved') : t('knowledge.uploadSuccess'))
     emit('update:show', false)
     emit('saved')
   } catch (e) {

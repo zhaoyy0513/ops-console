@@ -8,5 +8,6 @@ import '@fontsource-variable/jetbrains-mono'
 import './assets/main.css'
 import './assets/main.css'
 import './style.css'
+import 'vue-sonner/style.css'
 
 createApp(App).use(createPinia()).use(i18n).use(router).mount('#app')
