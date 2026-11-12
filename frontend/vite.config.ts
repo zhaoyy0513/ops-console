@@ -15,7 +15,7 @@ export default defineConfig({
     fileViewerRenderers({
       formats: [
         'pdf', 'docx', 'doc', 'xlsx', 'xls', 'csv', 'pptx', 'ppt', 'ofd',
-        'txt', 'md', 'log', 'json', 'xml', 'yaml',
+        'txt', 'md', 'log', 'json', 'xml', 'yaml', 'html', 'htm',
         'jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'svg',
         'mp4', 'webm', 'mp3', 'wav',
       ],
