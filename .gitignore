@@ -9,7 +9,6 @@ node_modules/
 frontend/dist/
 
 # Env & IDE
-.env
 .idea/
 /logs/
 /backend/app/logs/
