@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/ui/select'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { TooltipContent, TooltipRoot, TooltipTrigger } from '@/components/ui/tooltip'
 import { message } from '@/lib/message'
 import OpsDataTable from '../../components/OpsDataTable.vue'
@@ -17,7 +18,7 @@ import StatusBadge from '../../components/StatusBadge.vue'
 import MetricCard from '../../components/MetricCard.vue'
 import { useSiteStore } from '../../stores/site'
 import { getSamples } from '../overview/api'
-import { mqApi, type MqOverview, type QueueRow } from './api'
+import { mqApi, type MqOverview, type QueueMessage, type QueueRow } from './api'
 import { fmtBytes, pctColor } from '../../utils/format'
 
 const siteStore = useSiteStore()
@@ -32,6 +33,38 @@ const loading = ref(false) // 首次加载（转圈而非白屏）
 const heapSeries = ref<Array<{ ts: number; v: number }>>([])
 const loadError = ref('')
 const queuesError = ref('')
+
+// ---------- 队列消息浏览（只读） ----------
+const messageQueue = ref<QueueRow | null>(null)
+const messageList = ref<QueueMessage[]>([])
+const messageLoading = ref(false)
+const messageError = ref('')
+
+async function openMessages(q: QueueRow) {
+  if (!q._mbean) return
+  messageQueue.value = q
+  messageList.value = []
+  messageError.value = ''
+  messageLoading.value = true
+  try {
+    messageList.value = await mqApi.browse(siteStore.currentSiteId, instanceId.value ?? '', q._mbean, q.name, 50)
+  } catch (e) {
+    messageError.value = (e as Error).message
+  } finally {
+    messageLoading.value = false
+  }
+}
+
+function closeMessages() {
+  messageQueue.value = null
+  messageList.value = []
+  messageError.value = ''
+}
+
+function fmtTimestamp(ts: number | null): string {
+  if (ts == null) return '-'
+  return new Date(ts).toLocaleString()
+}
 
 /** 轮询：overview/heap/queues 均随 3s tick 刷新（queues 有后端 5s 缓存兜底） */
 async function loadLight(toastOnFail = false) {
@@ -382,18 +415,23 @@ const queueColumns = computed<any[]>(() => [
     enableSorting: false,
     cell: (ctx: any) => {
       const q: QueueRow = ctx.row.original
-      // 仅清空一个操作：只对可管理（_mbean）且有积压的队列渲染，否则灰色占位
-      if (q._mbean && (q.message_count ?? 0) > 0) {
-        return h(CountdownConfirm, {
-          label: t('mq.purge'),
-          confirmText: t('mq.purge'),
-          target: q.name,
-          seconds: 3,
-          width: '64px',
-          onConfirm: () => emptyQueue(q),
-        })
-      }
-      return h('span', { class: 'text-muted-foreground' }, '-')
+      if (!q._mbean) return h('span', { class: 'text-muted-foreground' }, '-')
+      return h('div', { class: 'flex items-center gap-1' }, [
+        h(Button, {
+          variant: 'ghost', size: 'sm', title: t('mq.viewMessages'),
+          onClick: () => openMessages(q),
+        }, () => t('mq.view')),
+        (q.message_count ?? 0) > 0
+          ? h(CountdownConfirm, {
+              label: t('mq.purge'),
+              confirmText: t('mq.purge'),
+              target: q.name,
+              seconds: 3,
+              width: '64px',
+              onConfirm: () => emptyQueue(q),
+            })
+          : null,
+      ])
     },
   },
 ])
@@ -557,6 +595,40 @@ function ageColor(ms: number | null): string | undefined {
         <span class="text-sm text-muted-foreground">该站点暂无 MQ 配置——请在「站点管理 → 资源 → ActiveMQ」中添加并测试连接</span>
       </CardContent>
     </Card>
+
+    <!-- 队列消息浏览：Artemis 2.19 只返回元数据 + 业务属性，不含消息正文 -->
+    <Dialog :open="messageQueue !== null" @update:open="(v) => { if (!v) closeMessages() }">
+      <DialogContent class="w-[860px] max-w-[94vw]">
+        <DialogHeader>
+          <DialogTitle>{{ $t('mq.messagesTitle', { queue: messageQueue?.name ?? '' }) }}</DialogTitle>
+        </DialogHeader>
+        <p class="text-xs text-muted-foreground">{{ $t('mq.messageMetaNote') }}</p>
+        <div v-if="messageLoading" class="flex justify-center py-8">
+          <span class="inline-block size-5 animate-spin rounded-full border-2 border-border border-t-muted-foreground" />
+        </div>
+        <div v-else-if="messageError" class="text-sm text-destructive">{{ messageError }}</div>
+        <div v-else-if="!messageList.length" class="py-8 text-center text-sm text-muted-foreground">
+          {{ $t('mq.noMessages') }}
+        </div>
+        <div v-else class="msg-list">
+          <div v-for="m in messageList" :key="String(m.message_id)" class="msg-row">
+            <div class="msg-head">
+              <span class="font-mono text-xs"># {{ m.message_id ?? '-' }}</span>
+              <span class="text-xs text-muted-foreground">{{ $t('mq.priority') }} {{ m.priority ?? '-' }}</span>
+              <span class="text-xs text-muted-foreground">{{ fmtTimestamp(m.timestamp) }}</span>
+              <span class="text-xs text-muted-foreground">{{ m.durable ? $t('mq.durable') : $t('mq.nonDurable') }}</span>
+            </div>
+            <pre class="msg-props">{{ JSON.stringify(m.properties, null, 2) }}</pre>
+          </div>
+        </div>
+        <div class="flex justify-end gap-2 pt-2">
+          <Button variant="outline" size="sm" :disabled="messageLoading" @click="openMessages(messageQueue!)">
+            {{ $t('common.refresh') }}
+          </Button>
+          <Button size="sm" @click="closeMessages">{{ $t('common.close') }}</Button>
+        </div>
+      </DialogContent>
+    </Dialog>
   </div>
 </template>
 
@@ -616,5 +688,38 @@ function ageColor(ms: number | null): string | undefined {
   border-color: var(--ops-primary);
   box-shadow: 0 0 0 2px var(--ops-primary);
   transition: box-shadow 160ms ease;
+}
+.msg-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+.msg-row {
+  border: 1px solid var(--ops-border);
+  border-radius: var(--ops-radius-s);
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.msg-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: baseline;
+}
+.msg-props {
+  margin: 0;
+  max-height: 160px;
+  overflow: auto;
+  padding: 8px;
+  border-radius: var(--ops-radius-s);
+  background: var(--ops-surface-2);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-all;
 }
 </style>
