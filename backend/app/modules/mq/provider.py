@@ -128,12 +128,17 @@ class ArtemisProvider:
                     if not k.startswith(("_AMQ_", "__AMQ_", "__HDR_"))
                     and k not in ("messageID", "timestamp", "priority", "durable")
                 }
+                body = m.get("body")
+                if body is None:
+                    body = m.get("text")
                 messages.append({
                     "message_id": m.get("messageID"),
                     "priority": m.get("priority"),
                     "timestamp": m.get("timestamp"),
                     "durable": m.get("durable"),
                     "properties": properties,
+                    # 2.19 无正文；2.21+ 若返回 body/text 自动透传，前端预留展示位
+                    "body": body if isinstance(body, str) else (str(body) if body is not None else None),
                 })
         return messages
 

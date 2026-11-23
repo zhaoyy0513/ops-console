@@ -619,6 +619,10 @@ function ageColor(ms: number | null): string | undefined {
               <span class="text-xs text-muted-foreground">{{ m.durable ? $t('mq.durable') : $t('mq.nonDurable') }}</span>
             </div>
             <pre class="msg-props">{{ JSON.stringify(m.properties, null, 2) }}</pre>
+            <template v-if="m.body">
+              <div class="msg-body-label">{{ $t('mq.body') }}</div>
+              <pre class="msg-body">{{ m.body }}</pre>
+            </template>
           </div>
         </div>
         <div class="flex justify-end gap-2 pt-2">
@@ -713,6 +717,22 @@ function ageColor(ms: number | null): string | undefined {
 .msg-props {
   margin: 0;
   max-height: 160px;
+  overflow: auto;
+  padding: 8px;
+  border-radius: var(--ops-radius-s);
+  background: var(--ops-surface-2);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.msg-body-label {
+  font-size: 11px;
+  color: var(--ops-text-3);
+}
+.msg-body {
+  margin: 0;
+  max-height: 220px;
   overflow: auto;
   padding: 8px;
   border-radius: var(--ops-radius-s);

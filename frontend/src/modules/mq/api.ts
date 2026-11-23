@@ -59,6 +59,8 @@ export interface QueueMessage {
   durable: boolean | null
   /** 业务自定义属性（2.19 管理接口不提供消息正文） */
   properties: Record<string, string | number | boolean>
+  /** 消息正文：2.19 不返回；2.21+ 若 Jolokia 提供 body 会透传，前端自动展示 */
+  body?: string | null
 }
 
 export const mqApi = {
