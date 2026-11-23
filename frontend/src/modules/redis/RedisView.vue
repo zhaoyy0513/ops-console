@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { AlertCircle, ChevronDown, ChevronRight, Database, LoaderCircle, Search, Server, WandSparkles } from 'lucide-vue-next'
+import { AlertCircle, ChevronDown, ChevronRight, Copy, Database, Eye, LoaderCircle, Search, Server, WandSparkles } from 'lucide-vue-next'
 import { parser as jsonParser } from '@lezer/json'
 import { message } from '@/lib/message'
 import { Badge } from '@/components/ui/badge'
@@ -273,6 +273,120 @@ const jsonInvalid = computed(() => {
   }
 })
 
+// ---------- 结构化字段表（hash/list/set/zset）+ 单字段值查看 ----------
+interface FieldRow {
+  id: string
+  field: string
+  value: string
+  score?: number
+  raw: unknown
+}
+
+const fieldRows = computed<FieldRow[]>(() => {
+  const d = detail.value
+  if (!d) return []
+  const v = d.value
+  if (d.type === 'hash' && v && typeof v === 'object' && !Array.isArray(v)) {
+    return Object.entries(v as Record<string, unknown>).map(([field, val], i) => ({
+      id: `f${i}`, field, value: String(val ?? ''), raw: val,
+    }))
+  }
+  if ((d.type === 'list' || d.type === 'set') && Array.isArray(v)) {
+    return v.map((val, i) => ({ id: `${d.type[0]}${i}`, field: String(i), value: String(val ?? ''), raw: val }))
+  }
+  if (d.type === 'zset' && Array.isArray(v)) {
+    return v.map((pair, i) => {
+      const [score, member] = Array.isArray(pair) ? pair : [null, pair]
+      return { id: `z${i}`, field: String(member ?? ''), value: String(score ?? ''), score: typeof score === 'number' ? score : undefined, raw: pair }
+    })
+  }
+  return []
+})
+
+const fieldFilter = ref('')
+const filteredFieldRows = computed(() => {
+  const needle = fieldFilter.value.trim().toLowerCase()
+  if (!needle) return fieldRows.value
+  return fieldRows.value.filter((r) => r.field.toLowerCase().includes(needle) || r.value.toLowerCase().includes(needle))
+})
+
+const viewField = ref<FieldRow | null>(null)
+const viewText = computed(() => {
+  const raw = viewField.value?.raw
+  if (raw == null) return ''
+  if (typeof raw === 'string') {
+    const t = raw.trim()
+    if (t.startsWith('{') || t.startsWith('[')) {
+      try {
+        return JSON.stringify(JSON.parse(t), null, 2)
+      } catch {
+        return raw
+      }
+    }
+    return raw
+  }
+  return JSON.stringify(raw, null, 2)
+})
+
+function openFieldView(row: FieldRow) {
+  viewField.value = row
+}
+function closeFieldView() {
+  viewField.value = null
+}
+async function copyViewText() {
+  if (!viewText.value) return
+  await navigator.clipboard.writeText(viewText.value)
+  message.success(t('redis.copied'))
+}
+
+// ---------- 复制插入语句 ----------
+function quoteRedis(s: unknown): string {
+  return JSON.stringify(String(s ?? ''))
+}
+function insertStatement(): string {
+  const d = detail.value
+  if (!d) return ''
+  const ttl = currentTtl.value > 0 ? currentTtl.value : null
+  const expire = ttl ? ` EX ${ttl}` : ''
+  const v = d.value
+  if (d.type === 'string') {
+    return `SET ${quoteRedis(d.key)} ${quoteRedis(String(v ?? ''))}${expire}`
+  }
+  if (d.type === 'hash' && v && typeof v === 'object' && !Array.isArray(v)) {
+    const args = Object.entries(v as Record<string, unknown>).flatMap(([f, val]) => [quoteRedis(f), quoteRedis(String(val ?? ''))])
+    const base = `HSET ${quoteRedis(d.key)} ${args.join(' ')}`
+    return ttl ? `${base}\nEXPIRE ${quoteRedis(d.key)} ${ttl}` : base
+  }
+  if (d.type === 'list' && Array.isArray(v)) {
+    const base = `RPUSH ${quoteRedis(d.key)} ${v.map((x) => quoteRedis(x)).join(' ')}`
+    return ttl ? `${base}\nEXPIRE ${quoteRedis(d.key)} ${ttl}` : base
+  }
+  if (d.type === 'set' && Array.isArray(v)) {
+    const base = `SADD ${quoteRedis(d.key)} ${v.map((x) => quoteRedis(x)).join(' ')}`
+    return ttl ? `${base}\nEXPIRE ${quoteRedis(d.key)} ${ttl}` : base
+  }
+  if (d.type === 'zset' && Array.isArray(v)) {
+    const args = v.flatMap((pair) => {
+      const [score, member] = Array.isArray(pair) ? pair : [null, pair]
+      return [String(score ?? 0), quoteRedis(member)]
+    })
+    const base = `ZADD ${quoteRedis(d.key)} ${args.join(' ')}`
+    return ttl ? `${base}\nEXPIRE ${quoteRedis(d.key)} ${ttl}` : base
+  }
+  return ''
+}
+async function copyInsertStatement() {
+  const cmd = insertStatement()
+  if (!cmd) return
+  await navigator.clipboard.writeText(cmd)
+  message.success(t('redis.copyInsertOk'))
+}
+
+// ---------- 自动刷新间隔 ----------
+const refreshInterval = ref(5)
+watch(refreshInterval, () => startTimers())
+
 function toEditText(d: KeyDetail): string {
   const v = d.value
   if (d.type === 'string') return String(v ?? '')
@@ -536,7 +650,9 @@ async function autoRefresh() {
 
 function startTimers() {
   stopTimers()
-  pollTimer = window.setInterval(autoRefresh, 5_000)
+  pollTimer = refreshInterval.value > 0
+    ? window.setInterval(autoRefresh, refreshInterval.value * 1_000)
+    : undefined
   tickTimer = window.setInterval(() => (nowSec.value = Math.floor(Date.now() / 1000)), 1_000)
 }
 function stopTimers() {
@@ -786,7 +902,56 @@ const INFO_METRICS = computed(() => {
                 {{ $t('redis.mem') }} {{ detail.memory_usage != null ? fmtBytes(detail.memory_usage) : '?' }}
               </Badge>
               <div class="flex-1" />
+              <Select
+                :model-value="String(refreshInterval)"
+                @update:model-value="(v: unknown) => (refreshInterval = Number(v))"
+              >
+                <SelectTrigger class="w-[96px]" :title="$t('redis.refreshInterval')" />
+                <SelectContent>
+                  <SelectItem value="0">{{ $t('redis.refreshOff') }}</SelectItem>
+                  <SelectItem value="1">1s</SelectItem>
+                  <SelectItem value="3">3s</SelectItem>
+                  <SelectItem value="5">5s</SelectItem>
+                  <SelectItem value="10">10s</SelectItem>
+                </SelectContent>
+              </Select>
+              <Button variant="outline" size="sm" :title="$t('redis.copyInsert')" @click="copyInsertStatement">
+                <Copy class="size-3.5" />
+              </Button>
               <Button variant="outline" size="sm" @click="refreshValue">{{ $t('common.refresh') }}</Button>
+            </div>
+
+            <!-- 结构化字段表：hash/list/set/zset 直接查看成员，值可打开 JSON 查看器 -->
+            <div v-if="detail.type !== 'string'" class="field-table">
+              <div class="field-toolbar">
+                <Input v-model="fieldFilter" class="w-[240px] max-w-full" :placeholder="$t('redis.searchField')" />
+                <span class="text-xs text-muted-foreground">{{ filteredFieldRows.length }} / {{ fieldRows.length }}</span>
+              </div>
+              <div class="field-scroll">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>{{ $t('redis.field') }}</th>
+                      <th>{{ detail.type === 'zset' ? $t('redis.score') : $t('redis.fieldValue') }}</th>
+                      <th class="w-10"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="row in filteredFieldRows" :key="row.id">
+                      <td class="font-mono">{{ row.field }}</td>
+                      <td class="field-value" :title="row.value">{{ row.value }}</td>
+                      <td>
+                        <Button variant="ghost" size="sm" :title="$t('redis.viewValue')" @click="openFieldView(row)">
+                          <Eye class="size-3.5" />
+                        </Button>
+                      </td>
+                    </tr>
+                    <tr v-if="!filteredFieldRows.length">
+                      <td colspan="3" class="py-4 text-center text-muted-foreground">{{ $t('redis.noMatch') }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
             </div>
 
             <!-- Text / Json 切换 + CodeMirror（两种视图都可直接编辑） -->
@@ -799,6 +964,12 @@ const INFO_METRICS = computed(() => {
               <Button variant="outline" size="sm" :disabled="format !== 'json'" :title="$t('redis.formatJson')" @click="formatJson">
                 <WandSparkles />
                 {{ $t('redis.formatJson') }}
+              </Button>
+              <Button
+                variant="outline" size="sm" :title="$t('redis.viewValue')"
+                @click="openFieldView({ id: '__value', field: detail.key, value: editText, raw: editText })"
+              >
+                <Eye class="size-3.5" />
               </Button>
             </div>
 
@@ -913,6 +1084,19 @@ const INFO_METRICS = computed(() => {
             {{ $t('common.save') }}
           </Button>
         </div>
+      </DialogContent>
+    </Dialog>
+
+    <!-- 单字段/字符串值查看器：自动识别 JSON 并美化，可复制 -->
+    <Dialog :open="viewField !== null" @update:open="(v) => { if (!v) closeFieldView() }">
+      <DialogContent class="w-[760px] max-w-[94vw]">
+        <DialogHeader>
+          <DialogTitle class="font-mono">{{ viewField?.field }}</DialogTitle>
+        </DialogHeader>
+        <div class="flex justify-end">
+          <Button variant="outline" size="sm" @click="copyViewText">{{ $t('redis.copyValue') }}</Button>
+        </div>
+        <pre class="value-view">{{ viewText }}</pre>
       </DialogContent>
     </Dialog>
   </div>
@@ -1091,6 +1275,61 @@ const INFO_METRICS = computed(() => {
   gap: 12px;
   margin-top: 12px;
   flex-wrap: wrap;
+}
+.field-table {
+  margin-bottom: 10px;
+  border: 1px solid var(--ops-border);
+  border-radius: var(--ops-radius-s);
+  overflow: hidden;
+}
+.field-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px;
+  border-bottom: 1px solid var(--ops-border);
+}
+.field-scroll {
+  max-height: 260px;
+  overflow: auto;
+}
+.field-table table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.field-table th {
+  text-align: left;
+  padding: 6px 8px;
+  color: var(--ops-text-3);
+  font-weight: 500;
+  border-bottom: 1px solid var(--ops-border);
+}
+.field-table td {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--ops-border);
+  vertical-align: top;
+}
+.field-value {
+  max-width: 420px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--ops-font-mono);
+  font-size: 12px;
+}
+.value-view {
+  max-height: 60vh;
+  overflow: auto;
+  margin: 0;
+  padding: 10px;
+  border-radius: var(--ops-radius-s);
+  background: var(--ops-surface-2);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-all;
 }
 .add-json-banner {
   margin-top: 6px;
