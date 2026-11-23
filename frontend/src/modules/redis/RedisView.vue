@@ -273,44 +273,8 @@ const jsonInvalid = computed(() => {
   }
 })
 
-// ---------- 结构化字段表（hash/list/set/zset）+ 单字段值查看 ----------
-interface FieldRow {
-  id: string
-  field: string
-  value: string
-  score?: number
-  raw: unknown
-}
-
-const fieldRows = computed<FieldRow[]>(() => {
-  const d = detail.value
-  if (!d) return []
-  const v = d.value
-  if (d.type === 'hash' && v && typeof v === 'object' && !Array.isArray(v)) {
-    return Object.entries(v as Record<string, unknown>).map(([field, val], i) => ({
-      id: `f${i}`, field, value: String(val ?? ''), raw: val,
-    }))
-  }
-  if ((d.type === 'list' || d.type === 'set') && Array.isArray(v)) {
-    return v.map((val, i) => ({ id: `${d.type[0]}${i}`, field: String(i), value: String(val ?? ''), raw: val }))
-  }
-  if (d.type === 'zset' && Array.isArray(v)) {
-    return v.map((pair, i) => {
-      const [score, member] = Array.isArray(pair) ? pair : [null, pair]
-      return { id: `z${i}`, field: String(member ?? ''), value: String(score ?? ''), score: typeof score === 'number' ? score : undefined, raw: pair }
-    })
-  }
-  return []
-})
-
-const fieldFilter = ref('')
-const filteredFieldRows = computed(() => {
-  const needle = fieldFilter.value.trim().toLowerCase()
-  if (!needle) return fieldRows.value
-  return fieldRows.value.filter((r) => r.field.toLowerCase().includes(needle) || r.value.toLowerCase().includes(needle))
-})
-
-const viewField = ref<FieldRow | null>(null)
+// ---------- 单字段/字符串值查看 ----------
+const viewField = ref<{ id: string; field: string; value: string; raw: unknown } | null>(null)
 const viewText = computed(() => {
   const raw = viewField.value?.raw
   if (raw == null) return ''
@@ -328,7 +292,7 @@ const viewText = computed(() => {
   return JSON.stringify(raw, null, 2)
 })
 
-function openFieldView(row: FieldRow) {
+function openFieldView(row: { id: string; field: string; value: string; raw: unknown }) {
   viewField.value = row
 }
 function closeFieldView() {
@@ -387,10 +351,52 @@ async function copyInsertStatement() {
 const refreshInterval = ref(5)
 watch(refreshInterval, () => startTimers())
 
+/** 递归展开字符串里的 JSON：hash/list/set 的字段值本身是 JSON 字符串时，
+ *  展示为真正 JSON 对象，避免整串转义（如 MOCK_LIFT_DROP_TIME 的 40101）。 */
+function parseJsonStrings(value: unknown): unknown {
+  if (typeof value === 'string') {
+    const t = value.trim()
+    if (t.startsWith('{') || t.startsWith('[')) {
+      try {
+        return parseJsonStrings(JSON.parse(t))
+      } catch {
+        return value
+      }
+    }
+    return value
+  }
+  if (Array.isArray(value)) return value.map(parseJsonStrings)
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, parseJsonStrings(v)]))
+  }
+  return value
+}
+
+/** 保存前把展开的 JSON 对象重新序列化回字符串，保持 hash/list/set 字段类型不变。 */
+function serializeJsonStrings(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map((item) => {
+      if (Array.isArray(item) || (item && typeof item === 'object')) {
+        return JSON.stringify(serializeJsonStrings(item))
+      }
+      return item
+    })
+  }
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value).map(([k, v]) => [
+        k,
+        Array.isArray(v) || (v && typeof v === 'object') ? JSON.stringify(serializeJsonStrings(v)) : v,
+      ]),
+    )
+  }
+  return value
+}
+
 function toEditText(d: KeyDetail): string {
   const v = d.value
   if (d.type === 'string') return String(v ?? '')
-  return JSON.stringify(v ?? null, null, 2)
+  return JSON.stringify(parseJsonStrings(v), null, 2)
 }
 
 /** 打开 key：自动感知格式；JSON 内容格式化后进编辑器（可直接编辑、实时校验） */
@@ -495,7 +501,11 @@ async function saveValue() {
   if (!validateBeforeSave()) return
   // 非 string 类型按 JSON 解析后提交结构化对象（后端按类型校验结构；上面已保证可解析）
   let value: unknown = editText.value
-  if (d.type !== 'string') value = JSON.parse(editText.value)
+  if (d.type === 'hash' || d.type === 'list' || d.type === 'set') {
+    value = serializeJsonStrings(JSON.parse(editText.value))
+  } else if (d.type !== 'string') {
+    value = JSON.parse(editText.value)
+  }
   saving.value = true
   try {
     await operate(siteStore.currentSiteId, instanceId.value, {
@@ -919,39 +929,6 @@ const INFO_METRICS = computed(() => {
                 <Copy class="size-3.5" />
               </Button>
               <Button variant="outline" size="sm" @click="refreshValue">{{ $t('common.refresh') }}</Button>
-            </div>
-
-            <!-- 结构化字段表：hash/list/set/zset 直接查看成员，值可打开 JSON 查看器 -->
-            <div v-if="detail.type !== 'string'" class="field-table">
-              <div class="field-toolbar">
-                <Input v-model="fieldFilter" class="w-[240px] max-w-full" :placeholder="$t('redis.searchField')" />
-                <span class="text-xs text-muted-foreground">{{ filteredFieldRows.length }} / {{ fieldRows.length }}</span>
-              </div>
-              <div class="field-scroll">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>{{ $t('redis.field') }}</th>
-                      <th>{{ detail.type === 'zset' ? $t('redis.score') : $t('redis.fieldValue') }}</th>
-                      <th class="w-10"></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr v-for="row in filteredFieldRows" :key="row.id">
-                      <td class="font-mono">{{ row.field }}</td>
-                      <td class="field-value" :title="row.value">{{ row.value }}</td>
-                      <td>
-                        <Button variant="ghost" size="sm" :title="$t('redis.viewValue')" @click="openFieldView(row)">
-                          <Eye class="size-3.5" />
-                        </Button>
-                      </td>
-                    </tr>
-                    <tr v-if="!filteredFieldRows.length">
-                      <td colspan="3" class="py-4 text-center text-muted-foreground">{{ $t('redis.noMatch') }}</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
             </div>
 
             <!-- Text / Json 切换 + CodeMirror（两种视图都可直接编辑） -->
