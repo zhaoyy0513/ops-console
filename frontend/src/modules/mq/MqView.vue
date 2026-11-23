@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, h, inject, onBeforeUnmount, onMounted, ref, watch, type ComponentPublicInstance, type ComputedRef } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { Eye } from 'lucide-vue-next'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -418,9 +419,9 @@ const queueColumns = computed<any[]>(() => [
       if (!q._mbean) return h('span', { class: 'text-muted-foreground' }, '-')
       return h('div', { class: 'flex items-center gap-1' }, [
         h(Button, {
-          variant: 'ghost', size: 'sm', title: t('mq.viewMessages'),
+          variant: 'outline', size: 'sm', title: t('mq.viewMessages'),
           onClick: () => openMessages(q),
-        }, () => t('mq.view')),
+        }, () => [h(Eye, { class: 'size-3.5' }), t('mq.view')]),
         (q.message_count ?? 0) > 0
           ? h(CountdownConfirm, {
               label: t('mq.purge'),
